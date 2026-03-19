@@ -67,7 +67,7 @@ _ENV_VARS = {
 # Geçerli action değerleri
 _VALID_ACTIONS = {"warn", "hash"}
 # Geçerli backend değerleri
-_VALID_BACKENDS = {"ollama", "openai_compatible"}
+_VALID_BACKENDS = {"ollama", "openai_compatible", "transformers"}
 
 
 def load_config(path: Optional[str | Path] = None) -> Dict[str, Any]:
