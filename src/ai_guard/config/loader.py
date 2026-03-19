@@ -39,6 +39,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "SSN":          {"enabled": True,  "action": "hash"},
             "MAC_ADDRESS":  {"enabled": True,  "action": "warn"},
             "JWT":          {"enabled": True,  "action": "hash"},
+            "POSTAL_CODE":  {"enabled": True,  "action": "warn"},
             "NIN":          {"enabled": True,  "action": "hash"},
             "CUSTOM_SECRET":{"enabled": False, "action": "hash"},
         },

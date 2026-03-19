@@ -127,5 +127,6 @@ llm_detector:
     SSN:           { enabled: true,  action: hash }
     MAC_ADDRESS:   { enabled: true,  action: warn }
     JWT:           { enabled: true,  action: hash }
+    POSTAL_CODE:   { enabled: true,  action: warn }
     NIN:           { enabled: true,  action: hash }
     CUSTOM_SECRET: { enabled: false, action: hash }  # context-specific secrets
