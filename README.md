@@ -4,11 +4,6 @@
 
 `ai-guard` scans text for personally identifiable information (PII) before it reaches an LLM, and either warns about or masks the sensitive data using salted SHA-256 hashes. It supports Turkish and English out of the box.
 
-```bash
-pip install ai-guard                  # regex + LLM detection (no SpaCy)
-pip install "ai-guard[ner]"           # + SpaCy NER (PERSON, ORG, ADDRESS)
-pip install "ai-guard[all]"           # + SpaCy + Claude API backend
-```
 
 ```python
 from ai_guard import LLMGuard
@@ -29,7 +24,7 @@ print(result.sanitized_text)
 
 **Actions:** `warn` (keep text, report violation) · `hash` (replace with `[TYPE:8hex]` using SHA-256 + salt)
 
-**Backends:** Regex (built-in) · SpaCy NER (optional) · Ollama / OpenAI-compatible / Claude (optional LLM)
+**Backends:** Regex (built-in) · SpaCy NER (optional) · Ollama / OpenAI-compatible / HuggingFace Transformers (optional LLM)
 
 ---
 
