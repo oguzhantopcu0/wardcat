@@ -122,4 +122,10 @@ llm_detector:
     IBAN:          { enabled: true,  action: hash }
     TC_ID:         { enabled: true,  action: hash }
     IP_ADDRESS:    { enabled: true,  action: warn }
-    CUSTOM_SECRET: { enabled: false, action: hash }  # kuruma özgü sırlar
+    IPv6:          { enabled: true,  action: warn }
+    UUID:          { enabled: true,  action: warn }
+    SSN:           { enabled: true,  action: hash }
+    MAC_ADDRESS:   { enabled: true,  action: warn }
+    JWT:           { enabled: true,  action: hash }
+    NIN:           { enabled: true,  action: hash }
+    CUSTOM_SECRET: { enabled: false, action: hash }  # context-specific secrets
