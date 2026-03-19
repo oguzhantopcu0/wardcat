@@ -29,7 +29,8 @@ print(result.sanitized_text)
 - **Rainbow table protection** — user-defined salt for all hashes
 - **Two APIs** — method chaining (programmatic) and YAML (declarative)
 - **CLI** — `ai-guard scan`, `ai-guard batch`, `ai-guard models`
-- **Turkish + global support** — TC_ID, IBAN, postal codes, Turkish address patterns, plus SSN, NIN, UUID, JWT, MAC, IPv6 and more
+- **Multilingual support** — Turkish, English, French, Spanish, Italian, Dutch, German address patterns; TC_ID, IBAN, SSN, NIN, DNI/NIE, UK postcodes, US ZIP+4 and more
+- **Passport detection** — LLM-based contextual passport number detection for any country
 - **DoS protection** — inputs exceeding 500 KB are rejected
 - **Safe logging API** — `result.redacted()` returns a PII-free dict for logs and APIs
 
@@ -229,29 +230,44 @@ ai-guard models pull llama3.1:8b
 
 ### Regex (built-in, no dependencies)
 
+#### Financial & Identity
+
 | Entity | Default Action | Description |
 |---|---|---|
 | `CREDIT_CARD` | `hash` | Visa, MC, Amex, Discover — with or without separators |
+| `IBAN` | `hash` | International IBAN — mod-97 checksum validated |
+| `SSN` | `hash` | US Social Security Number (123-45-6789) |
+| `NIN` | `hash` | UK National Insurance Number (AB123456C) |
+| `TC_ID` | `hash` | Turkish national ID — 11 digits, Nüfus İdaresi checksum validated |
+| `EU_NATIONAL_ID` | `hash` | Spanish DNI (12345678Z) and NIE (X1234567L) |
+
+#### Contact & Location
+
+| Entity | Default Action | Description |
+|---|---|---|
 | `EMAIL` | `warn` | RFC-compliant email addresses |
 | `PHONE` | `warn` | Turkish (`0`, `+90`) and international E.164 (`+1`, `+44`, …) |
-| `IBAN` | `hash` | International IBAN — mod-97 checksum validated |
+| `ADDRESS` | `warn` | Turkish (Cad., Sok., Mah.), English (Street, Avenue, Road…), French (Rue, Allée…), Spanish (Calle, Avenida…), Italian (Piazza, Corso…), Dutch (straat, gracht…), German (Straße, Weg, Platz…) |
+| `POSTAL_CODE` | `warn` | Turkish postal codes (01000–81999) |
+| `UK_POSTAL_CODE` | `warn` | British postcodes (SW1A 1AA, GU21 6TH, M1 1AE) |
+| `US_ZIP_CODE` | `warn` | US ZIP+4 codes (12345-6789) |
+
+#### Network & Technical
+
+| Entity | Default Action | Description |
+|---|---|---|
 | `IP_ADDRESS` | `warn` | IPv4 addresses |
 | `IPv6` | `warn` | IPv6 addresses (full and compressed forms) |
-| `TC_ID` | `hash` | Turkish national ID — 11 digits, Nüfus İdaresi checksum validated |
-| `ADDRESS` | `warn` | Turkish (Cad., Sok., Mah.) and international (Street, Avenue, Road…) patterns |
-| `POSTAL_CODE` | `warn` | Turkish postal codes (01000–81999) |
-| `UUID` | `warn` | RFC 4122 UUID / GUID |
-| `SSN` | `hash` | US Social Security Number (123-45-6789) |
 | `MAC_ADDRESS` | `warn` | Network hardware address (00:1A:2B:3C:4D:5E) |
+| `UUID` | `warn` | RFC 4122 UUID / GUID |
 | `JWT` | `hash` | JSON Web Token (starts with `eyJ`) |
-| `NIN` | `hash` | UK National Insurance Number (AB123456C) |
 | `CUSTOM_SECRET` | `hash` | Known token prefixes: `sk-`, `ghp_`, `AKIA`, `ya29.`, `xoxb-`, `xoxp-` |
 
 ### SpaCy NER (requires `spacy` + language model)
 
 | Entity | Default Action | Description |
 |---|---|---|
-| `PERSON` | `hash` | Person names (first + last) |
+| `PERSON` | `hash` | Person names (first + last) — cross-language |
 | `ORG` | `warn` | Organization / company names |
 | `ADDRESS` | `warn` | Location entities (complements regex) |
 
@@ -259,6 +275,10 @@ ai-guard models pull llama3.1:8b
 
 | Entity | Default Action | Description |
 |---|---|---|
+| `PASSPORT` | `hash` | Passport numbers of any country — contextual detection (e.g. `Passport: A12345678`) |
+| `EU_NATIONAL_ID` | `hash` | French INSEE, German Personalausweis — contextual variants not caught by regex |
+| `UK_POSTAL_CODE` | `warn` | Postcodes in ambiguous contexts |
+| `US_ZIP_CODE` | `warn` | ZIP codes in ambiguous contexts |
 | `CUSTOM_SECRET` | `hash` | Contextual secrets — `password=VALUE`, `api_key=VALUE`, access codes |
 | *(any above)* | — | LLM supplements and verifies all regex/NER entity types |
 
@@ -406,6 +426,10 @@ uv run pytest --cov=src/ai_guard --cov-report=term-missing
 | Adjacent IBANs | Two IBANs without separator cannot be parsed separately |
 | Cyrillic homoglyphs | `аli@test.com` (Cyrillic `а`) bypasses ASCII regex |
 | Transformers backend | Not tested with a real model — mock-only unit tests |
+| `US_ZIP_CODE` | Only ZIP+4 format (`12345-6789`) — plain 5-digit ZIPs skipped to avoid false positives |
+| `EU_NATIONAL_ID` | Only Spanish DNI/NIE via regex; French INSEE and German IDs require LLM layer |
+| `PASSPORT` | No regex — contextual LLM detection only; requires `use_llm=True` |
+| European addresses | Regex requires a recognizable street-type keyword (Straße, Rue, Calle…); unnumbered informal addresses may be missed |
 
 ---
 
