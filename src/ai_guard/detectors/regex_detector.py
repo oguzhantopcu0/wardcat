@@ -82,10 +82,33 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         r"|Apartmanı|Apt\.|Sitesi)"
         r"|"
         # International: street number + name + type keyword
-        r"\b\d{1,5}[A-Za-z]?\s+[A-Za-z][A-Za-z\s\.]{2,40}"
+        # {2,25} — 40 çok geniş, false positive üretiyordu; \b ile kesin sınır
+        r"\b\d{1,5}[A-Za-z]?\s+[A-Za-z][A-Za-z\s\.]{2,25}"
         r"(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Boulevard|Blvd\.|Lane|Ln\."
         r"|Drive|Dr\.|Court|Ct\.|Way|Place|Pl\.|Square|Sq\.|Terrace|Terr\."
-        r"|Close|Crescent|Gardens?|Highway|Hwy\.)",
+        r"|Close|Crescent|Gardens?|Highway|Hwy\.)\b",
+        0,
+    ),
+    # ── Custom Secret ─────────────────────────────────────────────────
+    # Bilinen token/credential prefix desenleri — net formatı olan servisler.
+    # Bağlamsal (password=VALUE) tespiti LLM dedektörüne bırakılır.
+    # Desteklenen:
+    #   sk-...       — OpenAI / Anthropic API key
+    #   ghp_/ghs_/gho_ — GitHub Personal/Server/OAuth token
+    #   AKIA...      — AWS Access Key ID
+    #   ya29.        — Google OAuth2 access token
+    #   xoxb-/xoxp-  — Slack Bot/User token
+    "CUSTOM_SECRET": (
+        r"\b(?:"
+        r"sk-[A-Za-z0-9_\-]{8,}"
+        r"|ghp_[A-Za-z0-9]{20,}"
+        r"|ghs_[A-Za-z0-9]{20,}"
+        r"|gho_[A-Za-z0-9]{20,}"
+        r"|AKIA[A-Z0-9]{16}"
+        r"|ya29\.[A-Za-z0-9_\-]{20,}"
+        r"|xoxb-[A-Za-z0-9\-]{20,}"
+        r"|xoxp-[A-Za-z0-9\-]{30,}"
+        r")",
         0,
     ),
     # ── UUID ─────────────────────────────────────────────────────────
@@ -145,6 +168,33 @@ _COMPILED: Dict[str, re.Pattern] = {
 }
 
 
+def _validate_iban(value: str) -> bool:
+    """IBAN mod-97 checksum doğrulaması (ISO 13616).
+
+    Adımlar:
+    1. Boşlukları kaldır, büyük harfe çevir.
+    2. İlk 4 karakteri sona taşı.
+    3. Her harfi sayıya çevir (A=10, …, Z=35).
+    4. Sayısal dize % 97 == 1 ise geçerlidir.
+    """
+    cleaned = value.replace(" ", "").upper()
+    if len(cleaned) < 5:
+        return False
+    rearranged = cleaned[4:] + cleaned[:4]
+    numeric = ""
+    for ch in rearranged:
+        if ch.isdigit():
+            numeric += ch
+        elif ch.isalpha():
+            numeric += str(ord(ch) - ord("A") + 10)
+        else:
+            return False
+    try:
+        return int(numeric) % 97 == 1
+    except ValueError:
+        return False
+
+
 def _validate_tc_id(value: str) -> bool:
     """TC Kimlik No checksum doğrulaması (Türkiye Nüfus İdaresi algoritması).
 
@@ -179,8 +229,10 @@ class RegexDetector(BaseDetector):
                 continue
             for match in pattern.finditer(text):
                 value = match.group()
-                # TC_ID: checksum doğrulaması — false positive baskısı
+                # Checksum doğrulamaları — false positive baskısı
                 if entity_type == "TC_ID" and not _validate_tc_id(value):
+                    continue
+                if entity_type == "IBAN" and not _validate_iban(value):
                     continue
                 spans.append(
                     DetectedSpan(

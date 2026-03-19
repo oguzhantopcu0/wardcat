@@ -98,22 +98,33 @@ class TransformersBackend(BaseLLMBackend):
 
         Returns:
             Modelin ürettiği assistant yanıtı (ham metin).
+
+        Raises:
+            ValueError: Model boş çıktı döndürürse veya pipeline başarısız olursa.
         """
         pipe = self._get_pipeline()
 
-        outputs = pipe(
-            messages,
-            max_new_tokens=self._max_new_tokens,
-            do_sample=False,          # temperature=0 eşdeğeri — deterministik
-            return_full_text=False,   # sadece yeni token'lar döner
-        )
+        try:
+            outputs = pipe(
+                messages,
+                max_new_tokens=self._max_new_tokens,
+                do_sample=False,          # temperature=0 eşdeğeri — deterministik
+                return_full_text=False,   # sadece yeni token'lar döner
+            )
+        except Exception as exc:
+            raise ValueError(f"Model inference başarısız ({self._model_name}): {exc}") from exc
+
+        if not outputs:
+            raise ValueError(f"Model boş çıktı döndürdü: {self._model_name}")
 
         # Transformers pipeline çıktı formatı:
         # [{"generated_text": "..." | [{"role":..., "content":...}]}]
-        generated = outputs[0]["generated_text"]
+        generated = outputs[0].get("generated_text", "")
         if isinstance(generated, list):
             # Chat format: son mesajın içeriğini döndür
-            return generated[-1].get("content", "")
+            if not generated:
+                raise ValueError(f"Model chat çıktısı boş: {self._model_name}")
+            return generated[-1].get("content", "") or ""
         return str(generated)
 
     def list_models(self) -> list[str]:
@@ -166,6 +177,15 @@ class TransformersBackend(BaseLLMBackend):
         with self._lock:
             if self._pipeline is None:
                 self._pipeline = self._load_pipeline()
+                # Chat template kontrolü: yoksa LLM mesaj formatını anlayamayabilir.
+                tokenizer = getattr(self._pipeline, "tokenizer", None)
+                if tokenizer is not None and not getattr(tokenizer, "chat_template", None):
+                    logger.warning(
+                        "Model %r tokenizer'ında chat_template tanımlı değil. "
+                        "complete_messages() beklenmedik sonuçlar üretebilir. "
+                        "Instruct/Chat destekli bir model kullanın (örn. *-Instruct, *-chat).",
+                        self._model_name,
+                    )
         return self._pipeline
 
     def _load_pipeline(self) -> Any:

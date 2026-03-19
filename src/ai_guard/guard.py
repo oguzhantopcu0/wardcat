@@ -60,7 +60,7 @@ def _resolve_spacy_model(model: str) -> str:
 _REGEX_ENTITIES = {
     "CREDIT_CARD", "EMAIL", "PHONE", "IBAN", "IP_ADDRESS", "IPv6",
     "TC_ID", "ADDRESS", "POSTAL_CODE",
-    "UUID", "SSN", "MAC_ADDRESS", "JWT", "NIN",
+    "UUID", "SSN", "MAC_ADDRESS", "JWT", "NIN", "CUSTOM_SECRET",
 }
 _NER_ENTITIES   = {"PERSON", "ORG", "ADDRESS"}
 

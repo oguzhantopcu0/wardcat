@@ -1,8 +1,15 @@
 """
 Gerçek llama3.1:8b modeli ile kapsamlı canlı tarama testi.
 
+Bu dosya otomatik pytest suite'ine dahil değildir (sys.exit kullanır).
+Ollama servisinin çalışıyor ve llama3.1:8b modelinin kurulu olması gerekir.
+
 Çalıştırma:
-    uv run python tests/live_scan_test.py
+    uv run python live_scan_test.py
+    uv run python live_scan_test.py 2>&1 | tee live_test_results.txt
+
+Hazırlık:
+    python -m ai_guard models pull llama3.1:8b
 """
 from __future__ import annotations
 

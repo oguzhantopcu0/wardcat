@@ -214,3 +214,98 @@ class TestImportError:
         with patch.dict(sys.modules, {"transformers": None, "torch": None}):  # type: ignore[dict-item]
             with pytest.raises(ImportError, match="transformers"):
                 backend._load_pipeline()
+
+
+# ── Edge cases: empty / malformed pipeline output ────────────────────────────
+
+class TestOutputEdgeCases:
+    def _make_backend(self) -> TransformersBackend:
+        return TransformersBackend(model="meta-llama/Llama-3.2-1B-Instruct")
+
+    def test_raises_on_empty_outputs_list(self):
+        """Pipeline boş liste döndürürse ValueError fırlatılmalı."""
+        backend = self._make_backend()
+        mock_pipe = MagicMock(return_value=[])
+
+        with patch.object(backend, "_get_pipeline", return_value=mock_pipe):
+            with pytest.raises(ValueError, match="boş çıktı"):
+                backend.complete_messages([{"role": "user", "content": "hi"}])
+
+    def test_raises_on_empty_chat_format_list(self):
+        """Chat format: generated_text boş listeyse ValueError fırlatılmalı."""
+        backend = self._make_backend()
+        mock_pipe = MagicMock(return_value=[{"generated_text": []}])
+
+        with patch.object(backend, "_get_pipeline", return_value=mock_pipe):
+            with pytest.raises(ValueError, match="boş"):
+                backend.complete_messages([{"role": "user", "content": "hi"}])
+
+    def test_missing_content_key_returns_empty_string(self):
+        """Chat format: son mesajda 'content' yoksa boş string döner."""
+        backend = self._make_backend()
+        mock_pipe = MagicMock(return_value=[
+            {"generated_text": [{"role": "assistant"}]}  # content yok
+        ])
+
+        with patch.object(backend, "_get_pipeline", return_value=mock_pipe):
+            result = backend.complete_messages([{"role": "user", "content": "hi"}])
+
+        assert result == ""
+
+    def test_raises_on_pipeline_exception(self):
+        """Pipeline RuntimeError fırlatırsa ValueError'a çevrilmeli."""
+        backend = self._make_backend()
+        mock_pipe = MagicMock(side_effect=RuntimeError("CUDA out of memory"))
+
+        with patch.object(backend, "_get_pipeline", return_value=mock_pipe):
+            with pytest.raises(ValueError, match="inference başarısız"):
+                backend.complete_messages([{"role": "user", "content": "hi"}])
+
+    def test_generated_text_as_plain_string(self):
+        """Plain string çıktı (non-chat model) string olarak döner."""
+        backend = self._make_backend()
+        mock_pipe = MagicMock(return_value=[{"generated_text": "plain output"}])
+
+        with patch.object(backend, "_get_pipeline", return_value=mock_pipe):
+            result = backend.complete_messages([{"role": "user", "content": "hi"}])
+
+        assert result == "plain output"
+
+
+# ── Chat template validation ──────────────────────────────────────────────────
+
+class TestChatTemplateValidation:
+    def test_warns_when_no_chat_template(self, caplog):
+        """Tokenizer'da chat_template yoksa uyarı loglanmalı."""
+        import logging
+        backend = TransformersBackend(model="meta-llama/Llama-3.2-1B-Instruct")
+
+        mock_tokenizer = MagicMock()
+        del mock_tokenizer.chat_template  # attribute yok
+
+        mock_pipe = MagicMock()
+        mock_pipe.tokenizer = mock_tokenizer
+
+        with caplog.at_level(logging.WARNING, logger="ai_guard.llm.backends.transformers_backend"):
+            with patch.object(backend, "_load_pipeline", return_value=mock_pipe):
+                backend._get_pipeline()
+
+        assert any("chat_template" in r.message for r in caplog.records)
+
+    def test_no_warning_when_chat_template_present(self, caplog):
+        """Tokenizer'da chat_template varsa uyarı loglanmamalı."""
+        import logging
+        backend = TransformersBackend(model="meta-llama/Llama-3.2-1B-Instruct")
+
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.chat_template = "{% for message in messages %}..."
+
+        mock_pipe = MagicMock()
+        mock_pipe.tokenizer = mock_tokenizer
+
+        with caplog.at_level(logging.WARNING, logger="ai_guard.llm.backends.transformers_backend"):
+            with patch.object(backend, "_load_pipeline", return_value=mock_pipe):
+                backend._get_pipeline()
+
+        chat_template_warnings = [r for r in caplog.records if "chat_template" in r.message]
+        assert len(chat_template_warnings) == 0

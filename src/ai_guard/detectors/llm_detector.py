@@ -43,7 +43,19 @@ _STRUCTURAL_VALIDATORS: dict[str, re.Pattern] = {
     "SSN":         re.compile(r"^\d{3}-\d{2}-\d{4}$"),
     "MAC_ADDRESS": re.compile(r"^(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$"),
     "JWT":         re.compile(r"^eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]*$"),
-    "IPv6":        re.compile(r"^[0-9a-fA-F:]+$"),
+    "IPv6":        re.compile(
+        r"^(?:"
+        r"(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}"                   # full
+        r"|(?:[0-9a-fA-F]{1,4}:){1,7}:"                                # trailing ::
+        r"|:(?::[0-9a-fA-F]{1,4}){1,7}"                                # leading ::
+        r"|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}"              # 1-gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}"    # 2-gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}"    # 3-gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}"    # 4-gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}"    # 5-gap
+        r")$",
+        re.IGNORECASE,
+    ),
     "NIN":         re.compile(r"^[A-Z]{2}\d{6}[A-D]$", re.IGNORECASE),
 }
 
