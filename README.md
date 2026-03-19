@@ -199,19 +199,39 @@ ai-guard models pull llama3.1:8b
 
 ## Supported Entity Types
 
-| Entity | Detector | Default Action | Description |
-|---|---|---|---|
-| `CREDIT_CARD` | Regex | `hash` | Visa, MC, Amex, Discover — with or without separators |
-| `EMAIL` | Regex | `warn` | RFC-compliant email addresses |
-| `PHONE` | Regex | `warn` | Turkish phone numbers (`0`, `+90`, `90` prefix) |
-| `IBAN` | Regex | `hash` | International IBAN (case-insensitive) |
-| `IP_ADDRESS` | Regex | `warn` | IPv4 addresses |
-| `TC_ID` | Regex | `hash` | Turkish national ID — 11 digits |
-| `ADDRESS` | Regex | `warn` | Turkish address patterns (Cad., Sok., Mah., Blv.) |
-| `POSTAL_CODE` | Regex | `warn` | Turkish postal codes (01000–81999) |
-| `PERSON` | SpaCy NER | `hash` | Person names |
-| `ORG` | SpaCy NER | `warn` | Organization names |
-| `CUSTOM_SECRET` | LLM | `hash` | Contextual secrets (passwords, API keys, tokens) |
+### Regex (built-in, no dependencies)
+
+| Entity | Default Action | Description |
+|---|---|---|
+| `CREDIT_CARD` | `hash` | Visa, MC, Amex, Discover — with or without separators |
+| `EMAIL` | `warn` | RFC-compliant email addresses |
+| `PHONE` | `warn` | Turkish phone numbers (`0`, `+90`, `90` prefix) |
+| `IBAN` | `hash` | International IBAN (case-insensitive) |
+| `IP_ADDRESS` | `warn` | IPv4 addresses |
+| `IPv6` | `warn` | IPv6 addresses (full and compressed forms) |
+| `TC_ID` | `hash` | Turkish national ID — 11 digits |
+| `ADDRESS` | `warn` | Turkish address patterns (Cad., Sok., Mah., Blv.) |
+| `POSTAL_CODE` | `warn` | Turkish postal codes (01000–81999) |
+| `UUID` | `warn` | RFC 4122 UUID / GUID |
+| `SSN` | `hash` | US Social Security Number (123-45-6789) |
+| `MAC_ADDRESS` | `warn` | Network hardware address (00:1A:2B:3C:4D:5E) |
+| `JWT` | `hash` | JSON Web Token (starts with `eyJ`) |
+| `NIN` | `hash` | UK National Insurance Number (AB123456C) |
+
+### SpaCy NER (requires `spacy` + language model)
+
+| Entity | Default Action | Description |
+|---|---|---|
+| `PERSON` | `hash` | Person names |
+| `ORG` | `warn` | Organization names |
+| `ADDRESS` | `warn` | Location/address entities (overlaps with regex) |
+
+### LLM (requires on-prem LLM backend)
+
+| Entity | Default Action | Description |
+|---|---|---|
+| `CUSTOM_SECRET` | `hash` | Contextual secrets — passwords, API keys, tokens |
+| *(any above)* | — | LLM can also verify/supplement all regex/NER types |
 
 ---
 
