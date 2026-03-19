@@ -268,5 +268,5 @@ class TestEmptyAndMinimalInput:
 
     def test_no_detectors_means_clean(self):
         engine = DetectionEngine({"salt": "", "entities": {}}, [])
-        result = engine.scan("kart: 4111111111111111 TC: 12345678901")
+        result = engine.scan("kart: 4111111111111111 TC: 12345678950")
         assert result.is_clean

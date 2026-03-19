@@ -144,7 +144,10 @@ class TestNERErrorHandling:
         with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
             guard = LLMGuard(use_ner=True, spacy_model="nonexistent_model_xyz")
 
-        assert any("NER" in r.message or "yüklenemedi" in r.message for r in caplog.records)
+        assert any(
+            "NER" in r.message or "yüklenemedi" in r.message or "kurulu değil" in r.message
+            for r in caplog.records
+        )
         # Regex hâlâ çalışmalı
         result = guard.scan("kart: 4111111111111111")
         assert not result.is_clean

@@ -11,7 +11,7 @@ Merhaba, ben Ahmet Yılmaz. Şirketimizin sunucu IP'si 10.0.0.42.
 Bana fatih.demir@firma.com adresinden veya 0533 987 65 43 numarasından ulaşabilirsin.
 Ödeme için IBAN: TR330006100519786457841326 veya
 kredi kartı 4532015112830366 kullanabilirsin.
-TC kimliğim 10987654321.
+TC kimliğim 10987654202.
 """.strip()
 
 
@@ -36,7 +36,7 @@ def test_hashed_entities_not_in_sanitized_text(guard):
     result = guard.scan(SAMPLE_PROMPT)
     assert "4532015112830366"          not in result.sanitized_text
     assert "TR330006100519786457841326" not in result.sanitized_text
-    assert "10987654321"               not in result.sanitized_text
+    assert "10987654202"               not in result.sanitized_text
 
 
 def test_sanitized_text_has_placeholders(guard):

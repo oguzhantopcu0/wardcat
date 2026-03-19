@@ -13,6 +13,49 @@ from ai_guard.detectors.regex_detector import RegexDetector
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_spacy_model(model: str) -> str:
+    """İstenen SpaCy modeli kurulu değilse alternatif önerir.
+
+    Davranış:
+    - Model kuruluysa olduğu gibi döndürür.
+    - Kurulu değilse mevcut SpaCy modellerini listeler ve uyarı verir.
+    - Hiç model bulunamazsa orijinal adı döndürür (NERDetector kendi hatasını üretir).
+    """
+    try:
+        import spacy
+        spacy.load(model)
+        return model
+    except OSError:
+        pass
+
+    # Kurulu modelleri tara
+    try:
+        import spacy.util
+        installed = list(spacy.util.get_installed_models())
+    except Exception:
+        installed = []
+
+    if not installed:
+        logger.warning(
+            "SpaCy modeli bulunamadı: %r. Kurulum: python -m spacy download %s",
+            model, model,
+        )
+        return model
+
+    # Dil ön ekine göre eşleştir (tr_, en_, vb.)
+    lang_prefix = model.split("_")[0] + "_"
+    same_lang = [m for m in installed if m.startswith(lang_prefix)]
+    fallback = same_lang[0] if same_lang else installed[0]
+
+    logger.warning(
+        "SpaCy modeli %r kurulu değil. Alternatif kullanılıyor: %r. "
+        "Doğru model için: python -m spacy download %s",
+        model, fallback, model,
+    )
+    return fallback
+
+
 # Hangi entity'nin hangi dedektöre ait olduğunu merkezi tablo
 _REGEX_ENTITIES = {
     "CREDIT_CARD", "EMAIL", "PHONE", "IBAN", "IP_ADDRESS", "IPv6",
@@ -225,6 +268,7 @@ class LLMGuard:
                 try:
                     from ai_guard.detectors.ner_detector import NERDetector
                     model = self._config.get("spacy_model", "en_core_web_sm")
+                    model = _resolve_spacy_model(model)
                     self._detectors.append(NERDetector(enabled_ner, model))
                 except Exception as exc:
                     logger.warning(

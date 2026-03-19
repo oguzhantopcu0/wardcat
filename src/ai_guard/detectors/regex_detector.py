@@ -57,6 +57,7 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         0,
     ),
     # ── TC Kimlik No ─────────────────────────────────────────────────
+    # Regex yalnızca format kontrolü yapar; checksum _validate_tc_id() ile doğrulanır.
     "TC_ID": (
         r"(?<!\d)[1-9][0-9]{10}(?!\d)",
         0,
@@ -144,6 +145,26 @@ _COMPILED: Dict[str, re.Pattern] = {
 }
 
 
+def _validate_tc_id(value: str) -> bool:
+    """TC Kimlik No checksum doğrulaması (Türkiye Nüfus İdaresi algoritması).
+
+    Kural:
+    - d[0]..d[9] rakamları, d[10] kontrol rakamı.
+    - (d[0]+d[2]+d[4]+d[6]+d[8]) * 7 - (d[1]+d[3]+d[5]+d[7]) mod 10 == d[9]
+    - (d[0]+d[1]+...+d[9]) mod 10 == d[10]
+    """
+    if len(value) != 11 or not value.isdigit() or value[0] == "0":
+        return False
+    d = [int(c) for c in value]
+    odd_sum  = d[0] + d[2] + d[4] + d[6] + d[8]
+    even_sum = d[1] + d[3] + d[5] + d[7]
+    if (odd_sum * 7 - even_sum) % 10 != d[9]:
+        return False
+    if sum(d[:10]) % 10 != d[10]:
+        return False
+    return True
+
+
 class RegexDetector(BaseDetector):
     """Yapısal PII desenlerini regex ile tespit eder (CC, IBAN, TC_ID, e-posta, …)."""
 
@@ -157,10 +178,14 @@ class RegexDetector(BaseDetector):
             if entity_type not in self.enabled_entities:
                 continue
             for match in pattern.finditer(text):
+                value = match.group()
+                # TC_ID: checksum doğrulaması — false positive baskısı
+                if entity_type == "TC_ID" and not _validate_tc_id(value):
+                    continue
                 spans.append(
                     DetectedSpan(
                         entity_type=entity_type,
-                        text=match.group(),
+                        text=value,
                         start=match.start(),
                         end=match.end(),
                     )

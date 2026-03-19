@@ -108,9 +108,9 @@ class TestSpanLocation:
         assert spans == []
 
     def test_multiple_entity_types(self):
-        text = "TC: 12345678901 kart: 4111111111111111"
+        text = "TC: 12345678950 kart: 4111111111111111"
         response = json.dumps([
-            {"type": "TC_ID",       "text": "12345678901"},
+            {"type": "TC_ID",       "text": "12345678950"},
             {"type": "CREDIT_CARD", "text": "4111111111111111"},
         ])
         det = _detector(response)

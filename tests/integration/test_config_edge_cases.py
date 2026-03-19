@@ -117,7 +117,7 @@ class TestProgrammaticAPIEdgeCases:
         for entity in ["CREDIT_CARD", "EMAIL", "PHONE", "IBAN", "IP_ADDRESS",
                         "TC_ID", "ADDRESS", "POSTAL_CODE"]:
             guard.configure_entity(entity, enabled=False)
-        text = "4111111111111111 a@b.com 12345678901 TR330006100519786457841326"
+        text = "4111111111111111 a@b.com 12345678950 TR330006100519786457841326"
         result = guard.scan(text)
         assert result.is_clean
 
@@ -163,7 +163,7 @@ class TestEntityEnablement:
         ("PHONE",       "0532 111 22 33"),
         ("IBAN",        "TR330006100519786457841326"),
         ("IP_ADDRESS",  "192.168.1.1"),
-        ("TC_ID",       "12345678901"),
+        ("TC_ID",       "12345678950"),
     ])
     def test_disabled_entity_not_detected(self, entity, text):
         guard = LLMGuard(use_ner=False)
@@ -175,7 +175,7 @@ class TestEntityEnablement:
     @pytest.mark.parametrize("entity,text", [
         ("CREDIT_CARD", "4111111111111111"),
         ("EMAIL",       "a@b.com"),
-        ("TC_ID",       "12345678901"),
+        ("TC_ID",       "12345678950"),
     ])
     def test_re_enabling_entity_works(self, entity, text):
         guard = LLMGuard(use_ner=False)
@@ -210,10 +210,10 @@ class TestYAMLAndProgrammaticCombined:
         guard = LLMGuard(config_path=f, use_ner=False)
         guard.configure_entity("TC_ID", enabled=True, action="hash")
 
-        r1 = guard.scan("TC: 12345678901")
+        r1 = guard.scan("TC: 12345678950")
         guard2 = LLMGuard(config_path=f, salt="farkli-tuz", use_ner=False)
         guard2.configure_entity("TC_ID", enabled=True, action="hash")
-        r2 = guard2.scan("TC: 12345678901")
+        r2 = guard2.scan("TC: 12345678950")
 
         # Farklı salt → farklı hash
         assert r1.sanitized_text != r2.sanitized_text

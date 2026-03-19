@@ -180,7 +180,7 @@ class TestLLMFaultTolerance:
 
     def test_llm_malformed_response_doesnt_block(self):
         guard = _guard_with_llm("Bu JSON değil!!!")
-        result = guard.scan("TC: 12345678901")
+        result = guard.scan("TC: 12345678950")
         assert any(v.entity_type == "TC_ID" for v in result.violations)
 
 

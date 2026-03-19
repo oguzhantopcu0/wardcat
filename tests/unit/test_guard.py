@@ -64,7 +64,7 @@ def test_method_chaining():
 
 
 def test_scan_result_structure(guard):
-    result = guard.scan("TC: 12345678901")
+    result = guard.scan("TC: 12345678950")
     assert hasattr(result, "original_text")
     assert hasattr(result, "sanitized_text")
     assert hasattr(result, "violations")

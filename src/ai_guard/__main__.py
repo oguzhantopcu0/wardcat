@@ -197,8 +197,20 @@ def _read_file(path: Path) -> str:
         )
 
 
+def _warn_if_no_salt(args: argparse.Namespace) -> None:
+    """Production'da salt kullanılmıyorsa stderr'e uyarı yaz."""
+    salt = args.salt or os.environ.get("LLMGUARD_SALT", "")
+    if not salt:
+        print(
+            "UYARI: Hash salt ayarlanmamış — aynı PII değerleri her zaman aynı "
+            "hash'i üretir. Production'da --salt veya LLMGUARD_SALT kullanın.",
+            file=sys.stderr,
+        )
+
+
 def cmd_scan(args: argparse.Namespace) -> None:
     """Handle the ``scan`` sub-command — scan a single text for PII."""
+    _warn_if_no_salt(args)
     guard = _make_guard(args)
     text  = args.text if args.text else _read_file(args.file)
     result = guard.scan(text)
@@ -211,6 +223,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
 
 def cmd_batch(args: argparse.Namespace) -> None:
     """Handle the ``batch`` sub-command — scan each line of a file independently."""
+    _warn_if_no_salt(args)
     guard = _make_guard(args)
     content = _read_file(args.file)
     lines = [ln for ln in content.splitlines() if ln.strip()]

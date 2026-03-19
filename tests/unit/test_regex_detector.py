@@ -50,7 +50,7 @@ class TestIPAddress:
 
 class TestTCID:
     def test_valid_tc(self, detector):
-        spans = detector.detect("TC kimlik: 12345678901")
+        spans = detector.detect("TC kimlik: 12345678950")
         assert any(s.entity_type == "TC_ID" for s in spans)
 
 

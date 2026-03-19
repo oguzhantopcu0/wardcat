@@ -63,7 +63,7 @@ class TestUnicodeAdversarial:
 
     def test_emoji_in_text_does_not_break_detection(self, g):
         """Emojiler arasındaki PII hâlâ tespit edilmeli."""
-        result = g.scan("🔒 TC: 12345678901 🔒")
+        result = g.scan("🔒 TC: 12345678950 🔒")
         assert "TC_ID" in {v.entity_type for v in result.violations}
 
     def test_arabic_text_around_pii(self, g):
@@ -91,11 +91,11 @@ class TestEmbeddedInNoise:
 
     def test_pii_after_many_numbers(self, g):
         """Sahte sayıların arasındaki gerçek PII seçilmeli."""
-        text = " ".join([f"ref-{i:04d}" for i in range(50)]) + " TC: 12345678901"
+        text = " ".join([f"ref-{i:04d}" for i in range(50)]) + " TC: 12345678950"
         result = g.scan(text)
         tc_violations = [v for v in result.violations if v.entity_type == "TC_ID"]
         assert len(tc_violations) == 1
-        assert tc_violations[0].original == "12345678901"
+        assert tc_violations[0].original == "12345678950"
 
     def test_pii_split_across_label_and_value(self, g):
         """Label–değer formatında PII tespit edilmeli."""
@@ -204,7 +204,7 @@ class TestSanitizedIntegrity:
     def test_all_original_originals_extractable_from_original_text(self, g):
         """Her violation'ın original alanı, original_text'ten çıkarılabilmeli."""
         texts = [
-            "TC: 12345678901 kart: 4111111111111111 mail: x@y.com",
+            "TC: 12345678950 kart: 4111111111111111 mail: x@y.com",
             "IBAN: TR330006100519786457841326 tel: 0532 111 22 33",
             "ip: 10.0.0.1 posta: 34000 adres: Atatürk Caddesi No:5",
         ]

@@ -56,7 +56,7 @@ CUSTOMER_SUPPORT_PROMPT = """
 [SYSTEM] Aşağıdaki müşteri bilgileri ile işlem yap.
 
 Müşteri Adı  : Ali Veli
-TC Kimlik    : 12345678901
+TC Kimlik    : 12345678950
 Telefon      : 0532 999 00 11
 E-posta      : ali.veli@musteri.com
 IBAN         : TR330006100519786457841326
@@ -82,7 +82,7 @@ class TestS01CustomerSupportPrompt:
         # Varsayılan: CC, IBAN, TC_ID → hash
         assert "4532 0151 1283 0366"          not in result.sanitized_text
         assert "TR330006100519786457841326"    not in result.sanitized_text
-        assert "12345678901"                  not in result.sanitized_text
+        assert "12345678950"                  not in result.sanitized_text
 
     def test_placeholders_in_sanitized_text(self):
         result = _guard().scan(CUSTOMER_SUPPORT_PROMPT)
@@ -149,7 +149,7 @@ class TestS03MultipleEntities:
 
 class TestS04EmbeddedInCode:
     def test_json_payload(self):
-        payload = '{"user": "ali@test.com", "card": "4111111111111111", "tc": "12345678901"}'
+        payload = '{"user": "ali@test.com", "card": "4111111111111111", "tc": "12345678950"}'
         result = _guard().scan(payload)
         found = _types(result)
         assert "EMAIL"       in found
@@ -182,7 +182,7 @@ CHAT_TEXT = """\
 [USER] Merhaba, hesabıma 0532 888 77 66 numarasından ulaştım.
        IBAN numaram TR330006100519786457841326.
 [ASSISTANT] Anlıyorum, hesabınızı sorguluyorum.
-[USER] Ayrıca kartım 4111 1111 1111 1111 bloke oldu, TC: 12345678901
+[USER] Ayrıca kartım 4111 1111 1111 1111 bloke oldu, TC: 12345678950
 """
 
 
@@ -207,7 +207,7 @@ class TestS05MultilineChat:
 # ── S06: Karışık dil (TR + EN) ───────────────────────────────────────────────
 
 MIXED_LANG = (
-    "Dear support team, my Turkish ID is 12345678901 "
+    "Dear support team, my Turkish ID is 12345678950 "
     "and my e-mail is user@example.com. "
     "Ayrıca kartım: 5500 0000 0000 0004. "
     "My IBAN: TR330006100519786457841326."
@@ -255,7 +255,7 @@ class TestS08WarnOnlyMode:
             .configure_entity("TC_ID",       enabled=True, action="warn")
             .configure_entity("IBAN",        enabled=True, action="warn")
         )
-        text = "kart: 4111111111111111 mail: a@b.com TC: 12345678901"
+        text = "kart: 4111111111111111 mail: a@b.com TC: 12345678950"
         result = guard.scan(text)
         assert result.sanitized_text == text
         assert len(result.violations) > 0
@@ -274,7 +274,7 @@ class TestS09HashConsistency:
         assert r1.sanitized_text == r2.sanitized_text
 
     def test_different_salt_different_hash(self):
-        text = "TC: 12345678901"
+        text = "TC: 12345678950"
         g1 = _guard(salt="tuz-a")
         g2 = _guard(salt="tuz-b")
         assert g1.scan(text).sanitized_text != g2.scan(text).sanitized_text
@@ -302,9 +302,9 @@ class TestS10SaltIdempotency:
     def test_set_salt_twice_uses_last(self):
         guard = _guard(salt="ilk")
         guard.set_salt("son")
-        r1 = guard.scan("TC: 12345678901")
+        r1 = guard.scan("TC: 12345678950")
         guard.set_salt("son")
-        r2 = guard.scan("TC: 12345678901")
+        r2 = guard.scan("TC: 12345678950")
         assert r1.sanitized_text == r2.sanitized_text
 
 
@@ -313,8 +313,8 @@ class TestS10SaltIdempotency:
 class TestS11OverlapResolution:
     def test_longer_span_wins(self):
         # TC_ID (11 hane) ve PHONE aynı bölgede olmamalı
-        # 12345678901 → TC_ID (11 hane), PHONE olmaz çünkü 0 ön eki yok
-        result = _guard().scan("numara: 12345678901 sonu")
+        # 12345678950 → TC_ID (11 hane), PHONE olmaz çünkü 0 ön eki yok
+        result = _guard().scan("numara: 12345678950 sonu")
         types = _types(result)
         assert "TC_ID" in types
         assert "PHONE" not in types
@@ -329,9 +329,9 @@ class TestS11OverlapResolution:
 
 class TestS12TCIDBoundary:
     @pytest.mark.parametrize("valid", [
-        "12345678901",   # standart
-        "10000000000",   # minimum (1 ile başlar)
-        "99999999999",   # maksimum
+        "12345678950",   # standart
+        "10000000078",   # minimum (1 ile başlar)
+        "99999999990",   # maksimum
     ])
     def test_valid_tc_detected(self, valid):
         result = _guard().scan(f"TC: {valid}")
@@ -339,7 +339,7 @@ class TestS12TCIDBoundary:
 
     @pytest.mark.parametrize("invalid", [
         "1234567890",    # 10 hane — eksik
-        "012345678901",  # 12 hane — fazla
+        "012345678950",  # 12 hane — fazla
         "01234567890",   # 0 ile başlıyor — geçersiz
     ])
     def test_invalid_tc_not_detected(self, invalid):
@@ -370,7 +370,7 @@ class TestS14BatchMixedScenario:
         "Merhaba, nasılsın?",                       # temiz
         "kartım: 4111111111111111",                  # CC
         "ali@test.com",                              # email
-        "TC kimliğim: 12345678901",                  # TC_ID
+        "TC kimliğim: 12345678950",                  # TC_ID
         "IBAN: TR330006100519786457841326",           # IBAN
         "Tel: 0532 123 45 67",                       # phone
         "Sunucu: 10.0.0.1",                          # IP
@@ -410,7 +410,7 @@ class TestS14BatchMixedScenario:
 class TestS15LargeText:
     def test_dense_pii_text_scanned_under_2s(self):
         pii_block = (
-            "TC: 12345678901 kart: 4111111111111111 "
+            "TC: 12345678950 kart: 4111111111111111 "
             "mail: a@b.com tel: 0532 123 45 67\n"
         )
         big_text = pii_block * 200   # 200 tekrar

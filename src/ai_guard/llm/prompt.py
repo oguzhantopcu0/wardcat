@@ -12,6 +12,7 @@ from __future__ import annotations
 
 # Entity açıklamaları: modele ne araması gerektiğini öğretir.
 _ENTITY_DESCRIPTIONS: dict[str, str] = {
+    "ORG":           "name of a specific company, institution, or organization that could identify a person in context (e.g. 'Acme Corp', 'İş Bankası', 'Google LLC')",
     "PERSON":        "full name of a real person (e.g. 'Ali Veli', 'John Smith', 'Mehmet Demir')",
     "EMAIL":         "email address (e.g. 'user@example.com')",
     "PHONE":         "phone number including country/area code (e.g. '0532 123 4567', '+90 533 987 6543')",
