@@ -16,7 +16,7 @@ guard = (
 
 result = guard.scan("Name: Ali Veli, card: 4532 0151 1283 0366, email: ali@example.com")
 print(result.sanitized_text)
-# Name: Ali Veli, card: [CREDIT_CARD:ea782818], email: ali@example.com
+# Name: Ali Veli, card: [CREDIT_CARD:ea782818c5a992a8], email: ali@example.com
 ```
 
 ---
@@ -24,11 +24,14 @@ print(result.sanitized_text)
 ## Features
 
 - **Hybrid detection** — Regex + SpaCy NER + on-prem LLM (Ollama, OpenAI-compatible, HuggingFace Transformers)
-- **Two actions** — `warn` (keep text, report violation) and `hash` (replace with `[TYPE:8hex]` using SHA-256 + salt)
+- **Two actions** — `warn` (keep text, report violation) and `hash` (replace with `[TYPE:16hex]` using SHA-256 + salt)
+- **Checksum validation** — TC_ID (Nüfus İdaresi algorithm) and IBAN (mod-97) validated before flagging — eliminates false positives
 - **Rainbow table protection** — user-defined salt for all hashes
 - **Two APIs** — method chaining (programmatic) and YAML (declarative)
 - **CLI** — `ai-guard scan`, `ai-guard batch`, `ai-guard models`
-- **Turkish support** — TC identity number, IBAN, postal codes, Turkish address patterns, Turkish SpaCy model
+- **Turkish + global support** — TC_ID, IBAN, postal codes, Turkish address patterns, plus SSN, NIN, UUID, JWT, MAC, IPv6 and more
+- **DoS protection** — inputs exceeding 500 KB are rejected
+- **Safe logging API** — `result.redacted()` returns a PII-free dict for logs and APIs
 
 ---
 
@@ -52,6 +55,8 @@ uv pip install https://github.com/explosion/spacy-models/releases/download/en_co
 # uv pip install <tr_core_news_sm wheel URL>
 ```
 
+> If the requested SpaCy model is not installed, ai-guard automatically falls back to any installed model of the same language with a warning.
+
 SpaCy is not required if you only need regex-based detection.
 
 ---
@@ -71,19 +76,19 @@ guard = (
 )
 
 result = guard.scan("""
-  Customer: Ali Veli, TC: 12345678901
+  Customer: Ali Veli, TC: 12345678950
   Card: 4532 0151 1283 0366
   Email: ali.veli@example.com
 """)
 
 print(result.sanitized_text)
-# Customer: Ali Veli, TC: [TC_ID:86349f34]
-# Card: [CREDIT_CARD:ea782818]
+# Customer: Ali Veli, TC: [TC_ID:86349f34a1bc2d5e]
+# Card: [CREDIT_CARD:ea782818c5a992a8]
 # Email: ali.veli@example.com   ← warn: text is kept
 
 for v in result.violations:
     print(f"[{v.action.value}] {v.entity_type}: {v.original!r}")
-# [hash] TC_ID: '12345678901'
+# [hash] TC_ID: '12345678950'
 # [hash] CREDIT_CARD: '4532 0151 1283 0366'
 # [warn] EMAIL: 'ali.veli@example.com'
 ```
@@ -128,17 +133,38 @@ for r in results:
 # True  0
 ```
 
-### On-prem LLM (Ollama)
+### On-prem LLM
+
+Two options for LLM-based detection:
+
+**Option 1 — Run locally with Ollama:**
+
+```bash
+# Install Ollama: https://ollama.com
+ollama pull llama3.2
+```
 
 ```python
 guard = LLMGuard(
     use_llm=True,
-    llm_model="llama3.1:8b",
+    llm_backend="ollama",
+    llm_model="llama3.2",
     llm_base_url="http://localhost:11434",
 )
 ```
 
-### HuggingFace Transformers (GPU/CPU)
+**Option 2 — Connect to an existing endpoint (vLLM, LM Studio, LocalAI):**
+
+```python
+guard = LLMGuard(
+    use_llm=True,
+    llm_backend="openai_compatible",
+    llm_base_url="http://10.0.0.5:8000",
+    llm_model="llama3.1:8b",
+)
+```
+
+**Option 3 — HuggingFace Transformers (GPU/CPU):**
 
 ```python
 guard = LLMGuard(
@@ -149,13 +175,15 @@ guard = LLMGuard(
 )
 ```
 
+> **Note:** HTTP connections to LLM backends (including localhost) log a warning. Use HTTPS in production via a reverse proxy (nginx, Caddy).
+
 ---
 
 ## CLI
 
 ```bash
 # Scan a single text
-ai-guard scan --text "TC: 12345678901 card: 4111111111111111"
+ai-guard scan --text "TC: 12345678950 card: 4111111111111111"
 
 # Scan from file, JSON output
 ai-guard scan --file input.txt --format json
@@ -181,7 +209,7 @@ ai-guard models pull llama3.1:8b
 ```json
 {
   "is_clean": false,
-  "sanitized_text": "card: [CREDIT_CARD:c5a992a8]",
+  "sanitized_text": "card: [CREDIT_CARD:c5a992a8ea782818]",
   "violations": [
     {
       "entity_type": "CREDIT_CARD",
@@ -189,7 +217,7 @@ ai-guard models pull llama3.1:8b
       "start": 6,
       "end": 22,
       "action": "hash",
-      "replacement": "[CREDIT_CARD:c5a992a8]"
+      "replacement": "[CREDIT_CARD:c5a992a8ea782818]"
     }
   ]
 }
@@ -205,33 +233,34 @@ ai-guard models pull llama3.1:8b
 |---|---|---|
 | `CREDIT_CARD` | `hash` | Visa, MC, Amex, Discover — with or without separators |
 | `EMAIL` | `warn` | RFC-compliant email addresses |
-| `PHONE` | `warn` | Turkish phone numbers (`0`, `+90`, `90` prefix) |
-| `IBAN` | `hash` | International IBAN (case-insensitive) |
+| `PHONE` | `warn` | Turkish (`0`, `+90`) and international E.164 (`+1`, `+44`, …) |
+| `IBAN` | `hash` | International IBAN — mod-97 checksum validated |
 | `IP_ADDRESS` | `warn` | IPv4 addresses |
 | `IPv6` | `warn` | IPv6 addresses (full and compressed forms) |
-| `TC_ID` | `hash` | Turkish national ID — 11 digits |
-| `ADDRESS` | `warn` | Turkish address patterns (Cad., Sok., Mah., Blv.) |
+| `TC_ID` | `hash` | Turkish national ID — 11 digits, Nüfus İdaresi checksum validated |
+| `ADDRESS` | `warn` | Turkish (Cad., Sok., Mah.) and international (Street, Avenue, Road…) patterns |
 | `POSTAL_CODE` | `warn` | Turkish postal codes (01000–81999) |
 | `UUID` | `warn` | RFC 4122 UUID / GUID |
 | `SSN` | `hash` | US Social Security Number (123-45-6789) |
 | `MAC_ADDRESS` | `warn` | Network hardware address (00:1A:2B:3C:4D:5E) |
 | `JWT` | `hash` | JSON Web Token (starts with `eyJ`) |
 | `NIN` | `hash` | UK National Insurance Number (AB123456C) |
+| `CUSTOM_SECRET` | `hash` | Known token prefixes: `sk-`, `ghp_`, `AKIA`, `ya29.`, `xoxb-`, `xoxp-` |
 
 ### SpaCy NER (requires `spacy` + language model)
 
 | Entity | Default Action | Description |
 |---|---|---|
-| `PERSON` | `hash` | Person names |
-| `ORG` | `warn` | Organization names |
-| `ADDRESS` | `warn` | Location/address entities (overlaps with regex) |
+| `PERSON` | `hash` | Person names (first + last) |
+| `ORG` | `warn` | Organization / company names |
+| `ADDRESS` | `warn` | Location entities (complements regex) |
 
 ### LLM (requires on-prem LLM backend)
 
 | Entity | Default Action | Description |
 |---|---|---|
-| `CUSTOM_SECRET` | `hash` | Contextual secrets — passwords, API keys, tokens |
-| *(any above)* | — | LLM can also verify/supplement all regex/NER types |
+| `CUSTOM_SECRET` | `hash` | Contextual secrets — `password=VALUE`, `api_key=VALUE`, access codes |
+| *(any above)* | — | LLM supplements and verifies all regex/NER entity types |
 
 ---
 
@@ -242,19 +271,22 @@ ai-guard models pull llama3.1:8b
 ```python
 @dataclass
 class ScanResult:
-    original_text:  str               # unmodified input
-    sanitized_text: str               # anonymized output
+    original_text:  str               # unmodified input — contains raw PII
+    sanitized_text: str               # anonymized output — safe to forward to LLM
     violations:     List[Violation]   # all detected violations
     is_clean:       bool              # True if no violations found
+
+    def redacted(self) -> dict:       # PII-free dict — safe for logging and APIs
+        ...
 
 @dataclass
 class Violation:
     entity_type: str          # e.g. "CREDIT_CARD", "EMAIL"
-    original:    str          # raw value from input
+    original:    str          # raw value from input — contains PII
     start:       int          # start index in original text
     end:         int          # end index in original text
     action:      Action       # Action.WARN | Action.HASH
-    replacement: str | None   # "[TYPE:8hex]" for hash, None for warn
+    replacement: str | None   # "[TYPE:16hex]" for hash, None for warn
 ```
 
 ---
@@ -263,11 +295,11 @@ class Violation:
 
 ### Hashing
 
-Sensitive values are replaced in the sanitized text using the format `[TYPE:8hex]`:
+Sensitive values are replaced in the sanitized text using the format `[TYPE:16hex]` (64-bit entropy):
 
 ```
-4532 0151 1283 0366  →  [CREDIT_CARD:ea782818]
-12345678901          →  [TC_ID:86349f34]
+4532 0151 1283 0366  →  [CREDIT_CARD:ea782818c5a992a8]
+12345678950          →  [TC_ID:86349f34a1bc2d5e]
 ```
 
 ### Salt
@@ -280,6 +312,24 @@ guard = LLMGuard(salt=os.environ["LLMGUARD_SALT"])
 ```
 
 > Never hardcode the salt in source code or config files.
+
+### Safe Logging
+
+`ScanResult.original_text` and `violations[].original` contain raw PII. Use `result.redacted()` for logs and API responses:
+
+```python
+result = guard.scan(text)
+
+# ✗ Leaks PII to logs
+logger.info("result: %s", result.original_text)
+
+# ✓ Safe — no raw PII
+logger.info("result: %s", result.redacted())
+```
+
+### Input Size Limit
+
+Inputs exceeding **500 KB** raise a `ValueError`. Split large documents into smaller chunks before scanning.
 
 ---
 
@@ -308,9 +358,9 @@ ai-guard/
 │   │   └── models.py         # Action, Violation, ScanResult
 │   ├── detectors/
 │   │   ├── base.py           # BaseDetector ABC
-│   │   ├── regex_detector.py
+│   │   ├── regex_detector.py # 15 regex patterns with checksum validation
 │   │   ├── ner_detector.py   # SpaCy NER (English + Turkish)
-│   │   └── llm_detector.py   # LLM-based detection
+│   │   └── llm_detector.py   # LLM-based detection with hallucination filter
 │   ├── llm/
 │   │   ├── backends/         # ollama, openai_compat, transformers
 │   │   ├── model_catalog.py  # Supported model list
@@ -333,7 +383,7 @@ ai-guard/
 
 ```bash
 # All tests
-uv run pytest
+uv run pytest tests/unit/ tests/integration/
 
 # Unit tests only
 uv run pytest tests/unit/
@@ -355,6 +405,7 @@ uv run pytest --cov=src/ai_guard --cov-report=term-missing
 | `4111.1111.1111.1111` | Dot separator not supported |
 | Adjacent IBANs | Two IBANs without separator cannot be parsed separately |
 | Cyrillic homoglyphs | `аli@test.com` (Cyrillic `а`) bypasses ASCII regex |
+| Transformers backend | Not tested with a real model — mock-only unit tests |
 
 ---
 
@@ -362,7 +413,7 @@ uv run pytest --cov=src/ai_guard --cov-report=term-missing
 
 ```bash
 uv sync --dev
-uv run pytest
+uv run pytest tests/unit/ tests/integration/
 ```
 
 Requires Python 3.11+.
