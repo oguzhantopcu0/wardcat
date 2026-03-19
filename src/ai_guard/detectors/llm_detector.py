@@ -39,6 +39,12 @@ _STRUCTURAL_VALIDATORS: dict[str, re.Pattern] = {
     "PHONE":      re.compile(r"[\d\s\-\+\(\)]{7,}"),
     "IP_ADDRESS": re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$"),
     "POSTAL_CODE": re.compile(r"^\d{5}$"),
+    "UUID":        re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE),
+    "SSN":         re.compile(r"^\d{3}-\d{2}-\d{4}$"),
+    "MAC_ADDRESS": re.compile(r"^(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$"),
+    "JWT":         re.compile(r"^eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]*$"),
+    "IPv6":        re.compile(r"^[0-9a-fA-F:]+$"),
+    "NIN":         re.compile(r"^[A-Z]{2}\d{6}[A-D]$", re.IGNORECASE),
 }
 
 

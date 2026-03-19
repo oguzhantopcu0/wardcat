@@ -31,17 +31,16 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
     ),
     # ── Telefon ──────────────────────────────────────────────────────
     # Türk telefonu için 0 veya +90 ön eki zorunludur; salt 10 hane eşleşmez.
+    # Uluslararası E.164 formatı da desteklenir (+1, +44, +49, vb.).
     "PHONE": (
         r"(?<!\d)"
         r"(?:"
-        r"\+90[\s\-]?"              # +90 uluslararası
-        r"|90[\s\-]?"               # 90 (başında + olmadan)
-        r"|0"                       # ulusal 0 ön eki
+        # Turkish: 0 / +90 / 90 prefix
+        r"(?:\+90|90|0)[\s\-]?(?:\(?\d{3}\)?)[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}"
+        r"|"
+        # International E.164 (non-Turkish): +1..., +44..., +49..., etc.
+        r"\+(?!90)[1-9]\d{1,3}[\s\-]?\d{2,4}[\s\-]?\d{2,4}[\s\-]?\d{0,4}"
         r")"
-        r"(?:\(?\d{3}\)?)"          # alan kodu (parantezli veya değil)
-        r"[\s\-]?\d{3}"
-        r"[\s\-]?\d{2}"
-        r"[\s\-]?\d{2}"
         r"(?!\d)",
         0,
     ),
@@ -68,16 +67,24 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         r"(?<![A-Za-zÇĞİÖŞÜçğışöşü0-9\-])(?:0[1-9]|[1-7]\d|80|81)\d{3}(?!\d)",
         0,
     ),
-    # ── Türkçe adres ─────────────────────────────────────────────────
-    # Terminatör olarak yalnızca gerçek adres anahtar kelimeleri kullanılır.
+    # ── Adres ────────────────────────────────────────────────────────
+    # Türkçe adres: Mahallesi, Caddesi, Sokağı, vb. anahtar kelimeleriyle biter.
+    # Uluslararası adres: numara + isim + Street/Avenue/Road/vb. formatı.
     # "No:" ve "Kat:" bağımsız terminatör olarak ÇIKARILDI: bu ifadeler
     # "TC Kimlik No:", "Kart No:" gibi kalıplarla çakışıp TC_ID ve
     # CREDIT_CARD detection'ını engelliyordu. Gerçek adreslerde No/Kat
     # zaten Cad., Sok., Mah. gibi bir keyword'ün ardından gelir.
     "ADDRESS": (
+        # Turkish address patterns
         r"(?:[A-ZÇĞİÖŞÜa-zçğışöşü0-9\.]+\s+){1,5}"
         r"(?:Mahallesi|Mah\.|Caddesi|Cad\.|Sokağı|Sokak|Sok\.|Bulvarı|Blv\."
-        r"|Apartmanı|Apt\.|Sitesi)",
+        r"|Apartmanı|Apt\.|Sitesi)"
+        r"|"
+        # International: street number + name + type keyword
+        r"\b\d{1,5}[A-Za-z]?\s+[A-Za-z][A-Za-z\s\.]{2,40}"
+        r"(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Boulevard|Blvd\.|Lane|Ln\."
+        r"|Drive|Dr\.|Court|Ct\.|Way|Place|Pl\.|Square|Sq\.|Terrace|Terr\."
+        r"|Close|Crescent|Gardens?|Highway|Hwy\.)",
         0,
     ),
     # ── UUID ─────────────────────────────────────────────────────────

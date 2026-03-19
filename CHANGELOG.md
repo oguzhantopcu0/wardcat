@@ -11,6 +11,27 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.2.0] — 2026-03-19
+
+### Added
+- **6 new entity types** — `UUID`, `SSN` (US), `MAC_ADDRESS`, `JWT`, `IPv6`, `NIN` (UK) with regex detection
+- **International phone support** — E.164 format (`+1`, `+44`, etc.) added alongside Turkish phone patterns
+- **International address support** — English street address patterns (Street, Avenue, Road, etc.) alongside Turkish patterns
+- **HuggingFace Transformers backend** — on-prem GPU/CPU inference via `transformers` pipeline; supports Llama 3.1/3.2 (1B, 3B, 8B, 70B), 8-bit/4-bit quantization, `device_map="auto"` for multi-GPU
+- **`build_messages()`** — chat-format message builder for backends with native chat support
+- **`BaseLLMBackend.complete_messages()`** — all backends now support chat message format with default fallback
+- **Structural validators for new entity types** — hallucination filtering for UUID, SSN, MAC_ADDRESS, JWT, IPv6, NIN
+- **LLM detector covers all entity types** — `llm_detector.entities` config now includes all 16 entity types including POSTAL_CODE
+
+### Changed
+- `LLMDetector` now uses `complete_messages()` instead of `complete()` — better prompt formatting for chat-capable models
+- `ModelInfo` now has a `backend` field (`"ollama"` or `"transformers"`)
+- Model catalog expanded with HuggingFace Llama model IDs
+
+[0.2.0]: https://github.com/oguzhantopcu0/ai-guard/compare/v0.1.0...v0.2.0
+
+---
+
 ## [0.1.0] — 2026-03-19
 
 Initial release.

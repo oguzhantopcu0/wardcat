@@ -523,3 +523,70 @@ class TestS20CLIJsonSchema:
             assert "replacement"  in v
             assert v["action"] in ("warn", "hash")
             assert v["end"] > v["start"]
+
+
+# ── S21: Yeni global entity tipleri ─────────────────────────────────────────
+
+class TestS21GlobalEntityTypes:
+    """UUID, SSN, MAC_ADDRESS, JWT, IPv6, NIN detection testleri (regex tabanlı)."""
+
+    def test_uuid_detected(self):
+        result = _guard().scan("User UUID: 550e8400-e29b-41d4-a716-446655440000")
+        assert "UUID" in _types(result)
+
+    def test_ssn_detected(self):
+        result = _guard().scan("SSN: 123-45-6789")
+        assert "SSN" in _types(result)
+
+    def test_mac_address_detected(self):
+        result = _guard().scan("Device MAC: 00:1A:2B:3C:4D:5E")
+        assert "MAC_ADDRESS" in _types(result)
+
+    def test_mac_address_dash_separator_detected(self):
+        result = _guard().scan("MAC: 00-1A-2B-3C-4D-5E")
+        assert "MAC_ADDRESS" in _types(result)
+
+    def test_jwt_detected(self):
+        result = _guard().scan(
+            "session: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.abc123"
+        )
+        assert "JWT" in _types(result)
+
+    def test_ipv6_detected(self):
+        result = _guard().scan("IPv6: 2001:db8::8a2e:0370:7334")
+        assert "IPv6" in _types(result)
+
+    def test_nin_detected(self):
+        result = _guard().scan("NIN: AB123456C")
+        assert "NIN" in _types(result)
+
+    def test_mixed_new_entities_in_one_text(self):
+        text = (
+            "Device MAC: 00:1A:2B:3C:4D:5E, "
+            "IPv6: 2001:db8::1, "
+            "session: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.abc123"
+        )
+        result = _guard().scan(text)
+        found = _types(result)
+        assert "MAC_ADDRESS" in found
+        assert "IPv6"        in found
+        assert "JWT"         in found
+
+    def test_uuid_ssn_nin_in_one_text(self):
+        text = (
+            "User UUID: 550e8400-e29b-41d4-a716-446655440000, "
+            "SSN: 123-45-6789, NIN: AB123456C"
+        )
+        result = _guard().scan(text)
+        found = _types(result)
+        assert "UUID" in found
+        assert "SSN"  in found
+        assert "NIN"  in found
+
+    def test_violation_positions_valid_for_new_entities(self):
+        text = "UUID: 550e8400-e29b-41d4-a716-446655440000 SSN: 123-45-6789"
+        result = _guard().scan(text)
+        for v in result.violations:
+            assert v.start >= 0
+            assert v.end > v.start
+            assert text[v.start:v.end] == v.original

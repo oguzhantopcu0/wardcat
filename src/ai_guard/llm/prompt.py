@@ -88,6 +88,12 @@ Output: []
 Input: "Hava bugün çok güzel, piknik yapalım."
 Output: []
 
+Input: "Device MAC: 00:1A:2B:3C:4D:5E, IPv6: 2001:db8::1, session: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.abc123"
+Output: [{{"type":"MAC_ADDRESS","text":"00:1A:2B:3C:4D:5E"}},{{"type":"IPv6","text":"2001:db8::1"}},{{"type":"JWT","text":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.abc123"}}]
+
+Input: "User UUID: 550e8400-e29b-41d4-a716-446655440000, SSN: 123-45-6789, NIN: AB123456C"
+Output: [{{"type":"UUID","text":"550e8400-e29b-41d4-a716-446655440000"}},{{"type":"SSN","text":"123-45-6789"}},{{"type":"NIN","text":"AB123456C"}}]
+
 Input: "Toplantı saat 14:00'te 3. katta."
 Output: []
 """
