@@ -1,8 +1,24 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from ai_guard.llm.backends.base import BaseLLMBackend, ProgressCallback, PullProgress
+
+logger = logging.getLogger(__name__)
+
+
+def _warn_if_remote_http(url: str) -> None:
+    """Uzak sunucuya HTTP (şifresiz) bağlantı kullanılıyorsa uyarı ver."""
+    if url.startswith("http://") and not any(
+        host in url for host in ("localhost", "127.0.0.1", "::1", "[::1]")
+    ):
+        logger.warning(
+            "LLM backend HTTP üzerinden uzak sunucuya bağlanıyor: %s — "
+            "metin içindeki PII şifrelenmemiş olarak iletilecek. "
+            "Production'da HTTPS kullanın.",
+            url,
+        )
 
 
 def _httpx():
@@ -31,6 +47,7 @@ class OllamaBackend(BaseLLMBackend):
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
+        _warn_if_remote_http(self.base_url)
 
     def complete(self, prompt: str, *, timeout: int = 60) -> str:
         httpx = _httpx()

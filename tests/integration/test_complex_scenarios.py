@@ -293,7 +293,7 @@ class TestS09HashConsistency:
         # [EMAIL:xxxxxxxx] → 8 hex karakter
         assert v.replacement is not None
         hex_part = v.replacement.split(":")[1].rstrip("]")
-        assert len(hex_part) == 8
+        assert len(hex_part) == 16
 
 
 # ── S10: Salt değiştirme idempotentliği ─────────────────────────────────────

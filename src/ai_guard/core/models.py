@@ -57,19 +57,55 @@ class Violation:
 
 @dataclass
 class ScanResult:
-    """Tek bir ``guard.scan()`` çağrısının sonucu."""
+    """Tek bir ``guard.scan()`` çağrısının sonucu.
+
+    .. warning::
+        ``original_text`` ve ``violations[].original`` alanları ham PII içerir.
+        Bu nesneyi log'a, veritabanına veya API yanıtına yazarken yalnızca
+        ``sanitized_text`` kullanın. PII içermeyen bir dict için
+        :meth:`redacted` metodunu kullanın.
+    """
 
     original_text: str
-    """Değiştirilmemiş orijinal girdi."""
+    """Değiştirilmemiş orijinal girdi. **Ham PII içerir — dışarıya sızdırmayın.**"""
     sanitized_text: str
     """PII'ları maskelenmiş/raporlanmış çıktı metni."""
     violations: List[Violation] = field(default_factory=list)
-    """Tespit edilen tüm ihlallerin listesi."""
+    """Tespit edilen tüm ihlallerin listesi. ``original`` alanları ham PII içerir."""
 
     @property
     def is_clean(self) -> bool:
         """``True`` ise hiçbir PII tespit edilmedi."""
         return len(self.violations) == 0
+
+    def redacted(self) -> dict:
+        """PII içermeyen güvenli dict döndürür.
+
+        ``original_text`` ve ``violations[].original`` alanlarını dışarıda bırakır.
+        Log, API yanıtı veya veritabanı kaydı için bu metodu kullanın::
+
+            result = guard.scan(text)
+            log.info("scan result: %s", result.redacted())
+
+        Returns:
+            ``sanitized_text``, ``is_clean`` ve ihlal meta verilerini
+            (entity_type, start, end, action, replacement) içeren dict.
+            Ham PII değerleri dahil değildir.
+        """
+        return {
+            "is_clean":       self.is_clean,
+            "sanitized_text": self.sanitized_text,
+            "violations": [
+                {
+                    "entity_type": v.entity_type,
+                    "start":       v.start,
+                    "end":         v.end,
+                    "action":      v.action.value,
+                    "replacement": v.replacement,
+                }
+                for v in self.violations
+            ],
+        }
 
     def __repr__(self) -> str:
         return (

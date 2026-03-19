@@ -10,9 +10,8 @@ from ai_guard.utils.hashing import sha256_hash
 
 logger = logging.getLogger(__name__)
 
-# Güvenli input boyutu üst sınırı: 500 KB.
-# Bunun üzerindeki metinler Warning alır ve işleme devam edilir;
-# ancak integrasyon katmanında boyut sınırlaması önerilir.
+# Güvenli input boyutu üst sınırı.
+# Aşılırsa scan() ValueError fırlatır — regex engine'i kilitlemez.
 _MAX_TEXT_BYTES = 500_000
 
 
@@ -38,13 +37,13 @@ class DetectionEngine:
         """Tüm dedektörleri çalıştır, aksiyonları uygula ve sonucu döndür."""
         t_start = time.perf_counter()
 
-        # Büyük input uyarısı
-        if len(text.encode("utf-8", errors="replace")) > _MAX_TEXT_BYTES:
-            logger.warning(
-                "Input metni %d baytı aşıyor (%d bayt). "
-                "Büyük girdi performansı olumsuz etkileyebilir.",
-                _MAX_TEXT_BYTES,
-                len(text.encode("utf-8", errors="replace")),
+        # Hard input boyutu limiti — aşılırsa reddetm (DoS koruması)
+        byte_len = len(text.encode("utf-8", errors="replace"))
+        if byte_len > _MAX_TEXT_BYTES:
+            raise ValueError(
+                f"Input metni çok büyük: {byte_len:,} bayt "
+                f"(maksimum: {_MAX_TEXT_BYTES:,} bayt). "
+                "Metni daha küçük parçalara bölün."
             )
 
         # 1. Tüm dedektörlerden span'leri topla
@@ -75,7 +74,7 @@ class DetectionEngine:
 
             replacement: str | None = None
             if action == Action.HASH:
-                digest = sha256_hash(span.text, self.salt)[:8]
+                digest = sha256_hash(span.text, self.salt)[:16]
                 replacement = f"[{span.entity_type}:{digest}]"
                 adj_start = span.start + offset
                 adj_end = span.end + offset
