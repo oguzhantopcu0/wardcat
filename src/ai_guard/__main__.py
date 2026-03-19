@@ -55,7 +55,7 @@ def _build_parser() -> argparse.ArgumentParser:
     common.add_argument("--llm",         action="store_true",
                         help="LLM dedektörünü etkinleştir (Ollama veya OpenAI-compat)")
     common.add_argument("--llm-backend", default="ollama",
-                        choices=["ollama", "openai_compatible"],
+                        choices=["ollama", "openai_compatible", "transformers"],
                         metavar="BACKEND", help="LLM backend (varsayılan: ollama)")
     common.add_argument("--llm-model",   default="llama3.1:8b", metavar="MODEL",
                         help="LLM model adı (varsayılan: llama3.1:8b)")
@@ -85,7 +85,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # models list
     p_list = models_sub.add_parser("list", help="Mevcut modelleri listele")
     p_list.add_argument("--llm-backend", default="ollama",
-                        choices=["ollama", "openai_compatible"], metavar="BACKEND")
+                        choices=["ollama", "openai_compatible", "transformers"], metavar="BACKEND")
     p_list.add_argument("--llm-url", default="", metavar="URL")
     p_list.add_argument("--llm-api-key", default="", metavar="KEY")
     p_list.add_argument("--recommended", action="store_true",

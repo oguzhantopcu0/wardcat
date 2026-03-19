@@ -29,6 +29,7 @@ def _mock_ollama(available: list[str]):
     backend.is_model_available.side_effect = lambda m: m in available
     backend.pull_model.return_value        = None
     backend.complete.return_value          = "[]"
+    backend.complete_messages.return_value = "[]"
     return backend
 
 

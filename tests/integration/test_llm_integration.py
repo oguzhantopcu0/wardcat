@@ -21,6 +21,7 @@ from ai_guard.llm.backends.base import BaseLLMBackend
 def _mock_backend(response: str) -> BaseLLMBackend:
     b = MagicMock(spec=BaseLLMBackend)
     b.complete.return_value = response
+    b.complete_messages.return_value = response
     return b
 
 

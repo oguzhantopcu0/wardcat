@@ -19,7 +19,7 @@ from typing import List, Set
 
 from ai_guard.detectors.base import BaseDetector, DetectedSpan
 from ai_guard.llm.backends.base import BaseLLMBackend
-from ai_guard.llm.prompt import build_prompt
+from ai_guard.llm.prompt import build_messages
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +69,9 @@ class LLMDetector(BaseDetector):
         if not text.strip():
             return []
 
-        prompt = build_prompt(text, self.enabled_entities)
+        messages = build_messages(text, self.enabled_entities)
         try:
-            raw = self.backend.complete(prompt, timeout=self.timeout)
+            raw = self.backend.complete_messages(messages, timeout=self.timeout)
             entities = self._parse_llm_response(raw)
             spans = self._locate_spans(text, entities)
             logger.debug("LLM dedektörü: %d entity döndü, %d span konumlandı", len(entities), len(spans))

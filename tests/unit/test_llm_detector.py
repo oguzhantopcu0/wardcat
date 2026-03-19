@@ -21,6 +21,7 @@ from ai_guard.llm.prompt import build_prompt
 def _mock_backend(response: str) -> BaseLLMBackend:
     backend = MagicMock(spec=BaseLLMBackend)
     backend.complete.return_value = response
+    backend.complete_messages.return_value = response
     return backend
 
 
@@ -172,7 +173,7 @@ class TestErrorHandling:
     def test_connection_error_returns_empty_with_warning(self, caplog):
         import logging
         backend = MagicMock(spec=BaseLLMBackend)
-        backend.complete.side_effect = ConnectionError("Bağlantı reddedildi")
+        backend.complete_messages.side_effect = ConnectionError("Bağlantı reddedildi")
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
 
         with caplog.at_level(logging.WARNING, logger="ai_guard.detectors.llm_detector"):
@@ -184,7 +185,7 @@ class TestErrorHandling:
     def test_generic_exception_returns_empty_with_warning(self, caplog):
         import logging
         backend = MagicMock(spec=BaseLLMBackend)
-        backend.complete.side_effect = RuntimeError("Beklenmedik hata")
+        backend.complete_messages.side_effect = RuntimeError("Beklenmedik hata")
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
 
         with caplog.at_level(logging.WARNING, logger="ai_guard.detectors.llm_detector"):
@@ -198,15 +199,15 @@ class TestErrorHandling:
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
         det.detect("")
         det.detect("   ")
-        backend.complete.assert_not_called()
+        backend.complete_messages.assert_not_called()
 
     def test_timeout_passed_to_backend(self):
         backend = MagicMock(spec=BaseLLMBackend)
-        backend.complete.return_value = "[]"
+        backend.complete_messages.return_value = "[]"
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"}, timeout=120)
         det.detect("test")
-        backend.complete.assert_called_once()
-        _, kwargs = backend.complete.call_args
+        backend.complete_messages.assert_called_once()
+        _, kwargs = backend.complete_messages.call_args
         assert kwargs.get("timeout") == 120
 
 
@@ -231,9 +232,11 @@ class TestPromptBuilding:
 
     def test_backend_receives_built_prompt(self):
         backend = MagicMock(spec=BaseLLMBackend)
-        backend.complete.return_value = "[]"
+        backend.complete_messages.return_value = "[]"
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
         det.detect("a@b.com")
-        call_args = backend.complete.call_args[0][0]  # positional arg
-        assert "a@b.com" in call_args
-        assert "EMAIL"   in call_args
+        # complete_messages receives a list of dicts; check content inside them
+        messages = backend.complete_messages.call_args[0][0]
+        combined = " ".join(m["content"] for m in messages)
+        assert "a@b.com" in combined
+        assert "EMAIL"   in combined

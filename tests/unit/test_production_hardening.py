@@ -396,7 +396,7 @@ class TestLogging:
         from ai_guard.detectors.llm_detector import LLMDetector
         from unittest.mock import MagicMock
         backend = MagicMock()
-        backend.complete.side_effect = ConnectionError("bağlantı yok")
+        backend.complete_messages.side_effect = ConnectionError("bağlantı yok")
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
         with caplog.at_level(logging.WARNING, logger="ai_guard.detectors.llm_detector"):
             result = det.detect("test@example.com")

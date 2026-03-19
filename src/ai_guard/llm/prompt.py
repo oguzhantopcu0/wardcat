@@ -93,6 +93,31 @@ Text:
 JSON:"""
 
 
+def build_messages(text: str, entity_types: set[str]) -> list[dict]:
+    """Build system + user messages for chat-capable backends (Transformers, OpenAI chat).
+
+    Args:
+        text: The input text to scan for PII.
+        entity_types: Set of entity type names to detect.
+
+    Returns:
+        A list of ``{"role": ..., "content": ...}`` dicts suitable for
+        ``tokenizer.apply_chat_template()`` or the OpenAI messages API.
+    """
+    lines = []
+    for etype in sorted(entity_types):
+        desc = _ENTITY_DESCRIPTIONS.get(etype, f"sensitive data of type {etype}")
+        lines.append(f"  {etype}: {desc}")
+    entity_definitions = "\n".join(lines)
+
+    system = _SYSTEM_TEMPLATE.format(entity_definitions=entity_definitions)
+    user   = _USER_TEMPLATE.format(text=text)
+    return [
+        {"role": "system", "content": system},
+        {"role": "user",   "content": user},
+    ]
+
+
 def build_prompt(text: str, entity_types: set[str]) -> str:
     """Build the full system+user prompt for LLM PII detection.
 

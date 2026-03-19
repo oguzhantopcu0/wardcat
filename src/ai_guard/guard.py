@@ -63,12 +63,15 @@ class LLMGuard:
         use_ner: bool = True,
         spacy_model: str = "en_core_web_sm",
         use_llm: bool = False,
-        llm_backend: str = "ollama",               # "ollama" | "openai_compatible"
+        llm_backend: str = "ollama",               # "ollama" | "openai_compatible" | "transformers"
         llm_model: str = "llama3.2",
         llm_base_url: str = "http://localhost:11434",
         llm_api_key: str = "",
         llm_timeout: int = 60,
-        auto_pull: bool = False,  # Model mevcut değilse otomatik indir (Ollama)
+        auto_pull: bool = False,          # Ollama: model yoksa otomatik indir
+        llm_device_map: str = "auto",     # Transformers: GPU dağılımı
+        llm_load_in_8bit: bool = False,   # Transformers: 8-bit quantization
+        llm_load_in_4bit: bool = False,   # Transformers: 4-bit quantization
     ) -> None:
         self._config = load_config(config_path)
 
@@ -97,6 +100,12 @@ class LLMGuard:
             llm_cfg["timeout"] = llm_timeout
         if auto_pull:
             llm_cfg["auto_pull"] = True
+        if llm_device_map != "auto":
+            llm_cfg["device_map"] = llm_device_map
+        if llm_load_in_8bit:
+            llm_cfg["load_in_8bit"] = True
+        if llm_load_in_4bit:
+            llm_cfg["load_in_4bit"] = True
 
         # Salt uyarısı: hash aksiyonu var ama salt boşsa
         effective_salt = self._config.get("salt", "")
@@ -246,10 +255,18 @@ class LLMGuard:
         elif backend_name == "openai_compatible":
             from ai_guard.llm.backends.openai_compat import OpenAICompatBackend
             backend = OpenAICompatBackend(base_url=base_url, model=model, api_key=api_key)
+        elif backend_name == "transformers":
+            from ai_guard.llm.backends.transformers_backend import TransformersBackend
+            backend = TransformersBackend(
+                model=model,
+                device_map=llm_cfg.get("device_map", "auto"),
+                load_in_8bit=llm_cfg.get("load_in_8bit", False),
+                load_in_4bit=llm_cfg.get("load_in_4bit", False),
+            )
         else:
             raise ValueError(
                 f"Bilinmeyen LLM backend: {backend_name!r}. "
-                "Geçerli değerler: 'ollama', 'openai_compatible'"
+                "Geçerli değerler: 'ollama', 'openai_compatible', 'transformers'"
             )
 
         entity_cfg = llm_cfg.get("entities", {})
