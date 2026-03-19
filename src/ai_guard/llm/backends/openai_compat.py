@@ -7,15 +7,12 @@ from ai_guard.llm.backends.base import BaseLLMBackend, ProgressCallback
 logger = logging.getLogger(__name__)
 
 
-def _warn_if_remote_http(url: str) -> None:
-    """Uzak sunucuya HTTP (şifresiz) bağlantı kullanılıyorsa uyarı ver."""
-    if url.startswith("http://") and not any(
-        host in url for host in ("localhost", "127.0.0.1", "::1", "[::1]")
-    ):
+def _warn_if_http(url: str) -> None:
+    """HTTP (şifresiz) bağlantı kullanılıyorsa uyarı ver."""
+    if url.startswith("http://"):
         logger.warning(
-            "LLM backend HTTP üzerinden uzak sunucuya bağlanıyor: %s — "
-            "metin içindeki PII şifrelenmemiş olarak iletilecek. "
-            "Production'da HTTPS kullanın.",
+            "LLM backend HTTP kullanıyor: %s — PII şifrelenmemiş iletilecek. "
+            "Production'da HTTPS kullanın (örn. nginx/Caddy reverse proxy).",
             url,
         )
 
@@ -49,7 +46,7 @@ class OpenAICompatBackend(BaseLLMBackend):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-        _warn_if_remote_http(self.base_url)
+        _warn_if_http(self.base_url)
 
     def complete(self, prompt: str, *, timeout: int = 60) -> str:
         httpx = _httpx()
