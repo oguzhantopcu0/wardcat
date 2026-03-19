@@ -2,8 +2,7 @@
 
 **PII detection and anonymization for LLM inputs** — hybrid regex + NER + on-prem LLM engine.
 
-`ai-guard` scans text for personally identifiable information (PII) before it reaches an LLM, and either warns about or masks the sensitive data using salted SHA-256 hashes. It supports Turkish and English out of the box.
-
+`ai-guard` scans text for personally identifiable information (PII) before it reaches an LLM, and either warns about or replaces the sensitive data with salted SHA-256 hashes. It supports Turkish and English out of the box.
 
 ```python
 from ai_guard import LLMGuard
@@ -20,53 +19,44 @@ print(result.sanitized_text)
 # Name: Ali Veli, card: [CREDIT_CARD:ea782818], email: ali@example.com
 ```
 
-**Supported entity types:** `CREDIT_CARD`, `EMAIL`, `PHONE`, `IBAN`, `TC_ID`, `IP_ADDRESS`, `ADDRESS`, `POSTAL_CODE`, `PERSON` (NER), `ORG` (NER), `CUSTOM_SECRET` (LLM)
+---
 
-**Actions:** `warn` (keep text, report violation) · `hash` (replace with `[TYPE:8hex]` using SHA-256 + salt)
+## Features
 
-**Backends:** Regex (built-in) · SpaCy NER (optional) · Ollama / OpenAI-compatible / HuggingFace Transformers (optional LLM)
+- **Hybrid detection** — Regex + SpaCy NER + on-prem LLM (Ollama, OpenAI-compatible, HuggingFace Transformers)
+- **Two actions** — `warn` (keep text, report violation) and `hash` (replace with `[TYPE:8hex]` using SHA-256 + salt)
+- **Rainbow table protection** — user-defined salt for all hashes
+- **Two APIs** — method chaining (programmatic) and YAML (declarative)
+- **CLI** — `ai-guard scan`, `ai-guard batch`, `ai-guard models`
+- **Turkish support** — TC identity number, IBAN, postal codes, Turkish address patterns, Turkish SpaCy model
 
 ---
 
-*Turkish documentation follows / Türkçe dokümantasyon aşağıda*
+## Installation
 
----
-
-LLM girdilerindeki hassas verileri tespit eden ve anonimleştiren Python kütüphanesi.
-
-Regex tabanlı desen eşleştirme ile SpaCy NER'ı birleştiren hibrit bir tespit motoru sunar. Kullanıcı, hangi veri tipinin taranacağını ve her biri için uygulanacak aksiyonu (`warn` veya `hash`) hem Python API'si hem de YAML dosyası üzerinden yönetir.
-
----
-
-## Özellikler
-
-- **Hibrit tespit:** Regex (CC, IBAN, TC kimlik, telefon…) + SpaCy NER (kişi, kurum, adres)
-- **İki aksiyon:** `warn` (rapor et, metni koru) ve `hash` (SHA-256 + salt ile maskele)
-- **Rainbow table koruması:** Kullanıcı tanımlı salt ile tuzlama
-- **İki API:** Method zinciri (Programmatic) ve YAML (Declarative)
-- **CLI:** `python -m ai_guard scan/batch`
-- **Türkçe odaklı:** TC kimlik, IBAN, posta kodu, Türkçe adres desenleri, Türkçe SpaCy modeli desteği
-
----
-
-## Kurulum
+Clone and install with [uv](https://github.com/astral-sh/uv):
 
 ```bash
-# Bağımlılıkları kur
+git clone https://github.com/oguzhantopcu0/ai-guard.git
+cd ai-guard
 uv sync
+```
 
-# İngilizce SpaCy modeli
+To use SpaCy NER (PERSON, ORG, ADDRESS detection):
+
+```bash
+# English model
 uv pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 
-# Türkçe model (opsiyonel)
+# Turkish model (optional)
 # uv pip install <tr_core_news_sm wheel URL>
 ```
 
-NER kullanmadan yalnızca regex ile çalışmak için SpaCy modeli gerekmez.
+SpaCy is not required if you only need regex-based detection.
 
 ---
 
-## Hızlı Başlangıç
+## Quick Start
 
 ### Programmatic API
 
@@ -74,22 +64,22 @@ NER kullanmadan yalnızca regex ile çalışmak için SpaCy modeli gerekmez.
 from ai_guard import LLMGuard
 
 guard = (
-    LLMGuard(salt="gizli-tuz")
+    LLMGuard(salt="my-secret-salt")
     .configure_entity("CREDIT_CARD", enabled=True, action="hash")
     .configure_entity("EMAIL",       enabled=True, action="warn")
     .configure_entity("TC_ID",       enabled=True, action="hash")
 )
 
 result = guard.scan("""
-  Müşteri: Ali Veli, TC: 12345678901
-  Kart: 4532 0151 1283 0366
-  Mail: ali.veli@example.com
+  Customer: Ali Veli, TC: 12345678901
+  Card: 4532 0151 1283 0366
+  Email: ali.veli@example.com
 """)
 
 print(result.sanitized_text)
-# Müşteri: Ali Veli, TC: [TC_ID:86349f34]
-# Kart: [CREDIT_CARD:ea782818]
-# Mail: ali.veli@example.com   ← warn: metin korunur
+# Customer: Ali Veli, TC: [TC_ID:86349f34]
+# Card: [CREDIT_CARD:ea782818]
+# Email: ali.veli@example.com   ← warn: text is kept
 
 for v in result.violations:
     print(f"[{v.action.value}] {v.entity_type}: {v.original!r}")
@@ -109,7 +99,7 @@ result = guard.scan(text)
 
 ```yaml
 # config/my_policy.yaml
-salt: ""          # üretimde env değişkeninden oku
+salt: ""          # read from env in production
 spacy_model: "en_core_web_sm"
 use_ner: true
 
@@ -122,13 +112,13 @@ entities:
   ORG:         { enabled: false, action: warn }
 ```
 
-### Toplu Tarama
+### Batch Scanning
 
 ```python
 results = guard.scan_batch([
     "ali@example.com",
-    "Kart: 4111 1111 1111 1111",
-    "Temiz metin.",
+    "Card: 4111 1111 1111 1111",
+    "Clean text.",
 ])
 
 for r in results:
@@ -138,33 +128,60 @@ for r in results:
 # True  0
 ```
 
+### On-prem LLM (Ollama)
+
+```python
+guard = LLMGuard(
+    use_llm=True,
+    llm_model="llama3.1:8b",
+    llm_base_url="http://localhost:11434",
+)
+```
+
+### HuggingFace Transformers (GPU/CPU)
+
+```python
+guard = LLMGuard(
+    use_llm=True,
+    llm_backend="transformers",
+    llm_model="meta-llama/Llama-3.1-8B-Instruct",
+    llm_load_in_8bit=True,  # optional: reduce VRAM usage
+)
+```
+
 ---
 
 ## CLI
 
 ```bash
-# Tek metin — text formatı
-python -m ai_guard scan --text "TC: 12345678901 kart: 4111111111111111"
+# Scan a single text
+ai-guard scan --text "TC: 12345678901 card: 4111111111111111"
 
-# Dosyadan — JSON çıktısı
-python -m ai_guard scan --file girdi.txt --format json
+# Scan from file, JSON output
+ai-guard scan --file input.txt --format json
 
-# Salt ve NER kapalı
-python -m ai_guard scan --text "..." --salt "gizli-tuz" --no-ner
+# Disable NER
+ai-guard scan --text "..." --salt "my-salt" --no-ner
 
-# Türkçe SpaCy modeli
-python -m ai_guard scan --text "..." --model tr_core_news_sm
+# Turkish SpaCy model
+ai-guard scan --text "..." --model tr_core_news_sm
 
-# Toplu — her satır bağımsız metin
-python -m ai_guard batch --file satirlar.txt --format json
+# Batch — each line is scanned independently
+ai-guard batch --file lines.txt --format json
+
+# List available on-prem models
+ai-guard models list --recommended
+
+# Download a model via Ollama
+ai-guard models pull llama3.1:8b
 ```
 
-#### Örnek JSON çıktısı
+### Example JSON output
 
 ```json
 {
   "is_clean": false,
-  "sanitized_text": "kart: [CREDIT_CARD:c5a992a8]",
+  "sanitized_text": "card: [CREDIT_CARD:c5a992a8]",
   "violations": [
     {
       "entity_type": "CREDIT_CARD",
@@ -180,153 +197,152 @@ python -m ai_guard batch --file satirlar.txt --format json
 
 ---
 
-## Desteklenen Entity Tipleri
+## Supported Entity Types
 
-| Entity | Dedektör | Varsayılan Aksiyon | Açıklama |
+| Entity | Detector | Default Action | Description |
 |---|---|---|---|
-| `CREDIT_CARD` | Regex | `hash` | Visa, MC, Amex, Discover — bitişik ve boşluklu/çizgili format |
-| `EMAIL` | Regex | `warn` | RFC uyumlu e-posta adresleri |
-| `PHONE` | Regex | `warn` | Türk telefon numaraları (`0`, `+90`, `90` ön ekli) |
-| `IBAN` | Regex | `hash` | Uluslararası IBAN (büyük/küçük harf duyarsız) |
-| `IP_ADDRESS` | Regex | `warn` | IPv4 adresleri |
-| `TC_ID` | Regex | `hash` | 11 haneli TC kimlik numarası |
-| `ADDRESS` | Regex | `warn` | Türkçe adres desenleri (Cad., Sok., Mah., Blv.) |
-| `POSTAL_CODE` | Regex | `warn` | Türkiye posta kodları (01000–81999) |
-| `PERSON` | SpaCy NER | `hash` | Kişi adları |
-| `ORG` | SpaCy NER | `warn` | Kurumsal isimler |
+| `CREDIT_CARD` | Regex | `hash` | Visa, MC, Amex, Discover — with or without separators |
+| `EMAIL` | Regex | `warn` | RFC-compliant email addresses |
+| `PHONE` | Regex | `warn` | Turkish phone numbers (`0`, `+90`, `90` prefix) |
+| `IBAN` | Regex | `hash` | International IBAN (case-insensitive) |
+| `IP_ADDRESS` | Regex | `warn` | IPv4 addresses |
+| `TC_ID` | Regex | `hash` | Turkish national ID — 11 digits |
+| `ADDRESS` | Regex | `warn` | Turkish address patterns (Cad., Sok., Mah., Blv.) |
+| `POSTAL_CODE` | Regex | `warn` | Turkish postal codes (01000–81999) |
+| `PERSON` | SpaCy NER | `hash` | Person names |
+| `ORG` | SpaCy NER | `warn` | Organization names |
+| `CUSTOM_SECRET` | LLM | `hash` | Contextual secrets (passwords, API keys, tokens) |
 
 ---
 
-## Çıktı Yapısı
+## Output Structure
 
-`scan()` ve `scan_batch()` her metin için bir `ScanResult` döndürür:
+`scan()` and `scan_batch()` return a `ScanResult` per text:
 
 ```python
 @dataclass
 class ScanResult:
-    original_text:  str               # giriş metni
-    sanitized_text: str               # anonimleştirilmiş metin
-    violations:     List[Violation]   # bulunan ihlaller
-    is_clean:       bool              # violations boş mu?
+    original_text:  str               # unmodified input
+    sanitized_text: str               # anonymized output
+    violations:     List[Violation]   # all detected violations
+    is_clean:       bool              # True if no violations found
 
 @dataclass
 class Violation:
-    entity_type: str          # "CREDIT_CARD", "EMAIL", …
-    original:    str          # orijinal değer
-    start:       int          # orijinal metindeki başlangıç konumu
-    end:         int          # orijinal metindeki bitiş konumu
+    entity_type: str          # e.g. "CREDIT_CARD", "EMAIL"
+    original:    str          # raw value from input
+    start:       int          # start index in original text
+    end:         int          # end index in original text
     action:      Action       # Action.WARN | Action.HASH
-    replacement: str | None   # hash ise "[TIP:8hex]", warn ise None
+    replacement: str | None   # "[TYPE:8hex]" for hash, None for warn
 ```
 
 ---
 
-## Güvenlik
+## Security
 
-### Hash'leme
+### Hashing
 
-Hassas veriler SHA-256 ile hash'lenir; çıktı `[TIP:8hex]` formatında yerleştirilir:
+Sensitive values are replaced in the sanitized text using the format `[TYPE:8hex]`:
 
 ```
 4532 0151 1283 0366  →  [CREDIT_CARD:ea782818]
 12345678901          →  [TC_ID:86349f34]
 ```
 
-### Salt (Tuzlama)
+### Salt
 
-Rainbow table saldırılarını önlemek için salt desteği:
+Salt prevents rainbow table attacks. Set it via environment variable in production:
 
 ```python
-guard = LLMGuard(salt="proje-spesifik-tuz")
-# veya sonradan
-guard.set_salt("yeni-tuz")
+import os
+guard = LLMGuard(salt=os.environ["LLMGUARD_SALT"])
 ```
 
-> **Üretim notu:** Salt değerini kaynak koda veya config dosyasına yazmayın.
-> Ortam değişkeninden okuyun:
-> ```python
-> import os
-> guard = LLMGuard(salt=os.environ["LLMGUARD_SALT"])
-> ```
+> Never hardcode the salt in source code or config files.
 
 ---
 
-## Proje Yapısı
+## Environment Variables
+
+| Variable | Description |
+|---|---|
+| `LLMGUARD_SALT` | Hash salt |
+| `LLMGUARD_LLM_URL` | LLM service base URL |
+| `LLMGUARD_LLM_MODEL` | LLM model name |
+| `LLMGUARD_LLM_API_KEY` | API key for OpenAI-compatible backends |
+| `LLMGUARD_LLM_TIMEOUT` | LLM request timeout in seconds |
+| `LLMGUARD_SPACY_MODEL` | SpaCy model name |
+
+---
+
+## Project Structure
 
 ```
 ai-guard/
 ├── src/ai_guard/
-│   ├── guard.py            # LLMGuard — ana arayüz
-│   ├── __main__.py         # CLI giriş noktası
+│   ├── guard.py              # LLMGuard — main interface
+│   ├── __main__.py           # CLI entry point
 │   ├── core/
-│   │   ├── engine.py       # DetectionEngine — overlap çözümü, aksiyon uygulama
-│   │   └── models.py       # Action, Violation, ScanResult
+│   │   ├── engine.py         # DetectionEngine — overlap resolution, action application
+│   │   └── models.py         # Action, Violation, ScanResult
 │   ├── detectors/
-│   │   ├── base.py         # BaseDetector ABC
+│   │   ├── base.py           # BaseDetector ABC
 │   │   ├── regex_detector.py
-│   │   └── ner_detector.py # SpaCy NER (İngilizce + Türkçe model desteği)
+│   │   ├── ner_detector.py   # SpaCy NER (English + Turkish)
+│   │   └── llm_detector.py   # LLM-based detection
+│   ├── llm/
+│   │   ├── backends/         # ollama, openai_compat, transformers
+│   │   ├── model_catalog.py  # Supported model list
+│   │   └── prompt.py         # PII detection prompt builder
 │   ├── config/
-│   │   └── loader.py       # YAML yükleyici, deep-merge
+│   │   └── loader.py         # YAML loader, env var overrides
 │   └── utils/
-│       └── hashing.py      # SHA-256 + salt
+│       └── hashing.py        # SHA-256 + salt
 ├── tests/
-│   ├── unit/               # Bileşen düzeyi testler
-│   └── integration/        # Senaryo ve adversarial testler
+│   ├── unit/                 # Component-level tests
+│   └── integration/          # Scenario and adversarial tests
 ├── config/
-│   └── default.yaml        # Örnek politika dosyası
+│   └── default.yaml          # Example policy file
 └── pyproject.toml
 ```
 
 ---
 
-## Testler
+## Testing
 
 ```bash
-# Tüm testler
+# All tests
 uv run pytest
 
-# Yalnızca unit testler
+# Unit tests only
 uv run pytest tests/unit/
 
-# Yalnızca NER testleri (SpaCy modeli gerektirir)
+# NER tests (requires SpaCy model)
 uv run pytest -m ner
 
-# Kapsam raporu
+# Coverage report
 uv run pytest --cov=src/ai_guard --cov-report=term-missing
 ```
 
-**217 test geçiyor, 6 xfail** (belgelenmiş bilinen sınırlar).
-
 ---
 
-## Bilinen Sınırlar
+## Known Limitations
 
-| Durum | Açıklama |
+| Case | Description |
 |---|---|
-| `4111  1111  1111  1111` | Çift boşluk separator kart tespitini atlatır |
-| `4111.1111.1111.1111` | Nokta separator desteklenmez |
-| `TR...TR...` (bitişik) | Separator'suz arka arkaya iki IBAN ayrıştırılamaz |
-| Kiril homoglyph | `аli@test.com` (Kiril `а`) ASCII regex'ini atlatır |
-| 15 karakterlik IBAN lookalike | Regex minimum uzunluğunu karşılayan kısa diziler eşleşebilir |
+| `4111  1111  1111  1111` | Double-space separator bypasses card detection |
+| `4111.1111.1111.1111` | Dot separator not supported |
+| Adjacent IBANs | Two IBANs without separator cannot be parsed separately |
+| Cyrillic homoglyphs | `аli@test.com` (Cyrillic `а`) bypasses ASCII regex |
 
 ---
 
-## Türkçe Model Desteği
-
-```yaml
-# config/policy.yaml
-spacy_model: "tr_core_news_sm"
-```
-
-Türkçe SpaCy modeli `PER` → `PERSON`, `LOC` → `ADDRESS` olarak eşlenir. Model kurulumu için SpaCy'nin model sayfasını inceleyin.
-
----
-
-## Geliştirme
+## Development
 
 ```bash
 uv sync --dev
 uv run pytest
 ```
 
-Python 3.13+ gerektirir.
+Requires Python 3.11+.
