@@ -47,13 +47,38 @@ entities:
     enabled: true
     action: hash
 
-  ADDRESS:           # Regex: Türkçe adres desenleri (Cad., Sok., Mah. vb.)
+  ADDRESS:           # Regex: Turkish address patterns (Cad., Sok., Mah. etc.)
     enabled: true
     action: warn
 
-  POSTAL_CODE:       # Türkiye posta kodu (01000-81999)
+  POSTAL_CODE:       # Turkish postal code (01000-81999)
     enabled: true
     action: warn
+
+  # ── Global identity / technical ────────────────────────────
+  UUID:              # RFC 4122 UUID: 550e8400-e29b-41d4-a716-446655440000
+    enabled: true
+    action: warn
+
+  SSN:               # US Social Security Number: 123-45-6789
+    enabled: true
+    action: hash
+
+  MAC_ADDRESS:       # Network hardware address: 00:1A:2B:3C:4D:5E
+    enabled: true
+    action: warn
+
+  JWT:               # JSON Web Token (starts with eyJ)
+    enabled: true
+    action: hash
+
+  IPv6:              # IPv6 address: 2001:db8::1
+    enabled: true
+    action: warn
+
+  NIN:               # UK National Insurance Number: AB123456C
+    enabled: true
+    action: hash
 
   # ── SpaCy NER tabanlı ──────────────────────────────────────
   # Türkçe model için: spacy_model: "tr_core_news_sm"

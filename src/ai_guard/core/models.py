@@ -21,7 +21,8 @@ class Action(str, Enum):
 # Bu listeye olmayan bir tip configure edilirse Warning verilir.
 KNOWN_ENTITY_TYPES: frozenset[str] = frozenset({
     "PERSON", "ORG", "EMAIL", "PHONE", "CREDIT_CARD", "IBAN",
-    "TC_ID", "IP_ADDRESS", "ADDRESS", "POSTAL_CODE", "CUSTOM_SECRET",
+    "TC_ID", "IP_ADDRESS", "IPv6", "ADDRESS", "POSTAL_CODE", "CUSTOM_SECRET",
+    "UUID", "SSN", "MAC_ADDRESS", "JWT", "NIN",
 })
 
 

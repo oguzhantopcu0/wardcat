@@ -80,6 +80,55 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         r"|Apartmanı|Apt\.|Sitesi)",
         0,
     ),
+    # ── UUID ─────────────────────────────────────────────────────────
+    # RFC 4122 standard UUID: 8-4-4-4-12 hex digits
+    "UUID": (
+        r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
+        re.IGNORECASE,
+    ),
+    # ── SSN — US Social Security Number ──────────────────────────────
+    # Format: 123-45-6789 (dashes required to avoid false positives)
+    # Excludes invalid prefixes: 000, 666, 900-999
+    "SSN": (
+        r"\b(?!000|666|9\d{2})\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b",
+        0,
+    ),
+    # ── MAC Address ──────────────────────────────────────────────────
+    # Colon or dash separated: 00:1A:2B:3C:4D:5E or 00-1A-2B-3C-4D-5E
+    "MAC_ADDRESS": (
+        r"\b(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}\b",
+        0,
+    ),
+    # ── JWT — JSON Web Token ──────────────────────────────────────────
+    # Always starts with eyJ (base64url of '{"') and has two dots
+    "JWT": (
+        r"\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]*",
+        0,
+    ),
+    # ── IPv6 ─────────────────────────────────────────────────────────
+    # Full form and compressed forms (::). Alternatives cover all RFC 5952 cases.
+    "IPv6": (
+        r"(?<![:\w])"
+        r"(?:"
+        r"(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}"                       # full
+        r"|(?:[0-9a-fA-F]{1,4}:){1,7}:"                                    # trailing ::
+        r"|:(?::[0-9a-fA-F]{1,4}){1,7}"                                    # leading ::
+        r"|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}"                   # 1 gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}"         # 2 gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}"         # 3 gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}"         # 4 gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}"         # 5 gap
+        r")"
+        r"(?![:\w])",
+        0,
+    ),
+    # ── NIN — UK National Insurance Number ───────────────────────────
+    # Format: AB123456C — two prefix letters, 6 digits, one suffix A-D
+    # Invalid prefixes excluded: D, F, I, Q, U, V as first/second letter
+    "NIN": (
+        r"\b[A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D]\b",
+        re.IGNORECASE,
+    ),
 }
 
 _COMPILED: Dict[str, re.Pattern] = {

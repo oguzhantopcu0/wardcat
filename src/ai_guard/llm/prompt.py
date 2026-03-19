@@ -21,6 +21,12 @@ _ENTITY_DESCRIPTIONS: dict[str, str] = {
     "IP_ADDRESS":    "IPv4 address (e.g. '192.168.1.1')",
     "POSTAL_CODE":   "postal/ZIP code (e.g. '34100')",
     "ADDRESS":       "physical street address including street name and number (e.g. 'Atatürk Cad. No:5')",
+    "UUID":          "UUID / GUID identifier (e.g. '550e8400-e29b-41d4-a716-446655440000')",
+    "SSN":           "US Social Security Number — format: 3-2-4 digits with dashes (e.g. '123-45-6789')",
+    "MAC_ADDRESS":   "network hardware (MAC) address — colon or dash separated hex pairs (e.g. '00:1A:2B:3C:4D:5E')",
+    "JWT":           "JSON Web Token — three base64url segments separated by dots, starts with 'eyJ'",
+    "IPv6":          "IPv6 network address (e.g. '2001:db8::8a2e:0370:7334')",
+    "NIN":           "UK National Insurance Number — two letters, 6 digits, one letter A-D (e.g. 'AB123456C')",
     "CUSTOM_SECRET": (
         "contextual secret/credential signaled by a keyword prefix such as: "
         "şifre=, password=, pass=, pwd=, api_key=, api-key=, apikey=, token=, "

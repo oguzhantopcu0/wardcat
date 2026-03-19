@@ -48,6 +48,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # Regex tabanlı — adres
         "ADDRESS":      {"enabled": True,  "action": "warn"},
         "POSTAL_CODE":  {"enabled": True,  "action": "warn"},
+        # Regex tabanlı — global kimlik/teknik
+        "UUID":         {"enabled": True,  "action": "warn"},
+        "SSN":          {"enabled": True,  "action": "hash"},
+        "MAC_ADDRESS":  {"enabled": True,  "action": "warn"},
+        "JWT":          {"enabled": True,  "action": "hash"},
+        "IPv6":         {"enabled": True,  "action": "warn"},
+        "NIN":          {"enabled": True,  "action": "hash"},
         # SpaCy NER tabanlı
         "PERSON":       {"enabled": True,  "action": "hash"},
         "ORG":          {"enabled": False, "action": "warn"},

@@ -14,7 +14,11 @@ from ai_guard.detectors.regex_detector import RegexDetector
 logger = logging.getLogger(__name__)
 
 # Hangi entity'nin hangi dedektöre ait olduğunu merkezi tablo
-_REGEX_ENTITIES = {"CREDIT_CARD", "EMAIL", "PHONE", "IBAN", "IP_ADDRESS", "TC_ID", "ADDRESS", "POSTAL_CODE"}
+_REGEX_ENTITIES = {
+    "CREDIT_CARD", "EMAIL", "PHONE", "IBAN", "IP_ADDRESS", "IPv6",
+    "TC_ID", "ADDRESS", "POSTAL_CODE",
+    "UUID", "SSN", "MAC_ADDRESS", "JWT", "NIN",
+}
 _NER_ENTITIES   = {"PERSON", "ORG", "ADDRESS"}
 
 
