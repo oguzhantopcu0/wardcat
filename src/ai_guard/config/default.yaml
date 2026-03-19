@@ -1,0 +1,100 @@
+# ai-guard varsayılan politika dosyası
+#
+# LLM dedektörü hızlı başlangıç:
+#   1. Ollama kur: https://ollama.com
+#   2. Modeli indir: python -m ai_guard models pull llama3.2
+#   3. Bu dosyada llm_detector.enabled: true yap
+# Bu dosyayı kopyalayarak projenize özel politika oluşturabilirsiniz.
+#
+# Kullanım:
+#   from ai_guard import LLMGuard
+#   guard = LLMGuard(config_path="config/default.yaml")
+
+# Hash tuzlama değeri. Boş bırakılırsa salt kullanılmaz.
+# Üretim ortamında ortam değişkeninden okuyun, buraya yazmayın.
+salt: ""
+
+# SpaCy modelini değiştirmek için:
+# spacy_model: "tr_core_news_sm"   # Türkçe model
+spacy_model: "en_core_web_sm"
+
+# NER'ı tamamen kapatmak (yalnızca regex) için:
+use_ner: true
+
+entities:
+  # ── Regex tabanlı ──────────────────────────────────────────
+  CREDIT_CARD:
+    enabled: true
+    action: hash     # "warn" veya "hash"
+
+  EMAIL:
+    enabled: true
+    action: warn
+
+  PHONE:
+    enabled: true
+    action: warn
+
+  IBAN:
+    enabled: true
+    action: hash
+
+  IP_ADDRESS:
+    enabled: true
+    action: warn
+
+  TC_ID:             # Türkiye Cumhuriyeti Kimlik Numarası
+    enabled: true
+    action: hash
+
+  ADDRESS:           # Regex: Türkçe adres desenleri (Cad., Sok., Mah. vb.)
+    enabled: true
+    action: warn
+
+  POSTAL_CODE:       # Türkiye posta kodu (01000-81999)
+    enabled: true
+    action: warn
+
+  # ── SpaCy NER tabanlı ──────────────────────────────────────
+  # Türkçe model için: spacy_model: "tr_core_news_sm"
+  # Kurulum: uv pip install <tr model wheel URL>
+  PERSON:
+    enabled: true
+    action: hash
+
+  ORG:
+    enabled: false   # Kurumsal isimler, ihtiyaca göre açın
+    action: warn
+
+# ── On-Prem LLM Dedektörü ──────────────────────────────────────────────────
+# Regex ve NER'ın yanında üçüncü bir dedektör katmanı.
+# Bağlamsal PII ve kuruma özgü sırları yakalamak için idealdir.
+llm_detector:
+  enabled: false   # true yaparak etkinleştir
+
+  # Backend seçimi:
+  #   ollama          — yerel Ollama servisi (model indirme desteği)
+  #   openai_compatible — vLLM, LM Studio, LocalAI, LiteLLM
+  backend: ollama
+
+  model: llama3.2   # Önerilen: llama3.2, llama3.2:3b (hızlı), mistral
+  base_url: http://localhost:11434   # Ollama default
+  # base_url: http://10.0.0.5:11434  # Uzak Ollama sunucusu
+  # base_url: http://vllm-server:8000/v1  # vLLM için
+
+  api_key: ""    # OpenAI-compat için; çoğu on-prem boş bırakır
+  timeout: 60    # Saniye cinsinden LLM yanıt bekleme süresi
+
+  # LLM'e hangi entity tipleri için bakması istensin
+  # Regex/NER'ın yakalayamadığı bağlamsal verileri buraya ekleyin
+  entities:
+    CREDIT_CARD:   { enabled: true,  action: hash }
+    EMAIL:         { enabled: true,  action: warn }
+    PHONE:         { enabled: true,  action: warn }
+    PERSON:        { enabled: true,  action: hash }
+    ORG:           { enabled: false, action: warn }
+    ADDRESS:       { enabled: true,  action: warn }
+    IBAN:          { enabled: true,  action: hash }
+    TC_ID:         { enabled: true,  action: hash }
+    IP_ADDRESS:    { enabled: true,  action: warn }
+    CUSTOM_SECRET: { enabled: false, action: hash }  # kuruma özgü sırlar
