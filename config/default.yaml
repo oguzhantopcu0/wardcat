@@ -80,6 +80,18 @@ entities:
     enabled: true
     action: hash
 
+  UK_POSTAL_CODE:    # British postcode: SW1A 1AA, GU21 6TH
+    enabled: true
+    action: warn
+
+  US_ZIP_CODE:       # US ZIP+4: 10001-1234
+    enabled: true
+    action: warn
+
+  EU_NATIONAL_ID:    # Spanish DNI (12345678Z) / NIE (X1234567L)
+    enabled: true
+    action: hash
+
   # ── SpaCy NER tabanlı ──────────────────────────────────────
   # Türkçe model için: spacy_model: "tr_core_news_sm"
   # Kurulum: uv pip install <tr model wheel URL>
@@ -128,5 +140,9 @@ llm_detector:
     MAC_ADDRESS:   { enabled: true,  action: warn }
     JWT:           { enabled: true,  action: hash }
     POSTAL_CODE:   { enabled: true,  action: warn }
-    NIN:           { enabled: true,  action: hash }
-    CUSTOM_SECRET: { enabled: false, action: hash }  # context-specific secrets
+    NIN:            { enabled: true,  action: hash }
+    UK_POSTAL_CODE: { enabled: true,  action: warn }
+    US_ZIP_CODE:    { enabled: true,  action: warn }
+    EU_NATIONAL_ID: { enabled: true,  action: hash }
+    PASSPORT:       { enabled: true,  action: hash }
+    CUSTOM_SECRET:  { enabled: false, action: hash }  # context-specific secrets

@@ -34,10 +34,10 @@ from ai_guard.detectors.regex_detector import RegexDetector
 # ── __version__ ───────────────────────────────────────────────────────────────
 
 def test_version_exported():
+    import re
     assert __version__ is not None
-    parts = __version__.split(".")
-    assert len(parts) == 3
-    assert all(p.isdigit() for p in parts)
+    # PEP 440: X.Y.Z veya X.Y.ZaN / X.Y.ZbN / X.Y.ZrcN (alpha/beta/rc)
+    assert re.match(r"^\d+\.\d+\.\d+", __version__), f"Geçersiz versiyon: {__version__}"
 
 
 # ── ReDoS Koruması ────────────────────────────────────────────────────────────

@@ -28,6 +28,20 @@ _ENTITY_DESCRIPTIONS: dict[str, str] = {
     "JWT":           "JSON Web Token — three base64url segments separated by dots, starts with 'eyJ'",
     "IPv6":          "IPv6 network address (e.g. '2001:db8::8a2e:0370:7334')",
     "NIN":           "UK National Insurance Number — two letters, 6 digits, one letter A-D (e.g. 'AB123456C')",
+    "UK_POSTAL_CODE": "British postcode — area code + space + sector + unit letters (e.g. 'SW1A 1AA', 'EC1A 1BB', 'GU21 6TH')",
+    "US_ZIP_CODE":   "US ZIP+4 postal code — 5 digits, dash, 4 digits (e.g. '10001-1234', '90210-3456')",
+    "EU_NATIONAL_ID": (
+        "European national identity number — "
+        "Spanish DNI: 8 digits + check letter (e.g. '12345678Z'), "
+        "Spanish NIE: X/Y/Z + 7 digits + check letter (e.g. 'X1234567L'), "
+        "French INSEE: 15-digit social security number, "
+        "German Personalausweis or Steuer-ID"
+    ),
+    "PASSPORT":      (
+        "passport number of any country — typically 1-2 capital letters followed by 6-9 digits "
+        "(e.g. US: 'A12345678', UK: '123456789', German: 'C01X00T47', French: '06AB12345'). "
+        "Only extract when clearly labeled as a passport number."
+    ),
     "CUSTOM_SECRET": (
         "contextual secret/credential signaled by a keyword prefix such as: "
         "şifre=, password=, pass=, pwd=, api_key=, api-key=, apikey=, token=, "

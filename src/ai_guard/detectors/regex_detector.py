@@ -69,24 +69,71 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         0,
     ),
     # ── Adres ────────────────────────────────────────────────────────
-    # Türkçe adres: Mahallesi, Caddesi, Sokağı, vb. anahtar kelimeleriyle biter.
-    # Uluslararası adres: numara + isim + Street/Avenue/Road/vb. formatı.
-    # "No:" ve "Kat:" bağımsız terminatör olarak ÇIKARILDI: bu ifadeler
-    # "TC Kimlik No:", "Kart No:" gibi kalıplarla çakışıp TC_ID ve
-    # CREDIT_CARD detection'ını engelliyordu. Gerçek adreslerde No/Kat
-    # zaten Cad., Sok., Mah. gibi bir keyword'ün ardından gelir.
+    # Türkçe: Mahallesi, Caddesi, Sokağı, vb.
+    # İngilizce: numara + isim + sokak tipi (Street, Road, vb.)
+    # Fransızca: Rue, Allée, Impasse, Promenade, Place + isim
+    # İspanyolca: Calle, Avenida, Plaza, Paseo, Carrera + isim
+    # İtalyanca: Viale, Piazza, Corso, Vicolo, Largo + isim
+    # Hollandaca: compound sokak isimleri (straat, weg, gracht, vb.)
+    # Almanca: compound sokak isimleri (straße, gasse, weg, platz, vb.)
     "ADDRESS": (
         # Turkish address patterns
         r"(?:[A-ZÇĞİÖŞÜa-zçğışöşü0-9\.]+\s+){1,5}"
         r"(?:Mahallesi|Mah\.|Caddesi|Cad\.|Sokağı|Sokak|Sok\.|Bulvarı|Blv\."
         r"|Apartmanı|Apt\.|Sitesi)"
         r"|"
-        # International: street number + name + type keyword
-        # {2,25} — 40 çok geniş, false positive üretiyordu; \b ile kesin sınır
+        # English/international: number + name + street type keyword
         r"\b\d{1,5}[A-Za-z]?\s+[A-Za-z][A-Za-z\s\.]{2,25}"
         r"(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Boulevard|Blvd\.|Lane|Ln\."
         r"|Drive|Dr\.|Court|Ct\.|Way|Place|Pl\.|Square|Sq\.|Terrace|Terr\."
-        r"|Close|Crescent|Gardens?|Highway|Hwy\.)\b",
+        r"|Close|Crescent|Gardens?|Highway|Hwy\.)\b"
+        r"|"
+        # French: Rue/Allée/Impasse/Promenade/Place + optional article + proper name
+        r"\b(?:Rue|All[eé]e|Impasse|Promenade|Place)\s+"
+        r"(?:de\s+(?:la\s+|l'|les?\s+)?|du\s+|des\s+)?"
+        r"[A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ\-]{2,20}(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ\-]{2,15}){0,3}\b"
+        r"|"
+        # Spanish: Calle/Avenida/Plaza/Paseo/Carrera + optional article + name
+        r"\b(?:Calle|Avenida|Plaza|Paseo|Carrera)\s+"
+        r"(?:de\s+(?:la\s+|los?\s+|las?\s+)?|del\s+)?"
+        r"[A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\-]{2,20}(?:\s+[A-Za-záéíóúñ\-]{2,15}){0,3}\b"
+        r"|"
+        # Italian: Viale/Piazza/Corso/Vicolo/Largo + optional article + name
+        r"\b(?:Viale|Piazza|Corso|Vicolo|Largo)\s+"
+        r"(?:della?\s+|dello?\s+|dei?\s+|delle\s+|degli\s+)?"
+        r"[A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ\-]{2,20}(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ\-]{2,15}){0,3}\b"
+        r"|"
+        # Dutch compound streets: Kalverstraat, Keizersgracht, Prinsenlaan + optional number
+        r"\b[A-Z][a-z]{2,20}(?:straat|weg|laan|plein|gracht|kade|dijk)\b"
+        r"(?:\s+\d{1,5}[a-z]?)?"
+        r"|"
+        # German compound streets: Hauptstraße 15, Musterweg 7, Lindenallee
+        r"\b[A-ZÄÖÜ][a-zäöüß]{2,20}"
+        r"(?:stra[sß]e|gasse|weg|platz|ring|allee|damm|ufer|chaussee)\b"
+        r"(?:\s+\d{1,5}[a-z]?)?",
+        0,
+    ),
+    # ── İngiltere Posta Kodu ──────────────────────────────────────────
+    # Format: AA9A 9AA, AA99 9AA, AA9 9AA, A9 9AA, A9A 9AA, A99 9AA
+    # Örnekler: SW1A 1AA, EC1A 1BB, W1A 1HQ, M1 1AE, GU21 6TH
+    "UK_POSTAL_CODE": (
+        r"\b[A-Z]{1,2}[0-9][0-9A-Z]?\s?[0-9][A-Z]{2}\b",
+        re.IGNORECASE,
+    ),
+    # ── ABD ZIP+4 Posta Kodu ──────────────────────────────────────────
+    # Format: 12345-6789 (5 hane + tire + 4 hane)
+    # Salt 5 hane false positive riski yüksek, bu nedenle yalnızca ZIP+4.
+    "US_ZIP_CODE": (
+        r"\b\d{5}-\d{4}\b",
+        0,
+    ),
+    # ── AB Ulusal Kimlik Numarası ─────────────────────────────────────
+    # İspanya DNI: 8 rakam + kontrol harfi (TRWAGMYFPDXBNJZSQVHLCKE)
+    # İspanya NIE (yabancılar): X/Y/Z + 7 rakam + kontrol harfi
+    "EU_NATIONAL_ID": (
+        r"\b\d{8}[TRWAGMYFPDXBNJZSQVHLCKE]\b"
+        r"|"
+        r"\b[XYZ]\d{7}[TRWAGMYFPDXBNJZSQVHLCKE]\b",
         0,
     ),
     # ── Custom Secret ─────────────────────────────────────────────────
