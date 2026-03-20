@@ -137,7 +137,7 @@ class TestCLIModelsList:
 
     def test_recommended_flag_marks_recommended(self):
         output = self._run_cli("--recommended")
-        assert "önerilen" in output
+        assert "recommended" in output
 
     def test_recommended_flag_shows_vram(self):
         output = self._run_cli("--recommended")
@@ -226,7 +226,7 @@ class TestCLIModelsSetup:
     def test_setup_invalid_number_cancels(self):
         output, backend = self._run_setup("99")
         backend.pull_model.assert_not_called()
-        assert "Geçersiz" in output or "iptal" in output.lower()
+        assert "Invalid" in output or "cancelled" in output.lower()
 
     def test_setup_non_interactive_uses_default(self):
         """--non-interactive → kullanıcıya soru sormadan varsayılan model."""

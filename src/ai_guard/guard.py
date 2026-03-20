@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_spacy_model(model: str) -> str:
-    """İstenen SpaCy modeli kurulu değilse alternatif önerir.
+    """Suggests an alternative if the requested SpaCy model is not installed.
 
-    Davranış:
-    - Model kuruluysa olduğu gibi döndürür.
-    - Kurulu değilse mevcut SpaCy modellerini listeler ve uyarı verir.
-    - Hiç model bulunamazsa orijinal adı döndürür (NERDetector kendi hatasını üretir).
+    Behavior:
+    - Returns the model as-is if it is installed.
+    - If not installed, lists available SpaCy models and logs a warning.
+    - If no model is found at all, returns the original name (NERDetector will raise its own error).
     """
     try:
         import spacy
@@ -29,7 +29,7 @@ def _resolve_spacy_model(model: str) -> str:
     except OSError:
         pass
 
-    # Kurulu modelleri tara
+    # Scan installed models
     try:
         import spacy.util
         installed = list(spacy.util.get_installed_models())
@@ -38,25 +38,25 @@ def _resolve_spacy_model(model: str) -> str:
 
     if not installed:
         logger.warning(
-            "SpaCy modeli bulunamadı: %r. Kurulum: python -m spacy download %s",
+            "SpaCy model not found: %r. Install with: python -m spacy download %s",
             model, model,
         )
         return model
 
-    # Dil ön ekine göre eşleştir (tr_, en_, vb.)
+    # Match by language prefix (tr_, en_, etc.)
     lang_prefix = model.split("_")[0] + "_"
     same_lang = [m for m in installed if m.startswith(lang_prefix)]
     fallback = same_lang[0] if same_lang else installed[0]
 
     logger.warning(
-        "SpaCy modeli %r kurulu değil. Alternatif kullanılıyor: %r. "
-        "Doğru model için: python -m spacy download %s",
+        "SpaCy model %r is not installed. Using alternative: %r. "
+        "For the correct model: python -m spacy download %s",
         model, fallback, model,
     )
     return fallback
 
 
-# Hangi entity'nin hangi dedektöre ait olduğunu merkezi tablo
+# Central table mapping each entity to its detector
 _REGEX_ENTITIES = {
     "CREDIT_CARD", "EMAIL", "PHONE", "IBAN", "IP_ADDRESS", "IPv6",
     "TC_ID", "ADDRESS", "POSTAL_CODE",
@@ -68,9 +68,9 @@ _NER_ENTITIES   = {"PERSON", "ORG", "ADDRESS"}
 
 class LLMGuard:
     """
-    Kullanıcıya sunulan ana arayüz.
+    The main interface exposed to users.
 
-    Programmatic API (method zinciri)::
+    Programmatic API (method chaining)::
 
         guard = (
             LLMGuard(salt=os.environ["LLMGUARD_SALT"])
@@ -85,16 +85,16 @@ class LLMGuard:
         guard = LLMGuard(config_path="config/my_policy.yaml")
         result = guard.scan(text)
 
-    Ortam değişkenleri (YAML ve constructor argümanlarının üzerine yazar)::
+    Environment variables (override YAML and constructor arguments)::
 
-        LLMGUARD_SALT          — hash tuzlama değeri
-        LLMGUARD_LLM_URL       — Ollama/OpenAI-compat servis URL'i
-        LLMGUARD_LLM_MODEL     — LLM model adı
-        LLMGUARD_LLM_API_KEY   — API anahtarı (OpenAI-compat)
-        LLMGUARD_LLM_TIMEOUT   — LLM timeout (saniye, varsayılan 60)
-        LLMGUARD_SPACY_MODEL   — SpaCy model adı
+        LLMGUARD_SALT          — hash salt value
+        LLMGUARD_LLM_URL       — Ollama/OpenAI-compat service URL
+        LLMGUARD_LLM_MODEL     — LLM model name
+        LLMGUARD_LLM_API_KEY   — API key (OpenAI-compat)
+        LLMGUARD_LLM_TIMEOUT   — LLM timeout (seconds, default 60)
+        LLMGUARD_SPACY_MODEL   — SpaCy model name
 
-    LLM dedektörü (Ollama)::
+    LLM detector (Ollama)::
 
         guard = LLMGuard(
             use_llm=True,
@@ -116,15 +116,15 @@ class LLMGuard:
         llm_base_url: str = "http://localhost:11434",
         llm_api_key: str = "",
         llm_timeout: int = 60,
-        auto_pull: bool = False,          # Ollama: model yoksa otomatik indir
-        llm_device_map: str = "auto",     # Transformers: GPU dağılımı
+        auto_pull: bool = False,          # Ollama: automatically download if model is missing
+        llm_device_map: str = "auto",     # Transformers: GPU distribution
         llm_load_in_8bit: bool = False,   # Transformers: 8-bit quantization
         llm_load_in_4bit: bool = False,   # Transformers: 4-bit quantization
     ) -> None:
         self._config = load_config(config_path)
 
-        # Constructor argümanları YAML'ı override eder
-        # (ortam değişkenleri load_config içinde zaten uygulandı)
+        # Constructor arguments override YAML
+        # (environment variables were already applied inside load_config)
         if salt:
             self._config["salt"] = salt
         if not use_ner:
@@ -132,7 +132,7 @@ class LLMGuard:
         if spacy_model != "en_core_web_sm":
             self._config["spacy_model"] = spacy_model
 
-        # LLM dedektörü override'ları
+        # LLM detector overrides
         llm_cfg = self._config.setdefault("llm_detector", {})
         if use_llm:
             llm_cfg["enabled"] = True
@@ -155,7 +155,7 @@ class LLMGuard:
         if llm_load_in_4bit:
             llm_cfg["load_in_4bit"] = True
 
-        # Salt uyarısı: hash aksiyonu var ama salt boşsa
+        # Salt warning: hash action is configured but salt is empty
         effective_salt = self._config.get("salt", "")
         if not effective_salt:
             entity_cfg = self._config.get("entities", {})
@@ -166,30 +166,30 @@ class LLMGuard:
             )
             if has_hash:
                 logger.warning(
-                    "Hash salt boş — aynı PII değerleri her zaman aynı hash'i üretir. "
-                    "Production'da LLMGUARD_SALT ortam değişkenini ayarlayın."
+                    "Hash salt is empty — identical PII values will always produce the same hash. "
+                    "Set the LLMGUARD_SALT environment variable in production."
                 )
 
         self._rebuild()
 
     # ------------------------------------------------------------------
-    # Tarama
+    # Scanning
     # ------------------------------------------------------------------
 
     def scan(self, text: str) -> ScanResult:
-        """Metni tara ve ScanResult döndür."""
+        """Scan text and return a ScanResult."""
         return self._engine.scan(text)
 
     def scan_batch(self, texts: List[str]) -> List[ScanResult]:
         """
-        Birden fazla metni sırayla tara.
+        Scan multiple texts sequentially.
 
-        Her metin bağımsız olarak taranır; tek bir öğedeki hata
-        diğerlerini etkilemez — hata olan öğe için orijinal metin
-        dokunulmadan döndürülür.
+        Each text is scanned independently; an error in a single item does
+        not affect the others — the original text is returned untouched
+        for any item that fails.
 
-        :param texts: Taranacak metin listesi
-        :returns:     Her metne karşılık gelen ``ScanResult`` listesi
+        :param texts: List of texts to scan
+        :returns:     List of ``ScanResult`` corresponding to each text
         """
         results: List[ScanResult] = []
         for i, text in enumerate(texts):
@@ -197,7 +197,7 @@ class LLMGuard:
                 results.append(self._engine.scan(text))
             except Exception as exc:
                 logger.error(
-                    "scan_batch öğe %d başarısız oldu, orijinal metin döndürülüyor: %s",
+                    "scan_batch item %d failed, returning original text: %s",
                     i, exc, exc_info=True,
                 )
                 results.append(ScanResult(
@@ -218,16 +218,16 @@ class LLMGuard:
         action: str = "warn",
     ) -> "LLMGuard":
         """
-        Tek bir entity tipini yapılandır. Method chaining destekler.
+        Configure a single entity type. Supports method chaining.
 
-        :param entity_type: Örn. "EMAIL", "PERSON", "CREDIT_CARD"
-        :param enabled:     Bu entity'yi tarama motoruna dahil et
-        :param action:      "warn" veya "hash"
+        :param entity_type: E.g. "EMAIL", "PERSON", "CREDIT_CARD"
+        :param enabled:     Include this entity in the scan engine
+        :param action:      "warn" or "hash"
         """
         warn_unknown_entity(entity_type)
         if action not in ("warn", "hash"):
             raise ValueError(
-                f"Geçersiz action {action!r}. Geçerli değerler: 'warn', 'hash'"
+                f"Invalid action {action!r}. Valid values: 'warn', 'hash'"
             )
         self._config.setdefault("entities", {})[entity_type] = {
             "enabled": enabled,
@@ -237,21 +237,21 @@ class LLMGuard:
         return self
 
     def set_salt(self, salt: str) -> "LLMGuard":
-        """Hash tuzunu güncelle."""
+        """Update the hash salt."""
         self._config["salt"] = salt
         self._rebuild()
         return self
 
     # ------------------------------------------------------------------
-    # Dahili
+    # Internal
     # ------------------------------------------------------------------
 
     def _rebuild(self) -> None:
-        """Konfigürasyon değiştiğinde dedektörleri ve engine'i yeniden kur."""
+        """Rebuild detectors and engine when configuration changes."""
         self._detectors: List[BaseDetector] = []
         entity_cfg = self._config.get("entities", {})
 
-        # Regex dedektörü
+        # Regex detector
         enabled_regex = {
             e for e in _REGEX_ENTITIES
             if entity_cfg.get(e, {}).get("enabled", True)
@@ -259,7 +259,7 @@ class LLMGuard:
         if enabled_regex:
             self._detectors.append(RegexDetector(enabled_regex))
 
-        # SpaCy NER dedektörü (opsiyonel)
+        # SpaCy NER detector (optional)
         if self._config.get("use_ner", True):
             enabled_ner = {
                 e for e in _NER_ENTITIES
@@ -273,10 +273,10 @@ class LLMGuard:
                     self._detectors.append(NERDetector(enabled_ner, model))
                 except Exception as exc:
                     logger.warning(
-                        "SpaCy NER yüklenemedi, yalnızca regex kullanılıyor. Hata: %s", exc
+                        "SpaCy NER could not be loaded, using regex only. Error: %s", exc
                     )
 
-        # LLM dedektörü (opsiyonel)
+        # LLM detector (optional)
         llm_cfg = self._config.get("llm_detector", {})
         if llm_cfg.get("enabled", False):
             self._detectors.append(self._build_llm_detector(llm_cfg))
@@ -284,7 +284,7 @@ class LLMGuard:
         self._engine = DetectionEngine(self._config, self._detectors)
 
     def _build_llm_detector(self, llm_cfg: Dict[str, Any]) -> BaseDetector:
-        """LLM dedektörünü konfigürasyona göre kur."""
+        """Build the LLM detector according to configuration."""
         from ai_guard.detectors.llm_detector import LLMDetector
 
         backend_name = llm_cfg.get("backend", "ollama")
@@ -314,8 +314,8 @@ class LLMGuard:
             )
         else:
             raise ValueError(
-                f"Bilinmeyen LLM backend: {backend_name!r}. "
-                "Geçerli değerler: 'ollama', 'openai_compatible', 'transformers'"
+                f"Unknown LLM backend: {backend_name!r}. "
+                "Valid values: 'ollama', 'openai_compatible', 'transformers'"
             )
 
         entity_cfg = llm_cfg.get("entities", {})
@@ -324,7 +324,7 @@ class LLMGuard:
             if cfg.get("enabled", True)
         }
 
-        # LLM entity aksiyonlarını global engine config'e ekle (override yapmadan)
+        # Add LLM entity actions to global engine config (without overriding)
         for entity, cfg in entity_cfg.items():
             self._config["entities"].setdefault(entity, cfg)
 

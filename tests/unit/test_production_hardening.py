@@ -267,7 +267,7 @@ class TestEnvVarConfig:
 class TestConfigValidation:
     def test_invalid_action_raises(self):
         cfg = {"entities": {"EMAIL": {"enabled": True, "action": "invalid_action"}}}
-        with pytest.raises(ValueError, match="Geçersiz action"):
+        with pytest.raises(ValueError, match="Invalid action"):
             validate_config(cfg)
 
     def test_valid_actions_pass(self):
@@ -285,7 +285,7 @@ class TestConfigValidation:
             "entities": {},
             "llm_detector": {"backend": "unknown_backend", "timeout": 60},
         }
-        with pytest.raises(ValueError, match="Geçersiz LLM backend"):
+        with pytest.raises(ValueError, match="Invalid LLM backend"):
             validate_config(cfg)
 
     def test_invalid_timeout_raises(self):
@@ -293,12 +293,12 @@ class TestConfigValidation:
             "entities": {},
             "llm_detector": {"backend": "ollama", "timeout": -5},
         }
-        with pytest.raises(ValueError, match="Geçersiz.*timeout"):
+        with pytest.raises(ValueError, match="Invalid.*timeout"):
             validate_config(cfg)
 
     def test_configure_entity_invalid_action_raises(self):
         guard = LLMGuard(use_ner=False)
-        with pytest.raises(ValueError, match="Geçersiz action"):
+        with pytest.raises(ValueError, match="Invalid action"):
             guard.configure_entity("EMAIL", action="delete")
 
 
@@ -309,7 +309,7 @@ class TestEntityTypeWarning:
         with caplog.at_level(logging.WARNING, logger="ai_guard.core.models"):
             for et in KNOWN_ENTITY_TYPES:
                 warn_unknown_entity(et)
-        assert "Bilinmeyen" not in caplog.text
+        assert "Unknown" not in caplog.text
 
     def test_typo_logs_warning(self, caplog):
         with caplog.at_level(logging.WARNING, logger="ai_guard.core.models"):
@@ -390,7 +390,7 @@ class TestLogging:
         engine = DetectionEngine(cfg, [RegexDetector({"EMAIL"})])
         with caplog.at_level(logging.INFO, logger="ai_guard.core.engine"):
             engine.scan("test@example.com")
-        assert "scan tamamlandı" in caplog.text
+        assert "scan completed" in caplog.text
 
     def test_llm_detector_logs_on_connection_error(self, caplog):
         from ai_guard.detectors.llm_detector import LLMDetector
@@ -401,4 +401,4 @@ class TestLogging:
         with caplog.at_level(logging.WARNING, logger="ai_guard.detectors.llm_detector"):
             result = det.detect("test@example.com")
         assert result == []
-        assert "bağlantı hatası" in caplog.text.lower()
+        assert "connection error" in caplog.text.lower()

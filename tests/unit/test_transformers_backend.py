@@ -228,7 +228,7 @@ class TestOutputEdgeCases:
         mock_pipe = MagicMock(return_value=[])
 
         with patch.object(backend, "_get_pipeline", return_value=mock_pipe):
-            with pytest.raises(ValueError, match="boş çıktı"):
+            with pytest.raises(ValueError, match="empty output"):
                 backend.complete_messages([{"role": "user", "content": "hi"}])
 
     def test_raises_on_empty_chat_format_list(self):
@@ -237,7 +237,7 @@ class TestOutputEdgeCases:
         mock_pipe = MagicMock(return_value=[{"generated_text": []}])
 
         with patch.object(backend, "_get_pipeline", return_value=mock_pipe):
-            with pytest.raises(ValueError, match="boş"):
+            with pytest.raises(ValueError, match="empty"):
                 backend.complete_messages([{"role": "user", "content": "hi"}])
 
     def test_missing_content_key_returns_empty_string(self):
@@ -258,7 +258,7 @@ class TestOutputEdgeCases:
         mock_pipe = MagicMock(side_effect=RuntimeError("CUDA out of memory"))
 
         with patch.object(backend, "_get_pipeline", return_value=mock_pipe):
-            with pytest.raises(ValueError, match="inference başarısız"):
+            with pytest.raises(ValueError, match="inference failed"):
                 backend.complete_messages([{"role": "user", "content": "hi"}])
 
     def test_generated_text_as_plain_string(self):

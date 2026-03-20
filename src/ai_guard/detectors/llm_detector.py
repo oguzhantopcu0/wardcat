@@ -1,14 +1,14 @@
 """
-LLM tabanlı PII dedektörü.
+LLM-based PII detector.
 
-On-prem Llama (veya başka bir model) üzerinden PII tespiti yapar.
-Regex ve NER dedektörleriyle aynı BaseDetector arayüzünü uygular,
-dolayısıyla DetectionEngine tarafından şeffaf biçimde kullanılır.
+Performs PII detection using an on-prem Llama (or other model).
+Implements the same BaseDetector interface as the regex and NER detectors,
+so it is used transparently by the DetectionEngine.
 
-Tasarım kararı: LangChain / LangGraph KULLANILMADI.
-Gerekçe: Tek bir prompt → JSON parse → DetectedSpan dönüşümü için
-100+ geçişli bağımlılık gereksizdir. Doğrudan httpx ile yapılan
-implementasyon daha hafif, daha test edilebilir ve daha şeffaftır.
+Design decision: LangChain / LangGraph was NOT used.
+Rationale: A direct httpx implementation for a single prompt → JSON parse →
+DetectedSpan conversion is lighter, more testable, and more transparent
+than 100+ transitive dependencies.
 """
 from __future__ import annotations
 
@@ -23,15 +23,15 @@ from ai_guard.llm.prompt import build_messages
 
 logger = logging.getLogger(__name__)
 
-# LLM yanıtından JSON array'i çıkarmak için
+# For extracting the JSON array from the LLM response
 _JSON_RE = re.compile(r"\[.*?\]", re.DOTALL)
 
-# Yapısal entity'ler için minimum format doğrulama kalıpları.
-# LLM bu tipleri döndürürse içerik de formatla örtüşmeli;
-# örtüşmezse halüsinasyon olarak atılır.
+# Minimum format validation patterns for structural entities.
+# If the LLM returns these types, the content must also match the format;
+# otherwise the result is discarded as a hallucination.
 _STRUCTURAL_VALIDATORS: dict[str, re.Pattern] = {
-    # Kişi adı en az iki kelimeden oluşmalı (ad + soyad).
-    # Tek kelimeler (ör. "hedef", "müşteri") LLM halüsinasyonudur → atılır.
+    # Person name must consist of at least two words (first + last name).
+    # Single words (e.g. "target", "customer") are LLM hallucinations → discarded.
     "PERSON":     re.compile(r"^\S+(?:\s+\S+)+$"),
     "TC_ID":      re.compile(r"^\d{11}$"),
     "IBAN":       re.compile(r"^[A-Z]{2}\d{2}[A-Z0-9 ]{10,}$", re.IGNORECASE),
@@ -62,14 +62,14 @@ _STRUCTURAL_VALIDATORS: dict[str, re.Pattern] = {
 
 class LLMDetector(BaseDetector):
     """
-    On-prem LLM üzerinden PII tespiti.
+    PII detection via on-prem LLM.
 
-    Desteklenen backend'ler:
-    - OllamaBackend  — Ollama REST API (yerel model çalıştırma)
+    Supported backends:
+    - OllamaBackend  — Ollama REST API (local model execution)
     - OpenAICompatBackend — vLLM, LM Studio, LocalAI, LiteLLM
 
-    Hata durumunda (bağlantı kesilmesi, bozuk JSON vb.) WARNING loglar
-    ve boş liste döndürür — diğer dedektörlerin çalışması engellenmez.
+    On error (connection loss, malformed JSON, etc.) logs a WARNING
+    and returns an empty list — other detectors are not blocked.
     """
 
     def __init__(
@@ -92,50 +92,50 @@ class LLMDetector(BaseDetector):
             raw = self.backend.complete_messages(messages, timeout=self.timeout)
             entities = self._parse_llm_response(raw)
             spans = self._locate_spans(text, entities)
-            logger.debug("LLM dedektörü: %d entity döndü, %d span konumlandı", len(entities), len(spans))
+            logger.debug("LLM detector: %d entity/entities returned, %d span(s) located", len(entities), len(spans))
             return spans
         except ConnectionError as exc:
-            logger.warning("LLM dedektörü bağlantı hatası: %s", exc)
+            logger.warning("LLM detector connection error: %s", exc)
         except Exception as exc:
-            logger.warning("LLM dedektörü başarısız: %s", exc, exc_info=True)
+            logger.warning("LLM detector failed: %s", exc, exc_info=True)
         return []
 
     # ------------------------------------------------------------------
 
     def _parse_llm_response(self, raw: str) -> list[dict]:
         """
-        LLM yanıtından JSON array'i ayıklar.
+        Extract the JSON array from the LLM response.
 
-        Küçük modeller zaman zaman ```json ... ``` bloğu veya
-        açıklama metni ekler; regex ile temizlenir.
+        Small models sometimes add ```json ... ``` blocks or
+        explanatory text; these are cleaned up with regex.
         """
-        # Markdown kod bloğunu soy
+        # Strip markdown code block
         raw = re.sub(r"```(?:json)?", "", raw).strip()
 
         match = _JSON_RE.search(raw)
         if not match:
-            logger.debug("LLM yanıtında JSON array bulunamadı. Ham yanıt: %.200r", raw)
+            logger.debug("No JSON array found in LLM response. Raw response: %.200r", raw)
             return []
 
         try:
             data = json.loads(match.group())
             if not isinstance(data, list):
-                logger.debug("LLM JSON yanıtı list değil: %r", type(data).__name__)
+                logger.debug("LLM JSON response is not a list: %r", type(data).__name__)
                 return []
             return data
         except json.JSONDecodeError as exc:
-            logger.debug("LLM yanıtı JSON parse hatası: %s — ham: %.200r", exc, raw)
+            logger.debug("LLM response JSON parse error: %s — raw: %.200r", exc, raw)
             return []
 
     def _locate_spans(self, text: str, entities: list[dict]) -> List[DetectedSpan]:
         """
-        LLM'in döndürdüğü entity metinlerini orijinal metinde konumlandırır.
+        Locate the entity texts returned by the LLM within the original text.
 
-        LLM bazen metni hafifçe değiştirir (büyük/küçük harf vb.);
-        eşleşme bulunamazsa o entity atlanır.
+        The LLM sometimes slightly modifies text (case changes, etc.);
+        if no match is found, that entity is skipped.
         """
         spans: List[DetectedSpan] = []
-        seen: set[tuple[int, int]] = set()   # tekrar konum kontrolü
+        seen: set[tuple[int, int]] = set()   # duplicate position check
 
         for item in entities:
             entity_type = str(item.get("type", "")).upper().strip()
@@ -144,17 +144,17 @@ class LLMDetector(BaseDetector):
             if not entity_text or entity_type not in self.enabled_entities:
                 continue
 
-            # Yapısal entity'ler için format doğrulaması:
-            # LLM yanlış içerik atadıysa (halüsinasyon) sessizce atla.
+            # Format validation for structural entities:
+            # Silently skip if the LLM assigned wrong content (hallucination).
             validator = _STRUCTURAL_VALIDATORS.get(entity_type)
             if validator and not validator.search(entity_text):
                 logger.debug(
-                    "Halüsinasyon filtresi: %s %r format doğrulamasından geçemedi",
+                    "Hallucination filter: %s %r failed format validation",
                     entity_type, entity_text,
                 )
                 continue
 
-            # Orijinal metinde tüm geçişleri bul
+            # Find all occurrences in the original text
             start = 0
             while True:
                 pos = text.find(entity_text, start)

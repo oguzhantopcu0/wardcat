@@ -8,11 +8,11 @@ logger = logging.getLogger(__name__)
 
 
 def _warn_if_http(url: str) -> None:
-    """HTTP (şifresiz) bağlantı kullanılıyorsa uyarı ver."""
+    """Warn if an unencrypted HTTP connection is being used."""
     if url.startswith("http://"):
         logger.warning(
-            "LLM backend HTTP kullanıyor: %s — PII şifrelenmemiş iletilecek. "
-            "Production'da HTTPS kullanın (örn. nginx/Caddy reverse proxy).",
+            "LLM backend is using HTTP: %s — PII will be transmitted unencrypted. "
+            "Use HTTPS in production (e.g. nginx/Caddy reverse proxy).",
             url,
         )
 
@@ -23,18 +23,18 @@ def _httpx():
         return httpx
     except ImportError:
         raise ImportError(
-            "LLM dedektörü için 'httpx' gerekli. "
-            "Kurmak için: uv add 'ai-guard[llm]'"
+            "'httpx' is required for the LLM detector. "
+            "Install with: uv add 'ai-guard[llm]'"
         )
 
 
 class OpenAICompatBackend(BaseLLMBackend):
     """
-    OpenAI uyumlu REST API backend'i.
+    OpenAI-compatible REST API backend.
 
-    vLLM, LM Studio, LocalAI, LiteLLM gibi servisleri destekler.
-    Bu backend'lerde model indirme API aracılığıyla yapılamaz;
-    sunucu tarafında yönetilmesi gerekir.
+    Supports services like vLLM, LM Studio, LocalAI, and LiteLLM.
+    Model downloading is not available via the API for these backends;
+    it must be managed server-side.
     """
 
     def __init__(
@@ -65,7 +65,7 @@ class OpenAICompatBackend(BaseLLMBackend):
             return response.json()["choices"][0]["message"]["content"]
         except httpx.ConnectError:
             raise ConnectionError(
-                f"LLM servisine bağlanılamadı: {self.base_url}"
+                f"Could not connect to LLM service: {self.base_url}"
             )
 
     def list_models(self) -> list[str]:
@@ -79,7 +79,7 @@ class OpenAICompatBackend(BaseLLMBackend):
             response.raise_for_status()
             return [m["id"] for m in response.json().get("data", [])]
         except httpx.ConnectError:
-            raise ConnectionError(f"LLM servisine bağlanılamadı: {self.base_url}")
+            raise ConnectionError(f"Could not connect to LLM service: {self.base_url}")
 
     def pull_model(
         self,
@@ -88,6 +88,6 @@ class OpenAICompatBackend(BaseLLMBackend):
         on_progress: ProgressCallback | None = None,
     ) -> None:
         raise NotImplementedError(
-            "OpenAI-uyumlu backend'de model indirme desteklenmez. "
-            "Modeli sunucu tarafında (vLLM, LM Studio vb.) yönetin."
+            "Model downloading is not supported in the OpenAI-compatible backend. "
+            "Manage the model server-side (vLLM, LM Studio, etc.)."
         )

@@ -1,5 +1,5 @@
 """
-Model yönetimi: indirme, listeleme, kullanılabilirlik kontrolü.
+Model management: downloading, listing, availability checking.
 """
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ from ai_guard.llm.backends.base import BaseLLMBackend, PullProgress
 
 class ModelManager:
     """
-    On-prem Llama model yöneticisi.
+    On-prem Llama model manager.
 
-    Örnek::
+    Example::
 
         from ai_guard.llm.backends.ollama import OllamaBackend
         from ai_guard.llm.model_manager import ModelManager
@@ -26,35 +26,35 @@ class ModelManager:
         self.backend = backend
 
     def list(self) -> list[str]:
-        """Serviste mevcut modelleri listele."""
+        """List models available in the service."""
         return self.backend.list_models()
 
     def is_available(self, model: str) -> bool:
-        """Model serviste kullanıma hazır mı?"""
+        """Is the model ready to use in the service?"""
         return self.backend.is_model_available(model)
 
     def ensure_available(self, model: str, *, verbose: bool = True) -> bool:
         """
-        Model mevcut değilse indir.
+        Download the model if it is not available.
 
-        :param model:   Model adı, örn. "llama3.1:8b"
-        :param verbose: İlerlemeyi ve bildirimleri terminale yaz
-        :returns:       True — model hazır; False — indirme iptal edildi veya hata
-        :raises NotImplementedError: Backend model indirmeyi desteklemiyorsa
+        :param model:   Model name, e.g. "llama3.1:8b"
+        :param verbose: Print progress and notifications to the terminal
+        :returns:       True — model is ready; False — download cancelled or error
+        :raises NotImplementedError: If the backend does not support model downloading
         """
         if self.is_available(model):
             if verbose:
-                print(f"  ✓ Model zaten mevcut: {model}")
+                print(f"  ✓ Model already available: {model}")
             return True
 
         if verbose:
-            print(f"  Model bulunamadı: {model}")
+            print(f"  Model not found: {model}")
             try:
-                answer = input(f"  İndirilsin mi? (~GB düzeyinde) [e/H]: ").strip().lower()
+                answer = input(f"  Download it? (~GB in size) [y/N]: ").strip().lower()
             except (EOFError, KeyboardInterrupt):
                 answer = ""
             if answer not in ("e", "evet", "y", "yes"):
-                print("  İndirme iptal edildi.")
+                print("  Download cancelled.")
                 return False
 
         self.pull(model, verbose=verbose)
@@ -62,13 +62,13 @@ class ModelManager:
 
     def pull(self, model: str, *, verbose: bool = True) -> None:
         """
-        Modeli indir.
+        Download a model.
 
-        :param model:   Model adı, örn. "llama3.2" veya "llama3.2:3b"
-        :param verbose: İlerlemeyi terminale yaz
+        :param model:   Model name, e.g. "llama3.2" or "llama3.2:3b"
+        :param verbose: Print progress to the terminal
         """
         if verbose:
-            print(f"Model indiriliyor: {model}")
+            print(f"Downloading model: {model}")
 
         def _on_progress(p: PullProgress) -> None:
             if not verbose:
@@ -84,4 +84,4 @@ class ModelManager:
         self.backend.pull_model(model, on_progress=_on_progress)
 
         if verbose:
-            print(f"\r  Model hazır: {model}{' ' * 40}")
+            print(f"\r  Model ready: {model}{' ' * 40}")

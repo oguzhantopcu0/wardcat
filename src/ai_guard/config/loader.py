@@ -9,22 +9,22 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-# Kütüphane içi varsayılan konfigürasyon.
-# YAML'dan gelen değerler bunların üzerine yazar (deep-merge).
-# Ortam değişkenleri (LLMGUARD_*) her şeyin üzerine yazar.
+# Library-internal default configuration.
+# Values from YAML override these (deep-merge).
+# Environment variables (LLMGUARD_*) override everything.
 DEFAULT_CONFIG: Dict[str, Any] = {
     "salt": "",
     "spacy_model": "en_core_web_sm",
     "use_ner": True,
-    # ── LLM dedektörü konfigürasyonu ────────────────────────────────────
+    # ── LLM detector configuration ────────────────────────────────────────
     "llm_detector": {
         "enabled":  False,
         "backend":  "ollama",                   # "ollama" | "openai_compatible"
         "model":    "llama3.2",
-        "base_url": "http://localhost:11434",   # Ollama default; openai_compat için /v1 ekleyin
-        "api_key":  "",                         # openai_compat için; çoğu on-prem boş
+        "base_url": "http://localhost:11434",   # Ollama default; add /v1 for openai_compat
+        "api_key":  "",                         # for openai_compat; empty for most on-prem
         "timeout":  60,
-        "entities": {                           # LLM'e hangi tipler sorulsun
+        "entities": {                           # which types to query the LLM for
             "CREDIT_CARD":  {"enabled": True,  "action": "hash"},
             "EMAIL":        {"enabled": True,  "action": "warn"},
             "PHONE":        {"enabled": True,  "action": "warn"},
@@ -45,30 +45,30 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         },
     },
     "entities": {
-        # Regex tabanlı
+        # Regex-based
         "CREDIT_CARD": {"enabled": True,  "action": "hash"},
         "EMAIL":        {"enabled": True,  "action": "warn"},
         "PHONE":        {"enabled": True,  "action": "warn"},
         "IBAN":         {"enabled": True,  "action": "hash"},
         "IP_ADDRESS":   {"enabled": True,  "action": "warn"},
         "TC_ID":        {"enabled": True,  "action": "hash"},
-        # Regex tabanlı — adres
+        # Regex-based — address
         "ADDRESS":      {"enabled": True,  "action": "warn"},
         "POSTAL_CODE":  {"enabled": True,  "action": "warn"},
-        # Regex tabanlı — global kimlik/teknik
+        # Regex-based — global identity/technical
         "UUID":         {"enabled": True,  "action": "warn"},
         "SSN":          {"enabled": True,  "action": "hash"},
         "MAC_ADDRESS":  {"enabled": True,  "action": "warn"},
         "JWT":          {"enabled": True,  "action": "hash"},
         "IPv6":         {"enabled": True,  "action": "warn"},
         "NIN":          {"enabled": True,  "action": "hash"},
-        # SpaCy NER tabanlı
+        # SpaCy NER-based
         "PERSON":       {"enabled": True,  "action": "hash"},
         "ORG":          {"enabled": False, "action": "warn"},
     },
 }
 
-# Desteklenen ortam değişkenleri
+# Supported environment variables
 _ENV_VARS = {
     "LLMGUARD_SALT":          ("salt",),
     "LLMGUARD_SPACY_MODEL":   ("spacy_model",),
@@ -78,37 +78,37 @@ _ENV_VARS = {
     "LLMGUARD_LLM_TIMEOUT":   ("llm_detector", "timeout"),
 }
 
-# Geçerli action değerleri
+# Valid action values
 _VALID_ACTIONS = {"warn", "hash"}
-# Geçerli backend değerleri
+# Valid backend values
 _VALID_BACKENDS = {"ollama", "openai_compatible", "transformers"}
 
 
 def load_config(path: Optional[str | Path] = None) -> Dict[str, Any]:
     """
-    Konfigürasyonu yükle ve ortam değişkenlerini uygula.
+    Load configuration and apply environment variables.
 
-    Öncelik sırası (yüksekten düşüğe):
-    1. Ortam değişkenleri (LLMGUARD_*)
-    2. YAML dosyası (path verilmişse)
+    Priority order (highest to lowest):
+    1. Environment variables (LLMGUARD_*)
+    2. YAML file (if path is provided)
     3. DEFAULT_CONFIG
 
-    ``path`` olarak ``"default"`` verilirse paketle birlikte gelen
-    ``ai_guard/config/default.yaml`` kullanılır.
+    If ``"default"`` is passed as ``path``, the bundled
+    ``ai_guard/config/default.yaml`` file is used.
 
-    Sonuç validate edilir; hata varsa ValueError fırlatır.
+    The result is validated; raises ValueError if there are errors.
     """
     config = _deep_copy(DEFAULT_CONFIG)
     if path is not None:
         if str(path) == "default":
-            # Paketten gelen varsayılan şablonu yükle
+            # Load the default template bundled with the package
             from importlib.resources import files
             yaml_text = files("ai_guard.config").joinpath("default.yaml").read_text(encoding="utf-8")
             user_config: Dict[str, Any] = yaml.safe_load(yaml_text) or {}
         else:
             file_path = Path(path)
             if not file_path.exists():
-                raise FileNotFoundError(f"Config dosyası bulunamadı: {file_path}")
+                raise FileNotFoundError(f"Config file not found: {file_path}")
             with file_path.open("r", encoding="utf-8") as fh:
                 user_config = yaml.safe_load(fh) or {}
         config = _deep_merge(config, user_config)
@@ -120,69 +120,69 @@ def load_config(path: Optional[str | Path] = None) -> Dict[str, Any]:
 
 def validate_config(config: Dict[str, Any]) -> None:
     """
-    Konfigürasyonu doğrula. Geçersiz değer varsa ValueError fırlatır.
+    Validate the configuration. Raises ValueError if any value is invalid.
     """
     entities = config.get("entities", {})
     for entity_name, entity_cfg in entities.items():
         if not isinstance(entity_cfg, dict):
             raise ValueError(
-                f"Geçersiz entity konfigürasyonu '{entity_name}': dict bekleniyor, "
-                f"{type(entity_cfg).__name__} geldi."
+                f"Invalid entity configuration '{entity_name}': expected dict, "
+                f"got {type(entity_cfg).__name__}."
             )
         action = entity_cfg.get("action", "warn")
         if action not in _VALID_ACTIONS:
             raise ValueError(
-                f"Geçersiz action '{action}' (entity: {entity_name}). "
-                f"Geçerli değerler: {sorted(_VALID_ACTIONS)}"
+                f"Invalid action '{action}' (entity: {entity_name}). "
+                f"Valid values: {sorted(_VALID_ACTIONS)}"
             )
 
     llm_cfg = config.get("llm_detector", {})
     backend = llm_cfg.get("backend", "ollama")
     if backend not in _VALID_BACKENDS:
         raise ValueError(
-            f"Geçersiz LLM backend '{backend}'. "
-            f"Geçerli değerler: {sorted(_VALID_BACKENDS)}"
+            f"Invalid LLM backend '{backend}'. "
+            f"Valid values: {sorted(_VALID_BACKENDS)}"
         )
 
     timeout = llm_cfg.get("timeout", 60)
     if not isinstance(timeout, (int, float)) or timeout <= 0:
-        raise ValueError(f"Geçersiz llm_detector.timeout: {timeout!r} (pozitif sayı olmalı)")
+        raise ValueError(f"Invalid llm_detector.timeout: {timeout!r} (must be a positive number)")
 
 
 # ---------------------------------------------------------------------------
-# Yardımcı fonksiyonlar
+# Helper functions
 # ---------------------------------------------------------------------------
 
 def _apply_env_overrides(config: Dict[str, Any]) -> None:
     """
-    LLMGUARD_* ortam değişkenlerini config'e uygular.
-    Ortam değişkeni varsa her zaman YAML/default değerinin üzerine yazar.
+    Apply LLMGUARD_* environment variables to the config.
+    When an environment variable is present, it always overrides the YAML/default value.
     """
     for env_var, key_path in _ENV_VARS.items():
         value = os.environ.get(env_var)
         if value is None:
             continue
 
-        # timeout için int dönüşümü
+        # Integer conversion for timeout
         if key_path == ("llm_detector", "timeout"):
             try:
                 value = int(value)
             except ValueError:
                 logger.warning(
-                    "LLMGUARD_LLM_TIMEOUT geçersiz değer %r — yok sayıldı.", value
+                    "LLMGUARD_LLM_TIMEOUT has invalid value %r — ignored.", value
                 )
                 continue
 
-        # Nested key path'i takip et
+        # Follow nested key path
         target = config
         for key in key_path[:-1]:
             target = target.setdefault(key, {})
         target[key_path[-1]] = value
-        logger.debug("Ortam değişkeninden okundu: %s → %s", env_var, key_path)
+        logger.debug("Read from environment variable: %s → %s", env_var, key_path)
 
 
 def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
-    """override, base üzerine recursive olarak uygulanır."""
+    """Recursively applies override on top of base."""
     result = base.copy()
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
@@ -193,7 +193,7 @@ def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any
 
 
 def _deep_copy(obj: Any) -> Any:
-    """stdlib copy.deepcopy yerine sade bir recursive kopya."""
+    """A simple recursive copy instead of stdlib copy.deepcopy."""
     if isinstance(obj, dict):
         return {k: _deep_copy(v) for k, v in obj.items()}
     if isinstance(obj, list):

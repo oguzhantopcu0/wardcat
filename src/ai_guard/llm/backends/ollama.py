@@ -9,15 +9,16 @@ logger = logging.getLogger(__name__)
 
 
 def _warn_if_http(url: str) -> None:
-    """HTTP (şifresiz) bağlantı kullanılıyorsa uyarı ver.
+    """Warn if an unencrypted HTTP connection is being used.
 
-    Localhost dahil tüm HTTP endpoint'leri flaglenir — iç ağ trafiği de
-    dinlenebilir. Production'da Ollama'yı HTTPS proxy (nginx, Caddy) arkasına alın.
+    All HTTP endpoints are flagged, including localhost — internal network
+    traffic can also be intercepted. In production, put Ollama behind an
+    HTTPS proxy (nginx, Caddy).
     """
     if url.startswith("http://"):
         logger.warning(
-            "LLM backend HTTP kullanıyor: %s — PII şifrelenmemiş iletilecek. "
-            "Production'da HTTPS kullanın (örn. nginx/Caddy reverse proxy).",
+            "LLM backend is using HTTP: %s — PII will be transmitted unencrypted. "
+            "Use HTTPS in production (e.g. nginx/Caddy reverse proxy).",
             url,
         )
 
@@ -28,17 +29,17 @@ def _httpx():
         return httpx
     except ImportError:
         raise ImportError(
-            "LLM dedektörü için 'httpx' gerekli. "
-            "Kurmak için: uv add 'ai-guard[llm]'"
+            "'httpx' is required for the LLM detector. "
+            "Install with: uv add 'ai-guard[llm]'"
         )
 
 
 class OllamaBackend(BaseLLMBackend):
     """
-    Ollama REST API backend'i.
+    Ollama REST API backend.
 
-    Varsayılan: http://localhost:11434
-    Ollama, modeli yerel olarak çalıştırır ve indirme yönetimi sağlar.
+    Default: http://localhost:11434
+    Ollama runs models locally and provides download management.
     """
 
     def __init__(
@@ -59,7 +60,7 @@ class OllamaBackend(BaseLLMBackend):
                     "model":  self.model,
                     "prompt": prompt,
                     "stream": False,
-                    "options": {"temperature": 0},  # deterministik çıktı
+                    "options": {"temperature": 0},  # deterministic output
                 },
                 timeout=timeout,
             )
@@ -67,8 +68,8 @@ class OllamaBackend(BaseLLMBackend):
             return response.json()["response"]
         except httpx.ConnectError:
             raise ConnectionError(
-                f"Ollama servisine bağlanılamadı: {self.base_url}\n"
-                "Servis çalışıyor mu? Kontrol: ollama serve"
+                f"Could not connect to Ollama service: {self.base_url}\n"
+                "Is the service running? Check: ollama serve"
             )
 
     def list_models(self) -> list[str]:
@@ -78,7 +79,7 @@ class OllamaBackend(BaseLLMBackend):
             response.raise_for_status()
             return [m["name"] for m in response.json().get("models", [])]
         except httpx.ConnectError:
-            raise ConnectionError(f"Ollama servisine bağlanılamadı: {self.base_url}")
+            raise ConnectionError(f"Could not connect to Ollama service: {self.base_url}")
 
     def pull_model(
         self,
@@ -87,8 +88,8 @@ class OllamaBackend(BaseLLMBackend):
         on_progress: ProgressCallback | None = None,
     ) -> None:
         """
-        Ollama üzerinden model indir.
-        Streaming yanıt ile ilerleme durumu raporlanır.
+        Download a model via Ollama.
+        Progress status is reported via the streaming response.
         """
         httpx = _httpx()
         try:
@@ -96,7 +97,7 @@ class OllamaBackend(BaseLLMBackend):
                 "POST",
                 f"{self.base_url}/api/pull",
                 json={"name": model},
-                timeout=None,   # indirme süresi öngörülemez
+                timeout=None,   # download duration is unpredictable
             ) as response:
                 response.raise_for_status()
                 for line in response.iter_lines():
@@ -110,4 +111,4 @@ class OllamaBackend(BaseLLMBackend):
                             total=data.get("total", 0),
                         ))
         except httpx.ConnectError:
-            raise ConnectionError(f"Ollama servisine bağlanılamadı: {self.base_url}")
+            raise ConnectionError(f"Could not connect to Ollama service: {self.base_url}")

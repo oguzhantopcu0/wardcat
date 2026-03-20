@@ -7,22 +7,22 @@ from typing import List
 
 @dataclass
 class DetectedSpan:
-    """Tespit edilen tek bir hassas veri aralığı."""
+    """A single detected sensitive data span."""
 
     entity_type: str
-    """Entity tipi — örn. ``"EMAIL"``, ``"CREDIT_CARD"``."""
+    """Entity type — e.g. ``"EMAIL"``, ``"CREDIT_CARD"``."""
     text: str
-    """Orijinal metinden kopyalanmış tam metin."""
+    """Full text copied from the original."""
     start: int
-    """Orijinal metindeki başlangıç indeksi (dahil)."""
+    """Start index in the original text (inclusive)."""
     end: int
-    """Orijinal metindeki bitiş indeksi (hariç)."""
+    """End index in the original text (exclusive)."""
 
 
 class BaseDetector(ABC):
-    """Tüm dedektörlerin uygulaması gereken arayüz."""
+    """Interface that all detectors must implement."""
 
     @abstractmethod
     def detect(self, text: str) -> List[DetectedSpan]:
-        """Metni tara ve bulunan span listesini döndür."""
+        """Scan text and return the list of found spans."""
         ...

@@ -1,8 +1,8 @@
 """
-Önerilen on-prem LLM modelleri kataloğu.
+Catalog of recommended on-prem LLM models.
 
-Kullanıcıya ``models setup`` komutu veya ``LLMGuard(use_llm=True)`` ile
-sunulan seçenekler burada tanımlanır.
+The options presented to the user via the ``models setup`` command or
+``LLMGuard(use_llm=True)`` are defined here.
 """
 from __future__ import annotations
 
@@ -11,50 +11,50 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ModelInfo:
-    """Katalogdaki bir on-prem LLM modelinin meta verisi."""
+    """Metadata for a single on-prem LLM model in the catalog."""
 
     name:        str
-    """Model adı — Ollama için ``"llama3.1:8b"``, Transformers için HF model ID."""
+    """Model name — e.g. ``"llama3.1:8b"`` for Ollama, HF model ID for Transformers."""
     vram_gb:     float
-    """Yaklaşık VRAM gereksinimi GB cinsinden."""
+    """Approximate VRAM requirement in GB."""
     description: str
-    """Kısa kullanıcıya yönelik açıklama."""
+    """Short user-facing description."""
     backend:     str = "ollama"
-    """Backend adı: ``"ollama"`` veya ``"transformers"``."""
+    """Backend name: ``"ollama"`` or ``"transformers"``."""
     recommended: bool = False
-    """``True`` ise ``models setup`` varsayılan olarak bu modeli önerir."""
+    """``True`` if ``models setup`` recommends this model by default."""
 
 
-# Desteklenen modeller — backend ve VRAM'a göre gruplandırılmış
+# Supported models — grouped by backend and VRAM
 CATALOG: list[ModelInfo] = [
-    # ── Ollama modelleri (GGUF, Q4_K_M) ─────────────────────────────
+    # ── Ollama models (GGUF, Q4_K_M) ─────────────────────────────────
     ModelInfo(
         name        = "llama3.1:8b",
         vram_gb     = 4.7,
-        description = "Llama 3.1 8B · JSON kalitesi yüksek · GTX 1070+ önerilir",
+        description = "Llama 3.1 8B · High JSON quality · GTX 1070+ recommended",
         backend     = "ollama",
         recommended = True,
     ),
     ModelInfo(
         name        = "llama3.2:3b",
         vram_gb     = 2.0,
-        description = "Llama 3.2 3B · Hızlı ve hafif · 4 GB VRAM'da çalışır",
+        description = "Llama 3.2 3B · Fast and lightweight · Runs on 4 GB VRAM",
         backend     = "ollama",
     ),
     ModelInfo(
         name        = "mistral:7b",
         vram_gb     = 4.1,
-        description = "Mistral 7B · İyi JSON uyumu · Alternatif 7B seçenek",
+        description = "Mistral 7B · Good JSON compliance · Alternative 7B option",
         backend     = "ollama",
     ),
     ModelInfo(
         name        = "phi3:mini",
         vram_gb     = 2.5,
-        description = "Phi-3 Mini 3.8B · Çok hızlı · Düşük VRAM gereksinimi",
+        description = "Phi-3 Mini 3.8B · Very fast · Low VRAM requirement",
         backend     = "ollama",
     ),
 
-    # ── HuggingFace Transformers (Llama, tam hassasiyet) ─────────────
+    # ── HuggingFace Transformers (Llama, full precision) ──────────────
     ModelInfo(
         name        = "meta-llama/Llama-3.2-1B-Instruct",
         vram_gb     = 2.5,
@@ -76,7 +76,7 @@ CATALOG: list[ModelInfo] = [
     ModelInfo(
         name        = "meta-llama/Llama-3.1-70B-Instruct",
         vram_gb     = 40.0,
-        description = "Llama 3.1 70B Instruct · Multi-GPU / 4-bit gerektirir · pip install ai-guard[transformers]",
+        description = "Llama 3.1 70B Instruct · Multi-GPU / requires 4-bit · pip install ai-guard[transformers]",
         backend     = "transformers",
     ),
 ]
@@ -85,7 +85,7 @@ DEFAULT_MODEL = "llama3.1:8b"
 
 
 def get_model(name: str) -> ModelInfo | None:
-    """Katalogdan model bilgisi döndür; bulunamazsa None."""
+    """Return model info from catalog; None if not found."""
     for m in CATALOG:
         if m.name == name:
             return m
@@ -93,7 +93,7 @@ def get_model(name: str) -> ModelInfo | None:
 
 
 def recommended() -> ModelInfo:
-    """Varsayılan önerilen modeli döndür."""
+    """Return the default recommended model."""
     for m in CATALOG:
         if m.recommended:
             return m

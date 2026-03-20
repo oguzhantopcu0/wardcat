@@ -145,7 +145,7 @@ class TestNERErrorHandling:
             guard = LLMGuard(use_ner=True, spacy_model="nonexistent_model_xyz")
 
         assert any(
-            "NER" in r.message or "yüklenemedi" in r.message or "kurulu değil" in r.message
+            "NER" in r.message or "could not be loaded" in r.message or "not installed" in r.message
             for r in caplog.records
         )
         # Regex hâlâ çalışmalı

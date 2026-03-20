@@ -5,12 +5,12 @@ from typing import Dict, List, Set, Tuple
 
 from ai_guard.detectors.base import BaseDetector, DetectedSpan
 
-# (pattern, flags) tuple — entity başına bayrak desteği
-_SEP = r"[\s\-]?"   # kart numaralarında opsiyonel boşluk / tire
+# (pattern, flags) tuple — per-entity flag support
+_SEP = r"[\s\-]?"   # optional space/dash in card numbers
 
 _PATTERNS: Dict[str, Tuple[str, int]] = {
-    # ── Kredi kartı ──────────────────────────────────────────────────
-    # Boşluklu ve bitişik formatları destekler: 4111111111111111 veya 4111 1111 1111 1111
+    # ── Credit card ──────────────────────────────────────────────────
+    # Supports spaced and compact formats: 4111111111111111 or 4111 1111 1111 1111
     "CREDIT_CARD": (
         r"(?<!\d)"
         r"(?:"
@@ -24,14 +24,14 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         r"(?!\d)",
         0,
     ),
-    # ── E-posta ──────────────────────────────────────────────────────
+    # ── Email ──────────────────────────────────────────────────────────
     "EMAIL": (
         r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b",
         0,
     ),
-    # ── Telefon ──────────────────────────────────────────────────────
-    # Türk telefonu için 0 veya +90 ön eki zorunludur; salt 10 hane eşleşmez.
-    # Uluslararası E.164 formatı da desteklenir (+1, +44, +49, vb.).
+    # ── Phone ──────────────────────────────────────────────────────────
+    # Turkish phone requires 0 or +90 prefix; bare 10 digits will not match.
+    # International E.164 format is also supported (+1, +44, +49, etc.).
     "PHONE": (
         r"(?<!\d)"
         r"(?:"
@@ -45,37 +45,37 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         0,
     ),
     # ── IBAN ─────────────────────────────────────────────────────────
-    # Büyük/küçük harf duyarsız (TR330006... veya tr330006... her ikisi de yakalanır)
+    # Case-insensitive (TR330006... or tr330006... both matched)
     "IBAN": (
         r"\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}(?:[A-Z0-9]?\d{0,16})\b",
         re.IGNORECASE,
     ),
-    # ── IP adresi ────────────────────────────────────────────────────
+    # ── IP address ────────────────────────────────────────────────────
     "IP_ADDRESS": (
         r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}"
         r"(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b",
         0,
     ),
-    # ── TC Kimlik No ─────────────────────────────────────────────────
-    # Regex yalnızca format kontrolü yapar; checksum _validate_tc_id() ile doğrulanır.
+    # ── Turkish National ID (TC Kimlik No) ────────────────────────────
+    # Regex performs format check only; checksum validated by _validate_tc_id().
     "TC_ID": (
         r"(?<!\d)[1-9][0-9]{10}(?!\d)",
         0,
     ),
-    # ── Türkiye posta kodu: 01000–81999 ──────────────────────────────
-    # Tire, harf veya rakam sonrası eşleşmeyi engeller (ürün kodu false positive'i önler)
+    # ── Turkey postal code: 01000–81999 ──────────────────────────────
+    # Prevents matching after a dash, letter, or digit (avoids product code false positives)
     "POSTAL_CODE": (
         r"(?<![A-Za-zÇĞİÖŞÜçğışöşü0-9\-])(?:0[1-9]|[1-7]\d|80|81)\d{3}(?!\d)",
         0,
     ),
-    # ── Adres ────────────────────────────────────────────────────────
-    # Türkçe: Mahallesi, Caddesi, Sokağı, vb.
-    # İngilizce: numara + isim + sokak tipi (Street, Road, vb.)
-    # Fransızca: Rue, Allée, Impasse, Promenade, Place + isim
-    # İspanyolca: Calle, Avenida, Plaza, Paseo, Carrera + isim
-    # İtalyanca: Viale, Piazza, Corso, Vicolo, Largo + isim
-    # Hollandaca: compound sokak isimleri (straat, weg, gracht, vb.)
-    # Almanca: compound sokak isimleri (straße, gasse, weg, platz, vb.)
+    # ── Address ────────────────────────────────────────────────────────
+    # Turkish: Mahallesi, Caddesi, Sokağı, etc.
+    # English: number + name + street type (Street, Road, etc.)
+    # French: Rue, Allée, Impasse, Promenade, Place + name
+    # Spanish: Calle, Avenida, Plaza, Paseo, Carrera + name
+    # Italian: Viale, Piazza, Corso, Vicolo, Largo + name
+    # Dutch: compound street names (straat, weg, gracht, etc.)
+    # German: compound street names (straße, gasse, weg, platz, etc.)
     "ADDRESS": (
         # Turkish address patterns
         r"(?:[A-ZÇĞİÖŞÜa-zçğışöşü0-9\.]+\s+){1,5}"
@@ -113,26 +113,26 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         r"(?:\s+\d{1,5}[a-z]?)?",
         0,
     ),
-    # ── İngiltere Posta Kodu ──────────────────────────────────────────
+    # ── UK Postal Code ──────────────────────────────────────────────────
     # Format: AA9A 9AA, AA99 9AA, AA9 9AA, A9 9AA, A9A 9AA, A99 9AA
-    # Örnekler: SW1A 1AA, EC1A 1BB, W1A 1HQ, M1 1AE, GU21 6TH
+    # Examples: SW1A 1AA, EC1A 1BB, W1A 1HQ, M1 1AE, GU21 6TH
     "UK_POSTAL_CODE": (
         r"\b[A-Z]{1,2}[0-9][0-9A-Z]?\s?[0-9][A-Z]{2}\b",
         re.IGNORECASE,
     ),
-    # ── ABD ZIP Posta Kodu ────────────────────────────────────────────
-    # ZIP+4: 12345-6789 (en düşük false positive)
-    # Etiketli: "ZIP: 90210" veya "zip code: 10001" (açık bağlam)
+    # ── US ZIP Postal Code ─────────────────────────────────────────────
+    # ZIP+4: 12345-6789 (lowest false positive rate)
+    # Labeled: "ZIP: 90210" or "zip code: 10001" (explicit context)
     "US_ZIP_CODE": (
         r"\b\d{5}-\d{4}\b"
         r"|"
         r"\b[Zz][Ii][Pp](?:\s*[Cc][Oo][Dd][Ee])?\s*:?\s*\d{5}\b",
         0,
     ),
-    # ── AB Ulusal Kimlik Numarası ─────────────────────────────────────
-    # İspanya DNI: 8 rakam + kontrol harfi (TRWAGMYFPDXBNJZSQVHLCKE)
-    # İspanya NIE (yabancılar): X/Y/Z + 7 rakam + kontrol harfi
-    # Fransa INSEE (sosyal güvenlik): cinsiyet(1) + yıl(2) + ay(01-12) + 9 rakam = 15 hane
+    # ── EU National Identity Number ────────────────────────────────────
+    # Spain DNI: 8 digits + check letter (TRWAGMYFPDXBNJZSQVHLCKE)
+    # Spain NIE (foreigners): X/Y/Z + 7 digits + check letter
+    # France INSEE (social security): gender(1) + year(2) + month(01-12) + 9 digits = 15 digits
     "EU_NATIONAL_ID": (
         r"\b\d{8}[TRWAGMYFPDXBNJZSQVHLCKE]\b"
         r"|"
@@ -142,9 +142,9 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         0,
     ),
     # ── Custom Secret ─────────────────────────────────────────────────
-    # Bilinen token/credential prefix desenleri — net formatı olan servisler.
-    # Bağlamsal (password=VALUE) tespiti LLM dedektörüne bırakılır.
-    # Desteklenen:
+    # Known token/credential prefix patterns — services with well-defined formats.
+    # Contextual detection (password=VALUE) is delegated to the LLM detector.
+    # Supported:
     #   sk-...       — OpenAI / Anthropic API key
     #   ghp_/ghs_/gho_ — GitHub Personal/Server/OAuth token
     #   AKIA...      — AWS Access Key ID
@@ -221,13 +221,13 @@ _COMPILED: Dict[str, re.Pattern] = {
 
 
 def _validate_iban(value: str) -> bool:
-    """IBAN mod-97 checksum doğrulaması (ISO 13616).
+    """IBAN mod-97 checksum validation (ISO 13616).
 
-    Adımlar:
-    1. Boşlukları kaldır, büyük harfe çevir.
-    2. İlk 4 karakteri sona taşı.
-    3. Her harfi sayıya çevir (A=10, …, Z=35).
-    4. Sayısal dize % 97 == 1 ise geçerlidir.
+    Steps:
+    1. Remove spaces, convert to uppercase.
+    2. Move first 4 characters to the end.
+    3. Convert each letter to a number (A=10, …, Z=35).
+    4. Valid if numeric string % 97 == 1.
     """
     cleaned = value.replace(" ", "").upper()
     if len(cleaned) < 5:
@@ -248,10 +248,10 @@ def _validate_iban(value: str) -> bool:
 
 
 def _validate_tc_id(value: str) -> bool:
-    """TC Kimlik No checksum doğrulaması (Türkiye Nüfus İdaresi algoritması).
+    """TC National ID checksum validation (Turkish Civil Registration algorithm).
 
-    Kural:
-    - d[0]..d[9] rakamları, d[10] kontrol rakamı.
+    Rules:
+    - d[0]..d[9] are digits, d[10] is the check digit.
     - (d[0]+d[2]+d[4]+d[6]+d[8]) * 7 - (d[1]+d[3]+d[5]+d[7]) mod 10 == d[9]
     - (d[0]+d[1]+...+d[9]) mod 10 == d[10]
     """
@@ -268,20 +268,20 @@ def _validate_tc_id(value: str) -> bool:
 
 
 class RegexDetector(BaseDetector):
-    """Yapısal PII desenlerini regex ile tespit eder (CC, IBAN, TC_ID, e-posta, …)."""
+    """Detects structural PII patterns using regex (CC, IBAN, TC_ID, email, …)."""
 
     def __init__(self, enabled_entities: Set[str]) -> None:
         self.enabled_entities = enabled_entities
 
     def detect(self, text: str) -> List[DetectedSpan]:
-        """Etkin entity tipleri için tüm regex eşleşmelerini döndür."""
+        """Return all regex matches for enabled entity types."""
         spans: List[DetectedSpan] = []
         for entity_type, pattern in _COMPILED.items():
             if entity_type not in self.enabled_entities:
                 continue
             for match in pattern.finditer(text):
                 value = match.group()
-                # Checksum doğrulamaları — false positive baskısı
+                # Checksum validations — suppress false positives
                 if entity_type == "TC_ID" and not _validate_tc_id(value):
                     continue
                 if entity_type == "IBAN" and not _validate_iban(value):

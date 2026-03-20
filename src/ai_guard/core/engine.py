@@ -10,15 +10,15 @@ from ai_guard.utils.hashing import sha256_hash
 
 logger = logging.getLogger(__name__)
 
-# Güvenli input boyutu üst sınırı.
-# Aşılırsa scan() ValueError fırlatır — regex engine'i kilitlemez.
+# Upper limit for safe input size.
+# If exceeded, scan() raises ValueError — does not lock the regex engine.
 _MAX_TEXT_BYTES = 500_000
 
 
 class DetectionEngine:
     """
-    Tüm dedektörlerden gelen span'leri birleştirir, çakışmaları çözer,
-    yapılandırılmış aksiyonları uygular ve ScanResult döndürür.
+    Merges spans from all detectors, resolves overlaps,
+    applies configured actions, and returns a ScanResult.
     """
 
     def __init__(self, config: Dict[str, Any], detectors: List[BaseDetector]) -> None:
@@ -29,44 +29,44 @@ class DetectionEngine:
 
         if not self.salt:
             logger.debug(
-                "Hash salt boş — aynı değerler aynı hash'i üretecek. "
-                "Production'da LLMGUARD_SALT ortam değişkenini ayarlayın."
+                "Hash salt is empty — identical values will produce the same hash. "
+                "Set the LLMGUARD_SALT environment variable in production."
             )
 
     def scan(self, text: str) -> ScanResult:
-        """Tüm dedektörleri çalıştır, aksiyonları uygula ve sonucu döndür."""
+        """Run all detectors, apply actions, and return the result."""
         t_start = time.perf_counter()
 
-        # Hard input boyutu limiti — aşılırsa reddetm (DoS koruması)
+        # Hard input size limit — reject if exceeded (DoS protection)
         byte_len = len(text.encode("utf-8", errors="replace"))
         if byte_len > _MAX_TEXT_BYTES:
             raise ValueError(
-                f"Input metni çok büyük: {byte_len:,} bayt "
-                f"(maksimum: {_MAX_TEXT_BYTES:,} bayt). "
-                "Metni daha küçük parçalara bölün."
+                f"Input text is too large: {byte_len:,} bytes "
+                f"(maximum: {_MAX_TEXT_BYTES:,} bytes). "
+                "Split the text into smaller chunks."
             )
 
-        # 1. Tüm dedektörlerden span'leri topla
+        # 1. Collect spans from all detectors
         raw_spans: List[DetectedSpan] = []
         for detector in self.detectors:
             detector_name = type(detector).__name__
             t_det = time.perf_counter()
             spans = detector.detect(text)
             logger.debug(
-                "%s: %d span tespit edildi (%.1f ms)",
+                "%s: %d span(s) detected (%.1f ms)",
                 detector_name,
                 len(spans),
                 (time.perf_counter() - t_det) * 1000,
             )
             raw_spans.extend(spans)
 
-        # 2. Pozisyona göre sırala ve çakışmaları çöz
+        # 2. Sort by position and resolve overlaps
         spans = self._resolve_overlaps(sorted(raw_spans, key=lambda s: s.start))
 
-        # 3. Aksiyonları uygula
+        # 3. Apply actions
         violations: List[Violation] = []
         sanitized = text
-        offset = 0  # metin değiştikçe konum kaymasını izle
+        offset = 0  # track position shift as text is modified
 
         for span in spans:
             entity_cfg = self.entity_config.get(span.entity_type, {})
@@ -94,7 +94,7 @@ class DetectionEngine:
 
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         logger.info(
-            "scan tamamlandı: %d ihlal, %d karakter, %.1f ms",
+            "scan completed: %d violation(s), %d character(s), %.1f ms",
             len(violations),
             len(text),
             elapsed_ms,
@@ -109,15 +109,15 @@ class DetectionEngine:
     # ------------------------------------------------------------------
 
     def _resolve_overlaps(self, spans: List[DetectedSpan]) -> List[DetectedSpan]:
-        """Çakışan span'lerde daha uzun olanı tutar."""
+        """Keeps the longer span when overlapping spans are found."""
         if not spans:
             return spans
         result: List[DetectedSpan] = [spans[0]]
         for span in spans[1:]:
             last = result[-1]
-            if span.start < last.end:          # çakışma var
+            if span.start < last.end:          # overlap detected
                 if (span.end - span.start) > (last.end - last.start):
-                    result[-1] = span          # daha uzun olanı koru
+                    result[-1] = span          # keep the longer one
             else:
                 result.append(span)
         return result

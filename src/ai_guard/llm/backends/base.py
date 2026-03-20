@@ -7,7 +7,7 @@ from typing import Callable, Iterator
 
 @dataclass
 class PullProgress:
-    """Model indirme ilerlemesi."""
+    """Model download progress."""
     status:    str
     completed: int = 0
     total:     int = 0
@@ -21,16 +21,16 @@ ProgressCallback = Callable[[PullProgress], None]
 
 
 class BaseLLMBackend(ABC):
-    """Tüm LLM backend'lerinin uyması gereken arayüz."""
+    """Interface that all LLM backends must implement."""
 
     @abstractmethod
     def complete(self, prompt: str, *, timeout: int = 60) -> str:
-        """Prompt gönder, tamamlama metnini döndür."""
+        """Send a prompt and return the completion text."""
         ...
 
     @abstractmethod
     def list_models(self) -> list[str]:
-        """Kullanılabilir model isimlerini listele."""
+        """List available model names."""
         ...
 
     @abstractmethod
@@ -40,7 +40,7 @@ class BaseLLMBackend(ABC):
         *,
         on_progress: ProgressCallback | None = None,
     ) -> None:
-        """Modeli indir. İlerleme için on_progress callback'i çağrılır."""
+        """Download a model. The on_progress callback is called for progress updates."""
         ...
 
     def complete_messages(self, messages: list[dict], *, timeout: int = 60) -> str:
@@ -60,5 +60,5 @@ class BaseLLMBackend(ABC):
         return self.complete(combined, timeout=timeout)
 
     def is_model_available(self, model: str) -> bool:
-        """Modelin serviste hazır olup olmadığını döndür."""
+        """Return whether the model is ready in the service."""
         return model in self.list_models()

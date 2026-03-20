@@ -77,5 +77,5 @@ class TestCmdBatch:
         args = parse(["batch", "--file", str(f), "--no-ner"])
         cmd_batch(args)
         out = capsys.readouterr().out
-        assert "Satır 1" in out
-        assert "Satır 2" in out
+        assert "Line 1" in out
+        assert "Line 2" in out

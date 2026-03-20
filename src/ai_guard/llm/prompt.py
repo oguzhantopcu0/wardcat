@@ -1,16 +1,16 @@
 """
-LLM PII tespit prompt'u.
+LLM PII detection prompt.
 
-Küçük modellerde (3B–8B) iyi sonuç için:
-- Her entity tipi açıkça tanımlanmış
-- Neyin PII OLMADIĞI örneklenmiş (false positive baskısı)
-- Türkçe + İngilizce karma örnekler
-- Yapısal kısıtlar ve bağlamsal ipuçları verilmiş
-- temperature=0 ile deterministik
+For good results with small models (3B–8B):
+- Each entity type is explicitly defined
+- Examples of what is NOT PII are included (to suppress false positives)
+- Mixed Turkish + English examples
+- Structural constraints and contextual hints are provided
+- Deterministic via temperature=0
 """
 from __future__ import annotations
 
-# Entity açıklamaları: modele ne araması gerektiğini öğretir.
+# Entity descriptions: teaches the model what to look for.
 _ENTITY_DESCRIPTIONS: dict[str, str] = {
     "ORG":           "name of a specific company, institution, or organization that could identify a person in context (e.g. 'Acme Corp', 'İş Bankası', 'Google LLC')",
     "PERSON":        "full name of a real person (e.g. 'Ali Veli', 'John Smith', 'Mehmet Demir')",

@@ -9,16 +9,16 @@ logger = logging.getLogger(__name__)
 
 
 class Action(str, Enum):
-    """Tespit edilen PII üzerinde uygulanacak aksiyon."""
+    """Action to apply to detected PII."""
 
     WARN = "warn"
-    """Metni olduğu gibi bırak, yalnızca ihlal olarak raporla."""
+    """Leave the text as-is, report only as a violation."""
     HASH = "hash"
-    """SHA-256 + salt ile maskele: ``[ENTITY_TYPE:abcd1234]``."""
+    """Mask with SHA-256 + salt: ``[ENTITY_TYPE:abcd1234]``."""
 
 
-# Bilinen entity tipleri — typo kontrolü ve IDE desteği için.
-# Bu listeye olmayan bir tip configure edilirse Warning verilir.
+# Known entity types — for typo checking and IDE support.
+# A warning is issued if a type not in this list is configured.
 KNOWN_ENTITY_TYPES: frozenset[str] = frozenset({
     "PERSON", "ORG", "EMAIL", "PHONE", "CREDIT_CARD", "IBAN",
     "TC_ID", "IP_ADDRESS", "IPv6", "ADDRESS", "POSTAL_CODE", "CUSTOM_SECRET",
@@ -28,11 +28,11 @@ KNOWN_ENTITY_TYPES: frozenset[str] = frozenset({
 
 
 def warn_unknown_entity(entity_type: str) -> None:
-    """Bilinmeyen entity tipi kullanıldığında uyarı ver."""
+    """Warn when an unknown entity type is used."""
     if entity_type not in KNOWN_ENTITY_TYPES:
         logger.warning(
-            "Bilinmeyen entity tipi: %r — bu tip tanınmıyor. "
-            "Yazım hatası mı? Geçerli tipler: %s",
+            "Unknown entity type: %r — this type is not recognized. "
+            "Typo? Valid types: %s",
             entity_type,
             sorted(KNOWN_ENTITY_TYPES),
         )
@@ -40,58 +40,58 @@ def warn_unknown_entity(entity_type: str) -> None:
 
 @dataclass
 class Violation:
-    """Metinde tespit edilen tek bir PII ihlali."""
+    """A single PII violation detected in the text."""
 
     entity_type: str
-    """Örn. ``"EMAIL"``, ``"CREDIT_CARD"``, ``"PERSON"``."""
+    """E.g. ``"EMAIL"``, ``"CREDIT_CARD"``, ``"PERSON"``."""
     original: str
-    """Orijinal metindeki ham değer."""
+    """Raw value from the original text."""
     start: int
-    """Orijinal metindeki başlangıç indeksi."""
+    """Start index in the original text."""
     end: int
-    """Orijinal metindeki bitiş indeksi."""
+    """End index in the original text."""
     action: Action
-    """Uygulanan aksiyon."""
+    """Action that was applied."""
     replacement: str | None = None
-    """Hash aksiyonunda üretilen yer tutucu; warn'da ``None``."""
+    """Placeholder produced by the hash action; ``None`` for warn."""
 
 
 @dataclass
 class ScanResult:
-    """Tek bir ``guard.scan()`` çağrısının sonucu.
+    """Result of a single ``guard.scan()`` call.
 
     .. warning::
-        ``original_text`` ve ``violations[].original`` alanları ham PII içerir.
-        Bu nesneyi log'a, veritabanına veya API yanıtına yazarken yalnızca
-        ``sanitized_text`` kullanın. PII içermeyen bir dict için
-        :meth:`redacted` metodunu kullanın.
+        The ``original_text`` and ``violations[].original`` fields contain raw PII.
+        When writing this object to logs, databases, or API responses, use only
+        ``sanitized_text``. Use the :meth:`redacted` method to obtain a dict
+        that contains no PII.
     """
 
     original_text: str
-    """Değiştirilmemiş orijinal girdi. **Ham PII içerir — dışarıya sızdırmayın.**"""
+    """Unmodified original input. **Contains raw PII — do not expose externally.**"""
     sanitized_text: str
-    """PII'ları maskelenmiş/raporlanmış çıktı metni."""
+    """Output text with PII masked/reported."""
     violations: List[Violation] = field(default_factory=list)
-    """Tespit edilen tüm ihlallerin listesi. ``original`` alanları ham PII içerir."""
+    """List of all detected violations. The ``original`` fields contain raw PII."""
 
     @property
     def is_clean(self) -> bool:
-        """``True`` ise hiçbir PII tespit edilmedi."""
+        """``True`` if no PII was detected."""
         return len(self.violations) == 0
 
     def redacted(self) -> dict:
-        """PII içermeyen güvenli dict döndürür.
+        """Return a safe dict with no PII.
 
-        ``original_text`` ve ``violations[].original`` alanlarını dışarıda bırakır.
-        Log, API yanıtı veya veritabanı kaydı için bu metodu kullanın::
+        Excludes the ``original_text`` and ``violations[].original`` fields.
+        Use this method for logs, API responses, or database records::
 
             result = guard.scan(text)
             log.info("scan result: %s", result.redacted())
 
         Returns:
-            ``sanitized_text``, ``is_clean`` ve ihlal meta verilerini
-            (entity_type, start, end, action, replacement) içeren dict.
-            Ham PII değerleri dahil değildir.
+            A dict containing ``sanitized_text``, ``is_clean``, and violation
+            metadata (entity_type, start, end, action, replacement).
+            Raw PII values are not included.
         """
         return {
             "is_clean":       self.is_clean,

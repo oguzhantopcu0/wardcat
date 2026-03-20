@@ -1,24 +1,24 @@
 """
-CLI giriş noktası.
+CLI entry point.
 
-Kullanım:
-    python -m ai_guard scan --text "Merhaba, kartım 4111111111111111"
-    python -m ai_guard scan --file girdi.txt --config config/policy.yaml
-    python -m ai_guard scan --text "..." --salt "gizli" --no-ner --format json
+Usage:
+    python -m ai_guard scan --text "Hello, my card is 4111111111111111"
+    python -m ai_guard scan --file input.txt --config config/policy.yaml
+    python -m ai_guard scan --text "..." --salt "secret" --no-ner --format json
     python -m ai_guard scan --text "..." --llm --llm-model llama3.1:8b
     python -m ai_guard scan --text "..." --llm --llm-model llama3.1:8b --auto-pull
-    python -m ai_guard batch --file satirlar.txt --format json
+    python -m ai_guard batch --file lines.txt --format json
     python -m ai_guard models list
     python -m ai_guard models list --recommended
     python -m ai_guard models setup
     python -m ai_guard models pull llama3.1:8b
     python -m ai_guard models pull llama3.1:8b --llm-url http://10.0.0.5:11434
 
-Ortam değişkenleri:
-    LLMGUARD_SALT         — --salt yerine
-    LLMGUARD_LLM_URL      — --llm-url yerine
-    LLMGUARD_LLM_MODEL    — --llm-model yerine
-    LLMGUARD_LLM_API_KEY  — --llm-api-key yerine
+Environment variables:
+    LLMGUARD_SALT         — instead of --salt
+    LLMGUARD_LLM_URL      — instead of --llm-url
+    LLMGUARD_LLM_MODEL    — instead of --llm-model
+    LLMGUARD_LLM_API_KEY  — instead of --llm-api-key
 """
 from __future__ import annotations
 
@@ -35,83 +35,83 @@ logger = logging.getLogger(__name__)
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m ai_guard",
-        description="LLM girdilerindeki hassas verileri tara ve anonimleştir.",
+        description="Scan and anonymize sensitive data in LLM inputs.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # ── ortak argümanlar ────────────────────────────────────────────────
+    # ── common arguments ────────────────────────────────────────────────
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--config",  metavar="PATH", help="YAML politika dosyası")
-    common.add_argument("--salt",    default="",     help="Hash tuzlama değeri (LLMGUARD_SALT env ile de verilebilir)")
-    common.add_argument("--no-ner",  action="store_true", help="SpaCy NER'ı devre dışı bırak")
+    common.add_argument("--config",  metavar="PATH", help="YAML policy file")
+    common.add_argument("--salt",    default="",     help="Hash salt value (can also be set via LLMGUARD_SALT env)")
+    common.add_argument("--no-ner",  action="store_true", help="Disable SpaCy NER")
     common.add_argument("--model",   default="en_core_web_sm", metavar="MODEL",
-                        help="SpaCy modeli (varsayılan: en_core_web_sm)")
+                        help="SpaCy model (default: en_core_web_sm)")
     common.add_argument("--format",  choices=["text", "json"], default="text",
-                        help="Çıktı formatı (varsayılan: text)")
+                        help="Output format (default: text)")
     common.add_argument("--log-level", default="WARNING",
                         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-                        help="Log seviyesi (varsayılan: WARNING)")
-    # LLM dedektörü ortak argümanları
+                        help="Log level (default: WARNING)")
+    # LLM detector common arguments
     common.add_argument("--llm",         action="store_true",
-                        help="LLM dedektörünü etkinleştir (Ollama veya OpenAI-compat)")
+                        help="Enable LLM detector (Ollama or OpenAI-compat)")
     common.add_argument("--llm-backend", default="ollama",
                         choices=["ollama", "openai_compatible", "transformers"],
-                        metavar="BACKEND", help="LLM backend (varsayılan: ollama)")
+                        metavar="BACKEND", help="LLM backend (default: ollama)")
     common.add_argument("--llm-model",   default="llama3.1:8b", metavar="MODEL",
-                        help="LLM model adı (varsayılan: llama3.1:8b)")
+                        help="LLM model name (default: llama3.1:8b)")
     common.add_argument("--llm-url",     default="", metavar="URL",
-                        help="LLM servis URL'i (varsayılan: LLMGUARD_LLM_URL veya http://localhost:11434)")
+                        help="LLM service URL (default: LLMGUARD_LLM_URL or http://localhost:11434)")
     common.add_argument("--llm-api-key", default="", metavar="KEY",
-                        help="OpenAI-compat API anahtarı (LLMGUARD_LLM_API_KEY env ile de verilebilir)")
+                        help="OpenAI-compat API key (can also be set via LLMGUARD_LLM_API_KEY env)")
     common.add_argument("--auto-pull",   action="store_true",
-                        help="Model mevcut değilse Ollama'dan otomatik indir")
+                        help="Automatically download from Ollama if model is not available")
 
     # ── scan ────────────────────────────────────────────────────────────
-    p_scan = sub.add_parser("scan", parents=[common], help="Tek bir metni tara")
+    p_scan = sub.add_parser("scan", parents=[common], help="Scan a single text")
     src = p_scan.add_mutually_exclusive_group(required=True)
-    src.add_argument("--text", metavar="TEXT",  help="Doğrudan metin girdisi")
-    src.add_argument("--file", metavar="PATH",  type=Path, help="Metin dosyası")
+    src.add_argument("--text", metavar="TEXT",  help="Direct text input")
+    src.add_argument("--file", metavar="PATH",  type=Path, help="Text file")
 
     # ── batch ───────────────────────────────────────────────────────────
     p_batch = sub.add_parser("batch", parents=[common],
-                              help="Dosyadaki her satırı ayrı metin olarak tara")
+                              help="Scan each line in a file as a separate text")
     p_batch.add_argument("--file", metavar="PATH", type=Path, required=True,
-                         help="Her satırı bağımsız metin olan dosya")
+                         help="File where each line is an independent text")
 
     # ── models ──────────────────────────────────────────────────────────
-    p_models = sub.add_parser("models", help="On-prem LLM model yönetimi")
+    p_models = sub.add_parser("models", help="On-prem LLM model management")
     models_sub = p_models.add_subparsers(dest="models_command", required=True)
 
     # models list
-    p_list = models_sub.add_parser("list", help="Mevcut modelleri listele")
+    p_list = models_sub.add_parser("list", help="List available models")
     p_list.add_argument("--llm-backend", default="ollama",
                         choices=["ollama", "openai_compatible", "transformers"], metavar="BACKEND")
     p_list.add_argument("--llm-url", default="", metavar="URL")
     p_list.add_argument("--llm-api-key", default="", metavar="KEY")
     p_list.add_argument("--recommended", action="store_true",
-                        help="Önerilen modelleri katalogdan listele (Ollama bağlantısı gerekmez)")
+                        help="List recommended models from catalog (no Ollama connection required)")
 
     # models setup
     p_setup = models_sub.add_parser(
         "setup",
-        help="Önerilen modeller arasından seçim yap ve indir",
+        help="Select from recommended models and download",
     )
     p_setup.add_argument("--llm-url", default="", metavar="URL",
-                         help="Ollama servis URL'i")
+                         help="Ollama service URL")
     p_setup.add_argument("--non-interactive", action="store_true",
-                         help="Onay sormadan varsayılan modeli indir")
+                         help="Download default model without prompting for confirmation")
 
     # models pull
-    p_pull = models_sub.add_parser("pull", help="Model indir (Ollama)")
-    p_pull.add_argument("model_name", help="İndirilecek model, örn. llama3.1:8b")
+    p_pull = models_sub.add_parser("pull", help="Download a model (Ollama)")
+    p_pull.add_argument("model_name", help="Model to download, e.g. llama3.1:8b")
     p_pull.add_argument("--llm-url", default="", metavar="URL",
-                        help="Ollama servis URL'i")
+                        help="Ollama service URL")
 
     return parser
 
 
 def _resolve_llm_url(args_url: str) -> str:
-    """--llm-url → LLMGUARD_LLM_URL env → varsayılan."""
+    """--llm-url → LLMGUARD_LLM_URL env → default."""
     if args_url:
         return args_url
     return os.environ.get("LLMGUARD_LLM_URL", "http://localhost:11434")
@@ -146,7 +146,7 @@ def _make_backend(args: argparse.Namespace):
         return OpenAICompatBackend(base_url=url, model="", api_key=api_key)
 
 
-# ── çıktı formatlayıcılar ───────────────────────────────────────────────
+# ── output formatters ───────────────────────────────────────────────────
 
 def _result_to_dict(result) -> dict:
     return {
@@ -169,41 +169,41 @@ def _result_to_dict(result) -> dict:
 def _print_text(result, label: str | None = None) -> None:
     if label:
         print(f"\n── {label} ──")
-    print(f"Temizlenmiş metin:\n  {result.sanitized_text}")
+    print(f"Sanitized text:\n  {result.sanitized_text}")
     if result.violations:
-        print(f"İhlaller ({len(result.violations)}):")
+        print(f"Violations ({len(result.violations)}):")
         for v in result.violations:
             if v.replacement:
                 print(f"  [{v.action.value:4}] {v.entity_type}: '{v.original}' → '{v.replacement}'")
             else:
                 print(f"  [{v.action.value:4}] {v.entity_type}: '{v.original}'")
     else:
-        print("  Hassas veri bulunamadı.")
+        print("  No sensitive data found.")
 
 
-# ── komut işleyiciler ───────────────────────────────────────────────────
+# ── command handlers ────────────────────────────────────────────────────
 
 def _read_file(path: Path) -> str:
-    """Dosyayı oku; encoding hatası veya dosya bulunamazsa anlaşılır hata ver."""
+    """Read file; give a clear error if encoding fails or file is not found."""
     try:
         return path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        raise FileNotFoundError(f"Dosya bulunamadı: {path}")
+        raise FileNotFoundError(f"File not found: {path}")
     except UnicodeDecodeError as exc:
         raise ValueError(
-            f"Dosya UTF-8 olarak okunamadı: {path}\n"
-            f"Detay: {exc}\n"
-            "İpucu: Dosyayı UTF-8 olarak kaydedin veya encoding'i dönüştürün."
+            f"File could not be read as UTF-8: {path}\n"
+            f"Detail: {exc}\n"
+            "Hint: Save the file as UTF-8 or convert its encoding."
         )
 
 
 def _warn_if_no_salt(args: argparse.Namespace) -> None:
-    """Production'da salt kullanılmıyorsa stderr'e uyarı yaz."""
+    """Write a warning to stderr if no salt is used in production."""
     salt = args.salt or os.environ.get("LLMGUARD_SALT", "")
     if not salt:
         print(
-            "UYARI: Hash salt ayarlanmamış — aynı PII değerleri her zaman aynı "
-            "hash'i üretir. Production'da --salt veya LLMGUARD_SALT kullanın.",
+            "WARNING: Hash salt is not set — identical PII values will always produce the same "
+            "hash. Use --salt or LLMGUARD_SALT in production.",
             file=sys.stderr,
         )
 
@@ -237,7 +237,7 @@ def cmd_batch(args: argparse.Namespace) -> None:
         print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
         for i, (line, result) in enumerate(zip(lines, results), 1):
-            _print_text(result, label=f"Satır {i}: {line[:60]}{'…' if len(line) > 60 else ''}")
+            _print_text(result, label=f"Line {i}: {line[:60]}{'…' if len(line) > 60 else ''}")
 
 
 def cmd_models(args: argparse.Namespace) -> None:
@@ -252,12 +252,12 @@ def cmd_models(args: argparse.Namespace) -> None:
         mgr     = ModelManager(backend)
         models  = mgr.list()
         if models:
-            print("Ollama'da mevcut modeller:")
+            print("Models available in Ollama:")
             for m in models:
                 print(f"  • {m}")
         else:
-            print("Hiç model bulunamadı.")
-        print("\nÖnerilen modeller için: python -m ai_guard models list --recommended")
+            print("No models found.")
+        print("\nFor recommended models: python -m ai_guard models list --recommended")
 
     elif args.models_command == "setup":
         _cmd_setup(args)
@@ -271,20 +271,20 @@ def cmd_models(args: argparse.Namespace) -> None:
 
 
 def _print_catalog() -> None:
-    """Önerilen model listesini terminale yaz."""
+    """Print the recommended model list to the terminal."""
     from ai_guard.llm.model_catalog import CATALOG
-    print("Önerilen on-prem LLM modelleri:\n")
-    print(f"  {'#':<3} {'Model':<20} {'VRAM':<8} Açıklama")
+    print("Recommended on-prem LLM models:\n")
+    print(f"  {'#':<3} {'Model':<20} {'VRAM':<8} Description")
     print(f"  {'-'*3} {'-'*20} {'-'*8} {'-'*40}")
     for i, m in enumerate(CATALOG, 1):
-        tag  = " ← önerilen" if m.recommended else ""
+        tag  = " ← recommended" if m.recommended else ""
         vram = f"~{m.vram_gb:.1f} GB"
         print(f"  {i:<3} {m.name:<20} {vram:<8} {m.description}{tag}")
     print()
 
 
 def _cmd_setup(args: argparse.Namespace) -> None:
-    """İnteraktif model seçim ve indirme akışı."""
+    """Interactive model selection and download flow."""
     from ai_guard.llm.model_catalog import CATALOG, recommended
     from ai_guard.llm.model_manager import ModelManager
     from ai_guard.llm.backends.ollama import OllamaBackend
@@ -295,15 +295,15 @@ def _cmd_setup(args: argparse.Namespace) -> None:
 
     if non_interactive:
         chosen = recommended()
-        print(f"Varsayılan model seçildi: {chosen.name}")
+        print(f"Default model selected: {chosen.name}")
     else:
         try:
             raw = input(
-                f"Model numarası seçin [1-{len(CATALOG)}, "
-                f"varsayılan=1 ({CATALOG[0].name})]: "
+                f"Select model number [1-{len(CATALOG)}, "
+                f"default=1 ({CATALOG[0].name})]: "
             ).strip()
         except (EOFError, KeyboardInterrupt):
-            print("\nİptal edildi.")
+            print("\nCancelled.")
             return
 
         if raw == "":
@@ -315,10 +315,10 @@ def _cmd_setup(args: argparse.Namespace) -> None:
                     raise ValueError
                 chosen = CATALOG[idx]
             except ValueError:
-                print(f"Geçersiz seçim: '{raw}'. Kurulum iptal edildi.")
+                print(f"Invalid selection: '{raw}'. Setup cancelled.")
                 return
 
-    print(f"\nSeçilen model: {chosen.name} (~{chosen.vram_gb:.1f} GB VRAM)\n")
+    print(f"\nSelected model: {chosen.name} (~{chosen.vram_gb:.1f} GB VRAM)\n")
 
     url     = _resolve_llm_url(args.llm_url)
     backend = OllamaBackend(base_url=url)
@@ -326,7 +326,7 @@ def _cmd_setup(args: argparse.Namespace) -> None:
 
     ok = mgr.ensure_available(chosen.name, verbose=True)
     if ok:
-        print(f"\nKullanım:\n"
+        print(f"\nUsage:\n"
               f"  python -m ai_guard scan --text \"...\" "
               f"--llm --llm-model {chosen.name}\n"
               f"\nPython API:\n"
@@ -340,7 +340,7 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
 
-    # Logging konfigürasyonu — CLI başlatınca aktif olur
+    # Logging configuration — activated when CLI starts
     log_level = getattr(args, "log_level", "WARNING")
     logging.basicConfig(
         level=getattr(logging, log_level),
@@ -356,20 +356,20 @@ def main() -> None:
         elif args.command == "models":
             cmd_models(args)
     except FileNotFoundError as exc:
-        print(f"Hata: {exc}", file=sys.stderr)
+        print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
     except ValueError as exc:
-        print(f"Hata: {exc}", file=sys.stderr)
+        print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
     except ConnectionError as exc:
-        print(f"Bağlantı hatası: {exc}", file=sys.stderr)
+        print(f"Connection error: {exc}", file=sys.stderr)
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\nİptal edildi.", file=sys.stderr)
+        print("\nCancelled.", file=sys.stderr)
         sys.exit(130)
     except Exception as exc:
-        logger.exception("Beklenmeyen hata")
-        print(f"Beklenmeyen hata: {exc}", file=sys.stderr)
+        logger.exception("Unexpected error")
+        print(f"Unexpected error: {exc}", file=sys.stderr)
         sys.exit(1)
 
 
