@@ -242,3 +242,72 @@ class TestEuropeanAddressPatterns:
         def test_allee(self, detector):
             spans = detector.detect("Unter den Linden / Lindenallee 5")
             assert any(s.entity_type == "ADDRESS" for s in spans)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PASSPORT
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPassport:
+    @pytest.fixture
+    def det(self):
+        return RegexDetector({"PASSPORT"})
+
+    def test_english_keyword(self, det):
+        spans = det.detect("Passport: AB1234567")
+        assert any(s.entity_type == "PASSPORT" for s in spans)
+
+    def test_passport_number_keyword(self, det):
+        spans = det.detect("Passport number: A12345678")
+        assert any(s.entity_type == "PASSPORT" for s in spans)
+
+    def test_turkish_keyword(self, det):
+        spans = det.detect("Pasaport no: A12345678")
+        assert any(s.entity_type == "PASSPORT" for s in spans)
+
+    def test_german_keyword(self, det):
+        spans = det.detect("Reisepass Nr: C1234567")
+        assert any(s.entity_type == "PASSPORT" for s in spans)
+
+    def test_french_keyword(self, det):
+        spans = det.detect("Passeport no: AB123456")
+        assert any(s.entity_type == "PASSPORT" for s in spans)
+
+    def test_no_false_positive_without_keyword(self, det):
+        # Without the passport keyword context, should not match
+        spans = det.detect("reference: AB1234567")
+        assert not any(s.entity_type == "PASSPORT" for s in spans)
+
+    def test_no_false_positive_short_number(self, det):
+        spans = det.detect("Passport: A123")
+        assert not any(s.entity_type == "PASSPORT" for s in spans)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CODICE_FISCALE (Italian personal tax code)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCodiceFiscale:
+    @pytest.fixture
+    def det(self):
+        return RegexDetector({"CODICE_FISCALE"})
+
+    def test_valid_codice_fiscale(self, det):
+        spans = det.detect("Codice fiscale: RSSMRA85T10A562S")
+        assert any(s.entity_type == "CODICE_FISCALE" for s in spans)
+
+    def test_another_valid_code(self, det):
+        spans = det.detect("CF: BNCSFN80A01H501T")
+        assert any(s.entity_type == "CODICE_FISCALE" for s in spans)
+
+    def test_lowercase(self, det):
+        spans = det.detect("codice: rssmra85t10a562s")
+        assert any(s.entity_type == "CODICE_FISCALE" for s in spans)
+
+    def test_no_false_positive_short(self, det):
+        spans = det.detect("code: RSSMRA85T10A56")
+        assert not any(s.entity_type == "CODICE_FISCALE" for s in spans)
+
+    def test_no_false_positive_all_letters(self, det):
+        spans = det.detect("ABCDEFGHIJKLMNOP")
+        assert not any(s.entity_type == "CODICE_FISCALE" for s in spans)

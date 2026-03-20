@@ -92,6 +92,14 @@ entities:
     enabled: true
     action: hash
 
+  PASSPORT:          # Passport number (context-aware: requires "passport" keyword)
+    enabled: true
+    action: hash
+
+  CODICE_FISCALE:    # Italian Codice Fiscale: RSSMRA85T10A562S
+    enabled: true
+    action: hash
+
   # ── SpaCy NER tabanlı ──────────────────────────────────────
   # Türkçe model için: spacy_model: "tr_core_news_sm"
   # Kurulum: uv pip install <tr model wheel URL>
@@ -145,4 +153,5 @@ llm_detector:
     US_ZIP_CODE:    { enabled: true,  action: warn }
     EU_NATIONAL_ID: { enabled: true,  action: hash }
     PASSPORT:       { enabled: true,  action: hash }
+    CODICE_FISCALE: { enabled: true,  action: hash }
     CUSTOM_SECRET:  { enabled: false, action: hash }  # context-specific secrets

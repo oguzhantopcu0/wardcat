@@ -141,6 +141,29 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         r"\b[12]\d{2}(?:0[1-9]|1[0-2])\d{10}\b",
         0,
     ),
+    # ── Passport Number ───────────────────────────────────────────────────
+    # Context-aware: only matches when preceded by a passport keyword.
+    # Supports: English, Turkish, German, French, Spanish.
+    # Format: 1-2 capital letters + 6-9 digits (covers most countries).
+    "PASSPORT": (
+        r"\bpassport\s*(?:no\.?|number|num\.?|#)?\s*:?\s*[A-Z]{1,2}\d{6,9}\b"
+        r"|"
+        r"\bpasaport\s*(?:no\.?|numaras[iı])?\s*:?\s*[A-Z]{1,2}\d{6,9}\b"
+        r"|"
+        r"\breisepass\s*(?:nr\.?|nummer)?\s*:?\s*[A-Z]{1,2}\d{6,9}\b"
+        r"|"
+        r"\bpasseport\s*(?:no\.?|num[eé]ro)?\s*:?\s*[A-Z]{1,2}\d{6,9}\b"
+        r"|"
+        r"\bpasaporte\s*(?:no\.?|n[uú]mero)?\s*:?\s*[A-Z]{1,2}\d{6,9}\b",
+        re.IGNORECASE,
+    ),
+    # ── Italian Codice Fiscale ─────────────────────────────────────────────
+    # Italian personal tax code: 6 letters + 2 digits + letter + 2 digits + letter + 3 digits + letter
+    # Example: RSSMRA85T10A562S — 16 chars, very distinctive pattern.
+    "CODICE_FISCALE": (
+        r"\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b",
+        re.IGNORECASE,
+    ),
     # ── Custom Secret ─────────────────────────────────────────────────
     # Known token/credential prefix patterns — services with well-defined formats.
     # Contextual detection (password=VALUE) is delegated to the LLM detector.

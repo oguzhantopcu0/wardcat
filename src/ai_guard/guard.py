@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -62,6 +64,7 @@ _REGEX_ENTITIES = {
     "TC_ID", "ADDRESS", "POSTAL_CODE",
     "UUID", "SSN", "MAC_ADDRESS", "JWT", "NIN", "CUSTOM_SECRET",
     "UK_POSTAL_CODE", "US_ZIP_CODE", "EU_NATIONAL_ID",
+    "PASSPORT", "CODICE_FISCALE",
 }
 _NER_ENTITIES   = {"PERSON", "ORG", "ADDRESS"}
 
@@ -180,32 +183,61 @@ class LLMGuard:
         """Scan text and return a ScanResult."""
         return self._engine.scan(text)
 
-    def scan_batch(self, texts: List[str]) -> List[ScanResult]:
+    async def scan_async(self, text: str) -> ScanResult:
+        """Async wrapper for :meth:`scan` — runs in a thread pool executor."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.scan, text)
+
+    def scan_batch(self, texts: List[str], *, max_workers: int = 4) -> List[ScanResult]:
         """
-        Scan multiple texts sequentially.
+        Scan multiple texts in parallel using a thread pool.
 
         Each text is scanned independently; an error in a single item does
         not affect the others — the original text is returned untouched
         for any item that fails.
 
-        :param texts: List of texts to scan
-        :returns:     List of ``ScanResult`` corresponding to each text
+        :param texts:       List of texts to scan
+        :param max_workers: Maximum number of parallel threads (default: 4)
+        :returns:           List of ``ScanResult`` in the same order as ``texts``
         """
-        results: List[ScanResult] = []
-        for i, text in enumerate(texts):
+        if not texts:
+            return []
+
+        results: List[ScanResult | None] = [None] * len(texts)
+
+        def _scan_one(idx: int, text: str) -> tuple[int, ScanResult]:
             try:
-                results.append(self._engine.scan(text))
+                return idx, self._engine.scan(text)
             except Exception as exc:
                 logger.error(
                     "scan_batch item %d failed, returning original text: %s",
-                    i, exc, exc_info=True,
+                    idx, exc, exc_info=True,
                 )
-                results.append(ScanResult(
+                return idx, ScanResult(
                     original_text=text,
                     sanitized_text=text,
                     violations=[],
-                ))
-        return results
+                )
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_scan_one, i, text): i
+                for i, text in enumerate(texts)
+            }
+            for future in as_completed(futures):
+                idx, result = future.result()
+                results[idx] = result
+
+        return results  # type: ignore[return-value]
+
+    async def scan_batch_async(
+        self, texts: List[str], *, max_workers: int = 4
+    ) -> List[ScanResult]:
+        """Async wrapper for :meth:`scan_batch` — runs in a thread pool executor."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, lambda: self.scan_batch(texts, max_workers=max_workers)
+        )
 
     # ------------------------------------------------------------------
     # Programmatic API

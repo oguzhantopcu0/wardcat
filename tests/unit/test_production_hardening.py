@@ -192,12 +192,11 @@ class TestScanBatchIsolation:
         """
         guard = LLMGuard(use_ner=False)
 
-        call_count = [0]
         original_scan = guard._engine.scan
 
         def flaky_scan(text):
-            call_count[0] += 1
-            if call_count[0] == 2:
+            # Fail on the credit card text so the error is deterministic regardless of thread order
+            if "4111111111111111" in text:
                 raise RuntimeError("Simulated error")
             return original_scan(text)
 

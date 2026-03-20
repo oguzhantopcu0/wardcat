@@ -42,6 +42,11 @@ _ENTITY_DESCRIPTIONS: dict[str, str] = {
         "(e.g. US: 'A12345678', UK: '123456789', German: 'C01X00T47', French: '06AB12345'). "
         "Only extract when clearly labeled as a passport number."
     ),
+    "CODICE_FISCALE": (
+        "Italian personal tax code (Codice Fiscale) — 16 characters: "
+        "6 letters + 2 digits + letter + 2 digits + letter + 3 digits + letter "
+        "(e.g. 'RSSMRA85T10A562S', 'BNCSFN80A01H501T')"
+    ),
     "CUSTOM_SECRET": (
         "contextual secret/credential signaled by a keyword prefix such as: "
         "şifre=, password=, pass=, pwd=, api_key=, api-key=, apikey=, token=, "

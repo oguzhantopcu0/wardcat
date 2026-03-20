@@ -46,7 +46,7 @@ llm = [
 transformers = [
     "transformers>=4.40,<5",
     "torch>=2.0",
-    "accelerate>=0.26",       # device_map="auto" için gerekli
+    "accelerate>=0.26",       # required for device_map="auto"
 ]
 # Install everything at once
 all = [
@@ -84,8 +84,8 @@ testpaths = ["tests"]
 addopts = "-v"
 timeout = 30
 markers = [
-    "ner: SpaCy NER gerektiren testler (en_core_web_sm kurulu olmalı)",
-    "slow: Gerçek LLM/model gerektiren yavaş testler",
+    "ner: Tests requiring SpaCy NER (en_core_web_sm must be installed)",
+    "slow: Slow tests requiring a real LLM/model",
 ]
 
 [dependency-groups]

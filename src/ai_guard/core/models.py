@@ -24,6 +24,7 @@ KNOWN_ENTITY_TYPES: frozenset[str] = frozenset({
     "TC_ID", "IP_ADDRESS", "IPv6", "ADDRESS", "POSTAL_CODE", "CUSTOM_SECRET",
     "UUID", "SSN", "MAC_ADDRESS", "JWT", "NIN",
     "UK_POSTAL_CODE", "US_ZIP_CODE", "EU_NATIONAL_ID", "PASSPORT",
+    "CODICE_FISCALE",
 })
 
 
