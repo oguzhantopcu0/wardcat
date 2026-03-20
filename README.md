@@ -49,16 +49,23 @@ uv sync
 To use SpaCy NER (PERSON, ORG, ADDRESS detection):
 
 ```bash
-# English model
-uv pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+# List available models
+uv run python -m ai_guard spacy list
 
-# Turkish model (optional)
-# uv pip install <tr_core_news_sm wheel URL>
+# List Turkish models
+uv run python -m ai_guard spacy list --lang tr
+
+# Download English model (recommended)
+uv run python -m ai_guard spacy download en_core_web_sm
+
+# Download Turkish model (recommended)
+uv run python -m ai_guard spacy download tr_core_news_md
+
+# Check installed models
+uv run python -m ai_guard spacy installed
 ```
 
-> If the requested SpaCy model is not installed, ai-guard automatically falls back to any installed model of the same language with a warning.
-
-SpaCy is not required if you only need regex-based detection.
+> If the requested SpaCy model is not installed, ai-guard automatically falls back to any installed model of the same language and logs a warning. SpaCy is not required if you only need regex-based detection.
 
 ---
 
@@ -182,6 +189,8 @@ guard = LLMGuard(
 
 ## CLI
 
+### Scanning
+
 ```bash
 # Scan a single text
 ai-guard scan --text "TC: 12345678950 card: 4111111111111111"
@@ -189,15 +198,38 @@ ai-guard scan --text "TC: 12345678950 card: 4111111111111111"
 # Scan from file, JSON output
 ai-guard scan --file input.txt --format json
 
-# Disable NER
+# Disable NER (regex-only, fastest)
 ai-guard scan --text "..." --salt "my-salt" --no-ner
 
-# Turkish SpaCy model
-ai-guard scan --text "..." --model tr_core_news_sm
+# Use Turkish SpaCy model
+ai-guard scan --text "..." --model tr_core_news_md
 
 # Batch — each line is scanned independently
 ai-guard batch --file lines.txt --format json
+```
 
+### SpaCy NER Model Management
+
+```bash
+# List all supported SpaCy models
+ai-guard spacy list
+
+# Filter by language code
+ai-guard spacy list --lang tr
+ai-guard spacy list --lang en
+
+# Download a model
+ai-guard spacy download en_core_web_sm      # English (default)
+ai-guard spacy download tr_core_news_md     # Turkish (recommended)
+ai-guard spacy download tr_core_news_lg     # Turkish (higher accuracy, ~318 MB)
+
+# Show installed models
+ai-guard spacy installed
+```
+
+### On-prem LLM Model Management
+
+```bash
 # List available on-prem models
 ai-guard models list --recommended
 
@@ -430,6 +462,8 @@ uv run pytest --cov=src/ai_guard --cov-report=term-missing
 | `EU_NATIONAL_ID` | Only Spanish DNI/NIE via regex; French INSEE and German IDs require LLM layer |
 | `PASSPORT` | No regex — contextual LLM detection only; requires `use_llm=True` |
 | European addresses | Regex requires a recognizable street-type keyword (Straße, Rue, Calle…); unnumbered informal addresses may be missed |
+| Turkish NER (`tr_core_news_trf`) | Transformer model incompatible with SpaCy 3.5+ — use `tr_core_news_md` or `tr_core_news_lg` |
+| Turkish NER quality | `tr_core_news_md/lg` trained on news text; may miss names in non-standard contexts. For best results combine with `use_llm=True` |
 
 ---
 
