@@ -100,7 +100,7 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         r"|"
         # Italian: Viale/Piazza/Corso/Vicolo/Largo + optional article + name
         r"\b(?:Viale|Piazza|Corso|Vicolo|Largo)\s+"
-        r"(?:della?\s+|dello?\s+|dei?\s+|delle\s+|degli\s+)?"
+        r"(?:della?\s+|dello?\s+|dei?\s+|del\s+|delle\s+|degli\s+)?"
         r"[A-ZÀ-Ö][A-Za-zÀ-ÖØ-öø-ÿ\-]{2,20}(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ\-]{2,15}){0,3}\b"
         r"|"
         # Dutch compound streets: Kalverstraat, Keizersgracht, Prinsenlaan + optional number
@@ -109,7 +109,7 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         r"|"
         # German compound streets: Hauptstraße 15, Musterweg 7, Lindenallee
         r"\b[A-ZÄÖÜ][a-zäöüß]{2,20}"
-        r"(?:stra[sß]e|gasse|weg|platz|ring|allee|damm|ufer|chaussee)\b"
+        r"(?:stra(?:ss|ß)e|gasse|weg|platz|ring|allee|damm|ufer|chaussee)\b"
         r"(?:\s+\d{1,5}[a-z]?)?",
         0,
     ),
@@ -120,20 +120,25 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         r"\b[A-Z]{1,2}[0-9][0-9A-Z]?\s?[0-9][A-Z]{2}\b",
         re.IGNORECASE,
     ),
-    # ── ABD ZIP+4 Posta Kodu ──────────────────────────────────────────
-    # Format: 12345-6789 (5 hane + tire + 4 hane)
-    # Salt 5 hane false positive riski yüksek, bu nedenle yalnızca ZIP+4.
+    # ── ABD ZIP Posta Kodu ────────────────────────────────────────────
+    # ZIP+4: 12345-6789 (en düşük false positive)
+    # Etiketli: "ZIP: 90210" veya "zip code: 10001" (açık bağlam)
     "US_ZIP_CODE": (
-        r"\b\d{5}-\d{4}\b",
+        r"\b\d{5}-\d{4}\b"
+        r"|"
+        r"\b[Zz][Ii][Pp](?:\s*[Cc][Oo][Dd][Ee])?\s*:?\s*\d{5}\b",
         0,
     ),
     # ── AB Ulusal Kimlik Numarası ─────────────────────────────────────
     # İspanya DNI: 8 rakam + kontrol harfi (TRWAGMYFPDXBNJZSQVHLCKE)
     # İspanya NIE (yabancılar): X/Y/Z + 7 rakam + kontrol harfi
+    # Fransa INSEE (sosyal güvenlik): cinsiyet(1) + yıl(2) + ay(01-12) + 9 rakam = 15 hane
     "EU_NATIONAL_ID": (
         r"\b\d{8}[TRWAGMYFPDXBNJZSQVHLCKE]\b"
         r"|"
-        r"\b[XYZ]\d{7}[TRWAGMYFPDXBNJZSQVHLCKE]\b",
+        r"\b[XYZ]\d{7}[TRWAGMYFPDXBNJZSQVHLCKE]\b"
+        r"|"
+        r"\b[12]\d{2}(?:0[1-9]|1[0-2])\d{10}\b",
         0,
     ),
     # ── Custom Secret ─────────────────────────────────────────────────

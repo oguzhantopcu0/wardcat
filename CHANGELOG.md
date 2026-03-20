@@ -1,13 +1,46 @@
 # Changelog
 
-All notable changes to `ai-guard` will be documented here.
+All notable changes to `ai-guard` will be documented in this file.
 
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Versioning follows [Semantic Versioning](https://semver.org/).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
 ## [Unreleased]
+
+---
+
+## [0.2.0b1] - 2026-03-20
+
+### Added
+
+- **New entity types:** `UK_POSTAL_CODE` (British postcodes), `US_ZIP_CODE` (ZIP+4 format), and `EU_NATIONAL_ID` (Spanish DNI and NIE) via regex detection.
+- **Multilingual ADDRESS patterns:** French (Rue, Allée, Boulevard…), Spanish (Calle, Avenida, Plaza…), Italian (Piazza, Corso, Via…), Dutch (straat, gracht, laan…), and German (Straße, Weg, Platz…) street-type keywords added to the address regex.
+- **`PASSPORT` entity:** LLM-based contextual detection for passport numbers of any country. Requires `use_llm=True`.
+- **`CUSTOM_SECRET` entity:** Regex detection for known API token prefixes — `sk-`, `ghp_`, `AKIA`, `ya29.`, `xoxb-`, `xoxp-`. LLM layer extends this to contextual secrets (`password=VALUE`, `api_key=VALUE`).
+- **`ScanResult.redacted()`:** Returns a PII-free dict suitable for safe logging and API responses without exposing raw PII from `original_text` or `violations[].original`.
+- **SpaCy model auto-fallback:** When the requested SpaCy model is not installed, ai-guard automatically falls back to any installed model of the same language and emits a warning.
+- **DoS protection:** Inputs exceeding 500 KB now raise a `ValueError`. Previously this was a warning only.
+- **HTTP warning on all LLM backends:** A security warning is logged for HTTP connections to any LLM backend, including localhost. Use HTTPS via a reverse proxy in production.
+- **CLI salt warning:** The `ai-guard scan` and `ai-guard batch` commands warn when the `hash` action is used without a salt, indicating rainbow table vulnerability.
+- **GitHub Actions CI:** Matrix testing across Python 3.11, 3.12, and 3.13; enforces ≥80% test coverage; includes wheel build verification.
+
+### Changed
+
+- **Hash digest length:** Upgraded from 8 hex characters (32-bit entropy) to 16 hex characters (64-bit entropy). Replacement tokens now appear as `[TYPE:ea782818c5a992a8]`.
+- **TC_ID validation:** Now validated with the official Nüfus İdaresi checksum algorithm, eliminating false positives from random 11-digit sequences.
+- **IBAN validation:** Now validated with the ISO 13616 mod-97 checksum algorithm before flagging.
+- **ADDRESS regex:** Tightened pattern to reduce false positives on common non-address text.
+- **IPv6 validator:** Replaced previous implementation with a proper RFC 5952 alternation regex covering full and compressed forms.
+- **Version sourcing:** Package version is now read from `importlib.metadata` at runtime (single source of truth from `pyproject.toml`).
+
+### Fixed
+
+- **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
+- **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
+
+[0.2.0b1]: https://github.com/ai-guard/ai-guard/compare/v0.2.0...v0.2.0b1
 
 ---
 

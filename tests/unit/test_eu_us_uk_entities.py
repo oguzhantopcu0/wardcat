@@ -1,0 +1,244 @@
+"""
+EU/US/UK entity tipleri için unit testler.
+
+Kapsam:
+- UK_POSTAL_CODE: İngiliz posta kodları (SW1A 1AA formatı)
+- US_ZIP_CODE: ABD posta kodları (ZIP+4 ve etiketli format)
+- EU_NATIONAL_ID: İspanya DNI/NIE, Fransa INSEE
+- ADDRESS: Fransızca, İspanyolca, İtalyanca, Hollandaca, Almanca sokak desenleri
+"""
+from __future__ import annotations
+
+import pytest
+
+from ai_guard.detectors.regex_detector import RegexDetector
+
+ALL_NEW = {"UK_POSTAL_CODE", "US_ZIP_CODE", "EU_NATIONAL_ID", "ADDRESS"}
+
+
+@pytest.fixture
+def detector():
+    return RegexDetector(ALL_NEW)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UK_POSTAL_CODE
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUKPostalCode:
+    def test_central_london(self, detector):
+        spans = detector.detect("Address: 10 Downing Street, London SW1A 2AA")
+        assert any(s.entity_type == "UK_POSTAL_CODE" and "SW1A" in s.text for s in spans)
+
+    def test_ec_format(self, detector):
+        spans = detector.detect("Office: EC1A 1BB, London")
+        assert any(s.entity_type == "UK_POSTAL_CODE" for s in spans)
+
+    def test_single_letter_area(self, detector):
+        spans = detector.detect("Location: M1 1AE, Manchester")
+        assert any(s.entity_type == "UK_POSTAL_CODE" for s in spans)
+
+    def test_two_digit_district(self, detector):
+        spans = detector.detect("GU21 6TH Surrey")
+        assert any(s.entity_type == "UK_POSTAL_CODE" for s in spans)
+
+    def test_without_space(self, detector):
+        spans = detector.detect("postcode: W1A1HQ")
+        assert any(s.entity_type == "UK_POSTAL_CODE" for s in spans)
+
+    def test_lowercase(self, detector):
+        spans = detector.detect("post: sw1a 2aa")
+        assert any(s.entity_type == "UK_POSTAL_CODE" for s in spans)
+
+    def test_no_false_positive_plain_number(self, detector):
+        spans = detector.detect("ref: 12345")
+        assert not any(s.entity_type == "UK_POSTAL_CODE" for s in spans)
+
+    def test_no_false_positive_short_code(self, detector):
+        spans = detector.detect("code: AB")
+        assert not any(s.entity_type == "UK_POSTAL_CODE" for s in spans)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# US_ZIP_CODE
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUSZipCode:
+    def test_zip_plus_four(self, detector):
+        spans = detector.detect("ZIP+4: 10001-1234")
+        assert any(s.entity_type == "US_ZIP_CODE" and "10001-1234" in s.text for s in spans)
+
+    def test_washington_dc_zip4(self, detector):
+        spans = detector.detect("Washington, DC 20500-0001")
+        assert any(s.entity_type == "US_ZIP_CODE" for s in spans)
+
+    def test_labeled_zip(self, detector):
+        spans = detector.detect("ZIP: 90210")
+        assert any(s.entity_type == "US_ZIP_CODE" for s in spans)
+
+    def test_labeled_zip_code(self, detector):
+        spans = detector.detect("ZIP code: 10001")
+        assert any(s.entity_type == "US_ZIP_CODE" for s in spans)
+
+    def test_labeled_case_insensitive(self, detector):
+        spans = detector.detect("zip: 94102")
+        assert any(s.entity_type == "US_ZIP_CODE" for s in spans)
+
+    def test_no_false_positive_plain_five_digits(self, detector):
+        # Salt 5 hane bağlam olmadan tespit edilmemeli
+        spans = detector.detect("order #12345 total: 500")
+        assert not any(s.entity_type == "US_ZIP_CODE" for s in spans)
+
+    def test_no_false_positive_phone(self, detector):
+        spans = detector.detect("call 12345 extension")
+        assert not any(s.entity_type == "US_ZIP_CODE" for s in spans)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EU_NATIONAL_ID
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestEUNationalID:
+
+    class TestSpanishDNI:
+        def test_valid_dni(self, detector):
+            spans = detector.detect("DNI: 12345678Z")
+            assert any(s.entity_type == "EU_NATIONAL_ID" and "12345678Z" in s.text for s in spans)
+
+        def test_dni_another_letter(self, detector):
+            spans = detector.detect("documento: 87654321T")
+            assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
+
+        def test_no_false_positive_invalid_letter(self, detector):
+            # I, O, U harfleri DNI kontrol harfi olamaz
+            spans = detector.detect("code: 12345678I")
+            assert not any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
+
+        def test_no_false_positive_short(self, detector):
+            spans = detector.detect("num: 1234567Z")
+            assert not any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
+
+    class TestSpanishNIE:
+        def test_nie_x_prefix(self, detector):
+            spans = detector.detect("NIE: X1234567L")
+            assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
+
+        def test_nie_y_prefix(self, detector):
+            spans = detector.detect("NIE: Y9876543T")
+            assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
+
+        def test_nie_z_prefix(self, detector):
+            spans = detector.detect("NIE: Z0000001R")
+            assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
+
+    class TestFrenchINSEE:
+        def test_male_insee(self, detector):
+            # Erkek: 1 + yıl(2) + ay(01-12) + 9 rakam = 15 hane
+            spans = detector.detect("INSEE: 180027512345678")
+            assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
+
+        def test_female_insee(self, detector):
+            spans = detector.detect("numéro: 290117512345612")
+            assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
+
+        def test_no_false_positive_invalid_month(self, detector):
+            # Ay 13 geçersiz — eşleşmemeli
+            spans = detector.detect("num: 180137512345678")
+            assert not any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
+
+        def test_no_false_positive_wrong_prefix(self, detector):
+            # 3 ile başlayan 15 hane — INSEE değil
+            spans = detector.detect("ref: 380027512345678")
+            assert not any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADDRESS — Avrupa sokak desenleri
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestEuropeanAddressPatterns:
+
+    class TestFrench:
+        def test_rue(self, detector):
+            spans = detector.detect("Adresse: Rue de Rivoli 25, Paris")
+            assert any(s.entity_type == "ADDRESS" and "Rue" in s.text for s in spans)
+
+        def test_allee(self, detector):
+            spans = detector.detect("Allée des Roses 5")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
+
+        def test_impasse(self, detector):
+            spans = detector.detect("Impasse du Moulin")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
+
+        def test_rue_with_article(self, detector):
+            spans = detector.detect("Rue de la Paix, Lyon")
+            assert any(s.entity_type == "ADDRESS" and "Rue" in s.text for s in spans)
+
+    class TestSpanish:
+        def test_calle(self, detector):
+            spans = detector.detect("Dirección: Calle Mayor 10, Madrid")
+            assert any(s.entity_type == "ADDRESS" and "Calle" in s.text for s in spans)
+
+        def test_avenida(self, detector):
+            spans = detector.detect("Avenida de la Constitución 15")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
+
+        def test_plaza(self, detector):
+            spans = detector.detect("Plaza Mayor 1, Salamanca")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
+
+        def test_paseo(self, detector):
+            spans = detector.detect("Paseo de Gracia 92, Barcelona")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
+
+    class TestItalian:
+        def test_piazza(self, detector):
+            spans = detector.detect("Indirizzo: Piazza Navona 5, Roma")
+            assert any(s.entity_type == "ADDRESS" and "Piazza" in s.text for s in spans)
+
+        def test_corso(self, detector):
+            spans = detector.detect("Corso Buenos Aires 10, Milano")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
+
+        def test_viale(self, detector):
+            spans = detector.detect("Viale Libia 15, Roma")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
+
+        def test_vicolo(self, detector):
+            spans = detector.detect("Vicolo del Cinque 18, Roma")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
+
+    class TestDutch:
+        def test_straat(self, detector):
+            spans = detector.detect("Adres: Kalverstraat 152, Amsterdam")
+            assert any(s.entity_type == "ADDRESS" and "straat" in s.text for s in spans)
+
+        def test_gracht(self, detector):
+            spans = detector.detect("Keizersgracht 174, Amsterdam")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
+
+        def test_laan(self, detector):
+            spans = detector.detect("Prinsenlaan 45, Rotterdam")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
+
+    class TestGerman:
+        def test_strasse(self, detector):
+            spans = detector.detect("Adresse: Hauptstraße 15, Berlin")
+            assert any(s.entity_type == "ADDRESS" and "straße" in s.text.lower() for s in spans)
+
+        def test_strasse_ascii(self, detector):
+            spans = detector.detect("Musterstrasse 7, Hamburg")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
+
+        def test_weg(self, detector):
+            spans = detector.detect("Lindenweg 3, München")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
+
+        def test_platz(self, detector):
+            spans = detector.detect("Alexanderplatz 1, Berlin")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
+
+        def test_allee(self, detector):
+            spans = detector.detect("Unter den Linden / Lindenallee 5")
+            assert any(s.entity_type == "ADDRESS" for s in spans)
