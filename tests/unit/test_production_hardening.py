@@ -1,16 +1,16 @@
 """
-Production sertleştirme testleri.
+Production hardening tests.
 
-Kapsam:
-- ReDoS (Regex Denial-of-Service) koruması
-- Büyük input işleme
+Scope:
+- ReDoS (Regex Denial-of-Service) protection
+- Large input handling
 - Thread-safety (concurrent scan)
-- scan_batch hata izolasyonu
-- Ortam değişkeni konfigürasyonu
-- Config validasyon
-- Entity tip uyarısı
-- Salt uyarısı
-- Encoding hata yönetimi (CLI)
+- scan_batch error isolation
+- Environment variable configuration
+- Config validation
+- Entity type warning
+- Salt warning
+- Encoding error handling (CLI)
 - __version__ export
 """
 from __future__ import annotations
@@ -36,69 +36,69 @@ from ai_guard.detectors.regex_detector import RegexDetector
 def test_version_exported():
     import re
     assert __version__ is not None
-    # PEP 440: X.Y.Z veya X.Y.ZaN / X.Y.ZbN / X.Y.ZrcN (alpha/beta/rc)
-    assert re.match(r"^\d+\.\d+\.\d+", __version__), f"Geçersiz versiyon: {__version__}"
+    # PEP 440: X.Y.Z or X.Y.ZaN / X.Y.ZbN / X.Y.ZrcN (alpha/beta/rc)
+    assert re.match(r"^\d+\.\d+\.\d+", __version__), f"Invalid version: {__version__}"
 
 
-# ── ReDoS Koruması ────────────────────────────────────────────────────────────
+# ── ReDoS Protection ──────────────────────────────────────────────────────────
 
 class TestReDoS:
     """
-    Regex engine'in yoğun/özel-yapılı input'larda kabul edilebilir sürede
-    tamamlandığını doğrular.  pytest-timeout (pyproject.toml: timeout=30)
-    ile birlikte çalışır — regex takılırsa test 30s'de kesilir.
+    Verifies that the regex engine completes in an acceptable time
+    on intensive/specially-crafted inputs. Works together with pytest-timeout
+    (pyproject.toml: timeout=30) — if a regex hangs, the test is killed after 30s.
     """
 
     def _detector(self):
         return RegexDetector({"EMAIL", "CREDIT_CARD", "PHONE", "IBAN", "TC_ID", "IP_ADDRESS"})
 
     def test_long_repetitive_input(self):
-        """10 KB tekrarlayan karakter regex'i dondurmamalı."""
+        """10 KB of repetitive characters should not freeze the regex."""
         text = "a" * 10_000
         t0 = time.perf_counter()
         self._detector().detect(text)
         elapsed = time.perf_counter() - t0
-        assert elapsed < 5.0, f"Regex çok yavaş: {elapsed:.2f}s"
+        assert elapsed < 5.0, f"Regex too slow: {elapsed:.2f}s"
 
     def test_near_match_email_pattern(self):
-        """E-posta'ya benzeyen ama eşleşmeyen dizi regex'i dondurmamalı."""
-        text = ("a" * 50 + "@") * 200  # çok sayıda yanlış @
+        """A sequence that resembles an email but does not match should not freeze the regex."""
+        text = ("a" * 50 + "@") * 200  # many incorrect @
         t0 = time.perf_counter()
         self._detector().detect(text)
         elapsed = time.perf_counter() - t0
-        assert elapsed < 5.0, f"Regex çok yavaş: {elapsed:.2f}s"
+        assert elapsed < 5.0, f"Regex too slow: {elapsed:.2f}s"
 
     def test_near_match_credit_card(self):
-        """Kart numarasına benzeyen ama geçersiz dizi."""
-        text = "4111 " * 2000  # tekrarlayan kart prefix'i
+        """A sequence that resembles a card number but is invalid."""
+        text = "4111 " * 2000  # repeating card prefix
         t0 = time.perf_counter()
         self._detector().detect(text)
         elapsed = time.perf_counter() - t0
-        assert elapsed < 5.0, f"Regex çok yavaş: {elapsed:.2f}s"
+        assert elapsed < 5.0, f"Regex too slow: {elapsed:.2f}s"
 
     def test_mixed_separators_iban(self):
-        """IBAN formatına benzeyen ama hatalı uzun dizi."""
+        """Long sequence resembling IBAN format but with errors."""
         text = "TR" + "0" * 500
         t0 = time.perf_counter()
         self._detector().detect(text)
         elapsed = time.perf_counter() - t0
-        assert elapsed < 5.0, f"Regex çok yavaş: {elapsed:.2f}s"
+        assert elapsed < 5.0, f"Regex too slow: {elapsed:.2f}s"
 
 
-# ── Büyük Input ───────────────────────────────────────────────────────────────
+# ── Large Input ───────────────────────────────────────────────────────────────
 
 class TestLargeInput:
     def _guard(self):
         return LLMGuard(use_ner=False)
 
     def test_100kb_clean_text(self):
-        """100 KB temiz metin işlenebilmeli."""
+        """100 KB of clean text should be processable."""
         text = "Bu temiz bir metin, hassas veri yok. " * 2_800  # ~100KB
         result = self._guard().scan(text)
         assert result.is_clean
 
     def test_100kb_with_pii(self):
-        """100 KB metin içinde PII bulunabilmeli."""
+        """PII should be detectable within 100 KB of text."""
         filler = "Lorem ipsum dolor sit amet. " * 1_000
         text = filler + " email: test@example.com " + filler
         result = self._guard().scan(text)
@@ -106,8 +106,8 @@ class TestLargeInput:
         assert len(emails) >= 1
 
     def test_batch_many_items(self):
-        """100 öğeli batch işlenebilmeli, hiçbiri çökmemeli."""
-        texts = [f"Kullanıcı {i}: user{i}@example.com" for i in range(100)]
+        """A batch of 100 items should be processable without any crash."""
+        texts = [f"User {i}: user{i}@example.com" for i in range(100)]
         results = self._guard().scan_batch(texts)
         assert len(results) == 100
         assert all(
@@ -116,13 +116,13 @@ class TestLargeInput:
         )
 
     def test_scan_batch_large_items(self):
-        """10 KB'lık 10 öğeli batch performans kontrolü."""
+        """Performance check: batch of 10 items each 10 KB."""
         texts = [("temiz metin " * 500) for _ in range(10)]
         t0 = time.perf_counter()
         results = LLMGuard(use_ner=False).scan_batch(texts)
         elapsed = time.perf_counter() - t0
         assert len(results) == 10
-        assert elapsed < 10.0, f"Batch çok yavaş: {elapsed:.2f}s"
+        assert elapsed < 10.0, f"Batch too slow: {elapsed:.2f}s"
 
 
 # ── Thread-Safety ─────────────────────────────────────────────────────────────
@@ -130,8 +130,8 @@ class TestLargeInput:
 class TestThreadSafety:
     def test_concurrent_scan_no_crash(self):
         """
-        Aynı LLMGuard instance'ı eşzamanlı 10 thread'den çağrılabilmeli.
-        Sonuçlar tutarlı olmalı, exception olmamalı.
+        The same LLMGuard instance should be callable from 10 concurrent threads.
+        Results should be consistent and no exceptions should occur.
         """
         guard = LLMGuard(use_ner=False)
         texts = [
@@ -159,11 +159,11 @@ class TestThreadSafety:
         for t in threads:
             t.join(timeout=15)
 
-        assert not errors, f"Thread hataları: {errors}"
+        assert not errors, f"Thread errors: {errors}"
         assert all(r is not None for r in results)
 
     def test_concurrent_scan_batch(self):
-        """scan_batch eşzamanlı çağrılabilmeli."""
+        """scan_batch should be callable concurrently."""
         guard = LLMGuard(use_ner=False)
         batch = ["a@b.com", "temiz", "4111111111111111"] * 10
         errors: list[Exception] = []
@@ -183,12 +183,12 @@ class TestThreadSafety:
         assert not errors
 
 
-# ── scan_batch Hata İzolasyonu ────────────────────────────────────────────────
+# ── scan_batch Error Isolation ────────────────────────────────────────────────
 
 class TestScanBatchIsolation:
     def test_exception_in_one_item_does_not_fail_others(self):
         """
-        Bir öğede beklenmeyen hata olsa bile diğerleri başarıyla taranmalı.
+        Even if an unexpected error occurs in one item, the others should be scanned successfully.
         """
         guard = LLMGuard(use_ner=False)
 
@@ -198,7 +198,7 @@ class TestScanBatchIsolation:
         def flaky_scan(text):
             call_count[0] += 1
             if call_count[0] == 2:
-                raise RuntimeError("Simüle edilmiş hata")
+                raise RuntimeError("Simulated error")
             return original_scan(text)
 
         guard._engine.scan = flaky_scan
@@ -207,10 +207,10 @@ class TestScanBatchIsolation:
         results = guard.scan_batch(texts)
 
         assert len(results) == 3
-        # 2. öğe hata → orijinal metin döner, temiz sayılır
+        # 2nd item errors → original text returned, considered clean
         assert results[1].original_text == "4111111111111111"
         assert results[1].is_clean
-        # Diğerleri normal
+        # Others normal
         assert any(v.entity_type == "EMAIL" for v in results[0].violations)
         assert any(v.entity_type == "EMAIL" for v in results[2].violations)
 
@@ -218,7 +218,7 @@ class TestScanBatchIsolation:
         assert LLMGuard(use_ner=False).scan_batch([]) == []
 
 
-# ── Ortam Değişkeni Konfigürasyonu ────────────────────────────────────────────
+# ── Environment Variable Configuration ───────────────────────────────────────
 
 class TestEnvVarConfig:
     def test_llmguard_salt_from_env(self):
@@ -250,11 +250,11 @@ class TestEnvVarConfig:
         with patch.dict(os.environ, {"LLMGUARD_LLM_TIMEOUT": "abc"}):
             with caplog.at_level(logging.WARNING, logger="ai_guard.config.loader"):
                 cfg = load_config()
-        # Geçersiz değer yok sayılır, default korunur
+        # Invalid value is ignored, default is preserved
         assert cfg["llm_detector"]["timeout"] == 60
 
     def test_env_overrides_yaml(self, tmp_path):
-        """Ortam değişkeni YAML değerinin üzerine yazmalı."""
+        """Environment variable should override the YAML value."""
         yaml_file = tmp_path / "cfg.yaml"
         yaml_file.write_text("salt: yaml-salt\n")
         with patch.dict(os.environ, {"LLMGUARD_SALT": "env-salt"}):
@@ -262,7 +262,7 @@ class TestEnvVarConfig:
         assert cfg["salt"] == "env-salt"
 
 
-# ── Config Validasyon ─────────────────────────────────────────────────────────
+# ── Config Validation ─────────────────────────────────────────────────────────
 
 class TestConfigValidation:
     def test_invalid_action_raises(self):
@@ -278,7 +278,7 @@ class TestConfigValidation:
             },
             "llm_detector": {"backend": "ollama", "timeout": 60},
         }
-        validate_config(cfg)  # hata fırlatmamalı
+        validate_config(cfg)  # should not raise
 
     def test_invalid_backend_raises(self):
         cfg = {
@@ -302,7 +302,7 @@ class TestConfigValidation:
             guard.configure_entity("EMAIL", action="delete")
 
 
-# ── Entity Tip Uyarısı ────────────────────────────────────────────────────────
+# ── Entity Type Warning ───────────────────────────────────────────────────────
 
 class TestEntityTypeWarning:
     def test_known_types_no_warning(self, caplog):
@@ -323,7 +323,7 @@ class TestEntityTypeWarning:
         assert "TYPO_ENTITY" in caplog.text
 
 
-# ── Salt Uyarısı ──────────────────────────────────────────────────────────────
+# ── Salt Warning ──────────────────────────────────────────────────────────────
 
 class TestSaltWarning:
     def test_empty_salt_with_hash_action_logs_warning(self, caplog):
@@ -337,7 +337,7 @@ class TestSaltWarning:
         assert "LLMGUARD_SALT" not in caplog.text
 
 
-# ── CLI Encoding Hata Yönetimi ────────────────────────────────────────────────
+# ── CLI Encoding Error Handling ───────────────────────────────────────────────
 
 class TestCLIEncodingError:
     def test_utf8_file_read_ok(self, tmp_path):
@@ -360,13 +360,13 @@ class TestCLIEncodingError:
             _read_file(f)
 
     def test_cli_scan_invalid_utf8_exits_with_error(self, tmp_path):
-        """cmd_scan → ValueError; main() bunu yakalayıp sys.exit(1) çağırır."""
+        """cmd_scan → ValueError; main() catches it and calls sys.exit(1)."""
         f = tmp_path / "bad.txt"
         f.write_bytes(b"\xff\xfe bad encoding")
         from ai_guard.__main__ import _build_parser, cmd_scan
         parser = _build_parser()
         args = parser.parse_args(["scan", "--file", str(f), "--no-ner"])
-        # cmd_scan doğrudan ValueError fırlatır (main() onu yakalar, sys.exit(1) yapar)
+        # cmd_scan raises ValueError directly (main() catches it and calls sys.exit(1))
         with pytest.raises(ValueError, match="UTF-8"):
             cmd_scan(args)
 
@@ -378,7 +378,7 @@ class TestCLIEncodingError:
             cmd_scan(args)
 
 
-# ── Logging Entegrasyonu ──────────────────────────────────────────────────────
+# ── Logging Integration ───────────────────────────────────────────────────────
 
 class TestLogging:
     def test_engine_logs_scan_completion(self, caplog):
@@ -396,7 +396,7 @@ class TestLogging:
         from ai_guard.detectors.llm_detector import LLMDetector
         from unittest.mock import MagicMock
         backend = MagicMock()
-        backend.complete_messages.side_effect = ConnectionError("bağlantı yok")
+        backend.complete_messages.side_effect = ConnectionError("no connection")
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
         with caplog.at_level(logging.WARNING, logger="ai_guard.detectors.llm_detector"):
             result = det.detect("test@example.com")

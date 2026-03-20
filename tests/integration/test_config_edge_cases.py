@@ -1,14 +1,14 @@
 """
-Config yükleyici ve LLMGuard konfigürasyon derinlik testleri.
+Config loader and LLMGuard configuration deep tests.
 
-Kapsam:
-  - Hatalı / eksik YAML
-  - Bilinmeyen entity tipleri
-  - Geçersiz action değeri
-  - Deep-merge doğruluğu
-  - Programmatic API edge case'leri
-  - Salt sıfırlama
-  - Entity devre dışı → tespit yapılmaz
+Scope:
+  - Malformed / missing YAML
+  - Unknown entity types
+  - Invalid action value
+  - Deep-merge correctness
+  - Programmatic API edge cases
+  - Salt reset
+  - Entity disabled → no detection
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from ai_guard.config.loader import DEFAULT_CONFIG, _deep_merge, load_config
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# load_config — deep-merge mantığı
+# load_config — deep-merge logic
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestDeepMerge:
@@ -39,7 +39,7 @@ class TestDeepMerge:
         base     = {"entities": {"EMAIL": {"enabled": True, "action": "warn"}}}
         override = {"entities": {"EMAIL": {"action": "hash"}}}
         result   = _deep_merge(base, override)
-        # action override edildi ama enabled default'tan geldi
+        # action was overridden but enabled came from the default
         assert result["entities"]["EMAIL"]["action"]   == "hash"
         assert result["entities"]["EMAIL"]["enabled"]  is True
 
@@ -73,10 +73,10 @@ class TestLoadConfig:
         f.write_text(yaml.dump({"entities": {"CUSTOM_ENTITY": {"enabled": True, "action": "warn"}}}))
         cfg = load_config(f)
         assert "CUSTOM_ENTITY" in cfg["entities"]
-        assert "EMAIL" in cfg["entities"]   # default korundu
+        assert "EMAIL" in cfg["entities"]   # default preserved
 
     def test_partial_entity_override(self, tmp_path: Path):
-        """Yalnızca 'action' override edildiğinde 'enabled' default kalmalı."""
+        """When only 'action' is overridden, 'enabled' should remain at default."""
         f = tmp_path / "cfg.yaml"
         f.write_text(yaml.dump({"entities": {"EMAIL": {"action": "hash"}}}))
         cfg = load_config(f)
@@ -100,15 +100,15 @@ class TestLoadConfig:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# LLMGuard programmatic API edge case'leri
+# LLMGuard programmatic API edge cases
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestProgrammaticAPIEdgeCases:
     def test_configure_unknown_entity_type(self):
-        """Bilinmeyen entity tipi konfigüre edilebilmeli (regex/NER yoksa etkisiz)."""
+        """Unknown entity type should be configurable (no effect without regex/NER)."""
         guard = LLMGuard(use_ner=False)
         guard.configure_entity("MY_CUSTOM_PII", enabled=True, action="warn")
-        # hata fırlatmamalı, tarama çalışmalı
+        # should not raise, scan should work
         result = guard.scan("bazı metin")
         assert result is not None
 
@@ -148,12 +148,12 @@ class TestProgrammaticAPIEdgeCases:
         guard.configure_entity("EMAIL", enabled=True, action="hash")
         r2 = guard.scan("a@b.com")
 
-        assert "a@b.com" in r1.sanitized_text      # warn → değişmez
-        assert "a@b.com" not in r2.sanitized_text  # hash → değişir
+        assert "a@b.com" in r1.sanitized_text      # warn → unchanged
+        assert "a@b.com" not in r2.sanitized_text  # hash → changed
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# Entity enabled/disabled davranışı
+# Entity enabled/disabled behavior
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestEntityEnablement:
@@ -170,7 +170,7 @@ class TestEntityEnablement:
         guard.configure_entity(entity, enabled=False)
         result = guard.scan(text)
         assert not any(v.entity_type == entity for v in result.violations), \
-            f"{entity} disabled olmasına rağmen tespit edildi"
+            f"{entity} was detected despite being disabled"
 
     @pytest.mark.parametrize("entity,text", [
         ("CREDIT_CARD", "4111111111111111"),
@@ -183,11 +183,11 @@ class TestEntityEnablement:
         guard.configure_entity(entity, enabled=True, action="warn")
         result = guard.scan(text)
         assert any(v.entity_type == entity for v in result.violations), \
-            f"{entity} yeniden etkinleştirilmedi"
+            f"{entity} was not re-enabled"
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# YAML + Programmatic API sıralaması
+# YAML + Programmatic API ordering
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestYAMLAndProgrammaticCombined:
@@ -215,5 +215,5 @@ class TestYAMLAndProgrammaticCombined:
         guard2.configure_entity("TC_ID", enabled=True, action="hash")
         r2 = guard2.scan("TC: 12345678950")
 
-        # Farklı salt → farklı hash
+        # Different salt → different hash
         assert r1.sanitized_text != r2.sanitized_text

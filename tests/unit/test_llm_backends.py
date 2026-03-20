@@ -1,6 +1,6 @@
 """
-LLM backend birimleri: backend oluşturma, hata yönetimi,
-model_manager arayüzü — gerçek HTTP çağrısı yapılmaz.
+LLM backend units: backend creation, error handling,
+model_manager interface — no real HTTP calls are made.
 """
 from __future__ import annotations
 

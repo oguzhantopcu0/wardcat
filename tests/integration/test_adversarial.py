@@ -1,9 +1,9 @@
 """
-Adversarial / kaçınma girdi testleri.
+Adversarial / evasion input tests.
 
-Amaç: Kütüphanenin gerçek dünya kaçınma tekniklerine karşı davranışını
-belgeler. Tespit EDİLEMEYEN durumlar `xfail` ile işaretlenip neden
-yakalanmadığı açıklanmıştır — bunlar bilinen sınırlar, bug değil.
+Purpose: Documents the library's behavior against real-world evasion techniques.
+Undetectable cases are marked with `xfail` explaining why they are not caught —
+these are known limitations, not bugs.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def g():
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# A01: Separator varyasyonları — kart numarası
+# A01: Separator variations — card number
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestCardSeparatorVariants:
@@ -34,51 +34,51 @@ class TestCardSeparatorVariants:
     def test_mixed_separator(self, g):
         assert "CREDIT_CARD" in {v.entity_type for v in g.scan("4111 1111-1111 1111").violations}
 
-    @pytest.mark.xfail(reason="Çift boşluk kaçınması: regex yalnızca tek separator destekler")
+    @pytest.mark.xfail(reason="Double-space evasion: regex only supports single separator")
     def test_double_space_separator_evades(self, g):
         result = g.scan("4111  1111  1111  1111")
         assert "CREDIT_CARD" in {v.entity_type for v in result.violations}
 
-    @pytest.mark.xfail(reason="Nokta separator: regex [\\s\\-]? ile nokta eşleşmez")
+    @pytest.mark.xfail(reason="Dot separator: regex [\\s\\-]? does not match dots")
     def test_dot_separator_evades(self, g):
         result = g.scan("4111.1111.1111.1111")
         assert "CREDIT_CARD" in {v.entity_type for v in result.violations}
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# A02: Unicode / görsel yanıltma
+# A02: Unicode / visual spoofing
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestUnicodeAdversarial:
     def test_normal_email_detected(self, g):
         assert "EMAIL" in {v.entity_type for v in g.scan("ali@test.com").violations}
 
-    @pytest.mark.xfail(reason="Kiril 'а' görsel olarak Latin 'a' ile aynı görünür; regex ASCII'ye özgü")
+    @pytest.mark.xfail(reason="Cyrillic 'а' looks the same as Latin 'a'; regex is ASCII-specific")
     def test_cyrillic_homoglyph_evades(self, g):
-        """Kiril karakterli e-posta: аli@test.com ('а' = U+0430, Kiril)"""
-        cyrillic_a = "\u0430"   # Kiril küçük а
+        """Cyrillic character email: аli@test.com ('а' = U+0430, Cyrillic)"""
+        cyrillic_a = "\u0430"   # Cyrillic lowercase а
         email = f"{cyrillic_a}li@test.com"
         result = g.scan(email)
         assert "EMAIL" in {v.entity_type for v in result.violations}
 
     def test_emoji_in_text_does_not_break_detection(self, g):
-        """Emojiler arasındaki PII hâlâ tespit edilmeli."""
+        """PII between emojis should still be detected."""
         result = g.scan("🔒 TC: 12345678950 🔒")
         assert "TC_ID" in {v.entity_type for v in result.violations}
 
     def test_arabic_text_around_pii(self, g):
-        """Arapça metin PII tespitini bozmamalı."""
+        """Arabic text should not break PII detection."""
         result = g.scan("مرحبا 4111111111111111 شكرا")
         assert "CREDIT_CARD" in {v.entity_type for v in result.violations}
 
     def test_cjk_text_around_pii(self, g):
-        """CJK karakterler arasındaki PII hâlâ yakalanmalı."""
+        """PII between CJK characters should still be captured."""
         result = g.scan("你好 a@b.com 谢谢")
         assert "EMAIL" in {v.entity_type for v in result.violations}
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# A03: Gürültü / bağlam içine gömme
+# A03: Noise / embedding in context
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestEmbeddedInNoise:
@@ -90,7 +90,7 @@ class TestEmbeddedInNoise:
         assert "CREDIT_CARD" in {v.entity_type for v in result.violations}
 
     def test_pii_after_many_numbers(self, g):
-        """Sahte sayıların arasındaki gerçek PII seçilmeli."""
+        """Real PII among fake numbers should be correctly selected."""
         text = " ".join([f"ref-{i:04d}" for i in range(50)]) + " TC: 12345678950"
         result = g.scan(text)
         tc_violations = [v for v in result.violations if v.entity_type == "TC_ID"]
@@ -98,7 +98,7 @@ class TestEmbeddedInNoise:
         assert tc_violations[0].original == "12345678950"
 
     def test_pii_split_across_label_and_value(self, g):
-        """Label–değer formatında PII tespit edilmeli."""
+        """PII in label–value format should be detected."""
         for fmt in [
             "Email: ali@test.com",
             "E-posta : ali@test.com",
@@ -107,11 +107,11 @@ class TestEmbeddedInNoise:
         ]:
             result = g.scan(fmt)
             assert "EMAIL" in {v.entity_type for v in result.violations}, \
-                f"Format yakalanmadı: {fmt!r}"
+                f"Format not caught: {fmt!r}"
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# A04: Arka arkaya / bitişik entity'ler
+# A04: Consecutive / adjacent entities
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestConsecutiveEntities:
@@ -121,24 +121,24 @@ class TestConsecutiveEntities:
         assert len(emails) == 2
 
     def test_email_immediately_after_phone(self, g):
-        """Aralarında separator olan durumda her ikisi de tespit edilmeli."""
-        result = g.scan("0532 111 22 33 a@b.com")   # boşluk ile ayrılmış
+        """Both should be detected when separated by a separator."""
+        result = g.scan("0532 111 22 33 a@b.com")   # separated by space
         types = {v.entity_type for v in result.violations}
         assert "PHONE" in types
         assert "EMAIL" in types
 
     @pytest.mark.xfail(
-        reason="Bitişik phone+email: email regex '33a@b.com' yakalıyor, "
-               "phone ile çakışıyor, overlap çözümü telefonu koruyor (daha uzun span)"
+        reason="Adjacent phone+email: email regex captures '33a@b.com', "
+               "overlaps with phone, overlap resolution keeps the phone (longer span)"
     )
     def test_email_glued_to_phone_evades(self, g):
-        """Separator olmadan bitişik phone+email: email kaçınma vektörü."""
+        """Adjacent phone+email without separator: email evasion vector."""
         result = g.scan("0532 111 22 33a@b.com")
         types = {v.entity_type for v in result.violations}
         assert "PHONE" in types
         assert "EMAIL" in types
 
-    @pytest.mark.xfail(reason="İki IBAN arasında separator yoksa kelime sınırı bozulur")
+    @pytest.mark.xfail(reason="Two IBANs without separator breaks word boundary")
     def test_two_ibans_no_separator(self, g):
         ibans = "TR330006100519786457841326TR330006100519786457841327"
         result = g.scan(ibans)
@@ -147,7 +147,7 @@ class TestConsecutiveEntities:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# A05: Kısmi / kesilmiş veriler
+# A05: Partial / truncated data
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestPartialData:
@@ -160,26 +160,26 @@ class TestPartialData:
         assert "CREDIT_CARD" not in {v.entity_type for v in result.violations}
 
     def test_partial_tc_10_digits_not_detected(self, g):
-        result = g.scan("numara: 1234567890")   # 10 hane — TC değil
+        result = g.scan("numara: 1234567890")   # 10 digits — not TC
         assert "TC_ID" not in {v.entity_type for v in result.violations}
 
     def test_partial_iban_not_detected(self, g):
-        # IBAN minimum 15 karakter — bunun altı eşleşmemeli
-        result = g.scan("TR330006100")   # 11 karakter — regex minimumunun altı
+        # IBAN minimum 15 characters — below that should not match
+        result = g.scan("TR330006100")   # 11 characters — below regex minimum
         assert "IBAN" not in {v.entity_type for v in result.violations}
 
     @pytest.mark.xfail(
-        reason="15 karakterlik dizi IBAN regex minimumunu (2+2+4+7) karşılar; "
-               "uzunluk doğrulaması regex kapsamı dışında"
+        reason="A 15-character sequence satisfies the IBAN regex minimum (2+2+4+7); "
+               "length validation is outside regex scope"
     )
     def test_15_char_iban_lookalike_evades(self, g):
-        """15 karakter minimum IBAN örüntüsünü karşılar ama gerçek IBAN değildir."""
+        """15 characters satisfies the minimum IBAN pattern but is not a real IBAN."""
         result = g.scan("TR3300061005197")
         assert "IBAN" not in {v.entity_type for v in result.violations}
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# A06: Büyük/küçük harf varyasyonları
+# A06: Case variations
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestCaseVariants:
@@ -197,12 +197,12 @@ class TestCaseVariants:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# A07: Sanitized metin bütünlüğü — replacement sonrası konum kayması
+# A07: Sanitized text integrity — position shift after replacement
 # ══════════════════════════════════════════════════════════════════════════
 
 class TestSanitizedIntegrity:
     def test_all_original_originals_extractable_from_original_text(self, g):
-        """Her violation'ın original alanı, original_text'ten çıkarılabilmeli."""
+        """The original field of each violation should be extractable from original_text."""
         texts = [
             "TC: 12345678950 kart: 4111111111111111 mail: x@y.com",
             "IBAN: TR330006100519786457841326 tel: 0532 111 22 33",
@@ -213,8 +213,8 @@ class TestSanitizedIntegrity:
             for v in result.violations:
                 extracted = text[v.start:v.end]
                 assert extracted == v.original, (
-                    f"[{v.entity_type}] beklenen={v.original!r}, "
-                    f"konumdan çıkarılan={extracted!r} pos=[{v.start}:{v.end}]"
+                    f"[{v.entity_type}] expected={v.original!r}, "
+                    f"extracted from position={extracted!r} pos=[{v.start}:{v.end}]"
                 )
 
     def test_sanitized_text_length_accounts_for_replacements(self, g):
@@ -223,17 +223,17 @@ class TestSanitizedIntegrity:
         text   = "prefix a@b.com suffix"
         result = g2.scan(text)
         v = next(v for v in result.violations if v.entity_type == "EMAIL")
-        # len(replacement) - len(original) = fark
+        # len(replacement) - len(original) = delta
         expected_delta = len(v.replacement) - len(v.original)
         actual_delta   = len(result.sanitized_text) - len(result.original_text)
         assert actual_delta == expected_delta
 
     def test_non_pii_parts_unchanged_in_sanitized(self, g):
-        """Hassas olmayan metin bölümleri sanitized_text'te korunmalı."""
+        """Non-sensitive parts of the text should be preserved in sanitized_text."""
         prefix = "BAŞLANGIÇ "
         suffix = " SONUÇ"
         text   = prefix + "4111111111111111" + suffix
         result = g.scan(text)
-        # CREDIT_CARD varsayılan → hash; prefix ve suffix değişmemeli
+        # CREDIT_CARD default → hash; prefix and suffix should not change
         assert result.sanitized_text.startswith(prefix)
         assert result.sanitized_text.endswith(suffix)

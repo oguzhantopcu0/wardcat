@@ -1,7 +1,7 @@
 """
-ModelManager.ensure_available() birim testleri.
+ModelManager.ensure_available() unit tests.
 
-Gerçek Ollama bağlantısı yapılmaz; backend mock'lanır.
+No real Ollama connection is made; the backend is mocked.
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ class TestEnsureAvailable:
 
     def test_not_available_user_confirms_pulls(self):
         mgr = _mgr([])
-        with patch("builtins.input", return_value="e"):
+        with patch("builtins.input", return_value="y"):
             result = mgr.ensure_available("llama3.1:8b", verbose=True)
         assert result is True
         mgr.backend.pull_model.assert_called_once()
@@ -54,7 +54,7 @@ class TestEnsureAvailable:
         assert result is False
 
     def test_not_available_eof_declines(self):
-        """TTY yoksa (CI/pipe) EOFError → iptal."""
+        """No TTY (CI/pipe) → EOFError → cancelled."""
         mgr = _mgr([])
         with patch("builtins.input", side_effect=EOFError):
             result = mgr.ensure_available("llama3.1:8b", verbose=True)
@@ -62,14 +62,14 @@ class TestEnsureAvailable:
         mgr.backend.pull_model.assert_not_called()
 
     def test_verbose_false_no_input_prompt(self):
-        """verbose=False → input() çağrılmamalı, yoksa hata."""
+        """verbose=False → input() should not be called, otherwise error."""
         mgr = _mgr(["llama3.1:8b"])
-        # input çağrılırsa RuntimeError (patch yoksa gerçek stdin beklenir)
+        # If input is called, RuntimeError (without patch, real stdin would be used)
         with patch("builtins.input", side_effect=RuntimeError("input called!")):
             result = mgr.ensure_available("llama3.1:8b", verbose=False)
-        assert result is True  # zaten mevcut, input'a gerek yok
+        assert result is True  # already available, no input needed
 
-    @pytest.mark.parametrize("answer", ["e", "evet", "y", "yes", "E", "EVET"])
+    @pytest.mark.parametrize("answer", ["y", "yes", "Y", "YES"])
     def test_affirmative_answers_trigger_pull(self, answer):
         mgr = _mgr([])
         with patch("builtins.input", return_value=answer):
@@ -77,7 +77,7 @@ class TestEnsureAvailable:
         assert result is True
         mgr.backend.pull_model.assert_called_once()
 
-    @pytest.mark.parametrize("answer", ["h", "hayır", "n", "no", "H", "x"])
+    @pytest.mark.parametrize("answer", ["h", "n", "no", "H", "x", "nope"])
     def test_negative_answers_cancel(self, answer):
         mgr = _mgr([])
         with patch("builtins.input", return_value=answer):
@@ -86,7 +86,7 @@ class TestEnsureAvailable:
 
 
 class TestPullStillWorks:
-    """ensure_available eklenmesi pull()'u bozmamış olmalı."""
+    """Adding ensure_available should not have broken pull()."""
 
     def test_pull_calls_backend(self):
         mgr = _mgr([])

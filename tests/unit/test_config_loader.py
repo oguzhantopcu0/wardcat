@@ -28,7 +28,7 @@ def test_yaml_overrides_default(tmp_path: Path):
     assert config["salt"] == "test-salt"
     assert config["entities"]["EMAIL"]["enabled"] is False
     assert config["entities"]["EMAIL"]["action"] == "hash"
-    # Diğer entity'ler default'tan gelmeli
+    # Other entities should come from defaults
     assert config["entities"]["CREDIT_CARD"]["action"] == "hash"
 
 

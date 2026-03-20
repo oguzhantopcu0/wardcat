@@ -1,6 +1,6 @@
 """
-Entegrasyon testleri: gerçekçi LLM prompt senaryoları.
-NER kapalı tutulmuştur → SpaCy kurulmadan çalışır.
+Integration tests: realistic LLM prompt scenarios.
+NER is kept disabled → runs without SpaCy installed.
 """
 import pytest
 from ai_guard import LLMGuard
@@ -32,7 +32,7 @@ def test_multiple_entities_detected(guard):
 
 
 def test_hashed_entities_not_in_sanitized_text(guard):
-    # CREDIT_CARD, IBAN, TC_ID varsayılan olarak hash
+    # CREDIT_CARD, IBAN, TC_ID are hashed by default
     result = guard.scan(SAMPLE_PROMPT)
     assert "4532015112830366"          not in result.sanitized_text
     assert "TR330006100519786457841326" not in result.sanitized_text

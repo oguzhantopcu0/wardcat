@@ -1,11 +1,11 @@
 """
-DetectionEngine iç mekanizması testleri.
+DetectionEngine internal mechanism tests.
 
-Kapsam:
-  - _resolve_overlaps: tüm çakışma geometrileri
-  - scan() offset takibi: çoklu ardışık replacement sonrası metin bütünlüğü
-  - Violation sıralama: metindeki görünüm sırasına uygunluk
-  - Boş girdi davranışı
+Scope:
+  - _resolve_overlaps: all overlap geometries
+  - scan() offset tracking: text integrity after multiple consecutive replacements
+  - Violation ordering: compliance with order of appearance in text
+  - Empty input behavior
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from ai_guard.core.models import Action
 from ai_guard.detectors.base import BaseDetector, DetectedSpan
 
 
-# ── Yardımcı: sabit span listesi döndüren sahte dedektör ────────────────────
+# ── Helper: fake detector that returns a fixed span list ────────────────────
 
 class _FixedDetector(BaseDetector):
     def __init__(self, spans: list[DetectedSpan]) -> None:
@@ -45,7 +45,7 @@ class TestResolveOverlaps:
     def _span(self, t, s, e, text="x"):
         return DetectedSpan(t, text[s:e] if len(text) > e else "x", s, e)
 
-    # Temel geometriler
+    # Basic geometries
     def test_empty_input(self):
         assert self._engine()._resolve_overlaps([]) == []
 
@@ -64,7 +64,7 @@ class TestResolveOverlaps:
         result = self._engine()._resolve_overlaps(spans)
         assert len(result) == 2
 
-    # Çakışma — uzunluk kazanır
+    # Overlap — longer wins
     def test_overlap_longer_wins(self):
         long  = DetectedSpan("LONG",  "hello world", 0, 11)
         short = DetectedSpan("SHORT", "hello",        0,  5)
@@ -86,10 +86,10 @@ class TestResolveOverlaps:
         assert result[0].entity_type == "OUTER"
 
     def test_overlap_shorter_first_in_list_but_longer_wins(self):
-        """Sıralamada önce gelen ama daha kısa olan kaybeder."""
+        """The one that appears first in ordering but is shorter loses."""
         short = DetectedSpan("SHORT", "abc",    0, 3)
         long  = DetectedSpan("LONG",  "abcdef", 0, 6)
-        # resolve_overlaps girişi sıralı (start'a göre) alır; aynı start için her ikisi de 0
+        # resolve_overlaps receives sorted input (by start); same start for both (0)
         result = self._engine()._resolve_overlaps(sorted([short, long], key=lambda s: s.start))
         assert result[0].entity_type == "LONG"
 
@@ -104,11 +104,11 @@ class TestResolveOverlaps:
         assert result[0].entity_type == "L"
 
     def test_non_overlapping_after_overlap_chain(self):
-        """Çakışma sonrası gelen span da korunmalı."""
+        """The span following an overlap should also be preserved."""
         spans = [
             DetectedSpan("A", "hello", 0, 5),
-            DetectedSpan("B", "hel",   0, 3),   # A ile çakışır, A kazanır
-            DetectedSpan("C", "world", 6, 11),  # çakışmaz
+            DetectedSpan("B", "hel",   0, 3),   # overlaps A, A wins
+            DetectedSpan("C", "world", 6, 11),  # no overlap
         ]
         result = self._engine()._resolve_overlaps(sorted(spans, key=lambda s: s.start))
         assert len(result) == 2
@@ -118,13 +118,13 @@ class TestResolveOverlaps:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Offset takibi — çoklu replacement sonrası metin bütünlüğü
+# Offset tracking — text integrity after multiple replacements
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestOffsetTracking:
     """
-    Birden fazla hash replacement yapıldığında, sonraki replacement'ların
-    konumlarının doğru hesaplandığını doğrular.
+    Verifies that when multiple hash replacements are applied,
+    subsequent replacements are computed at the correct positions.
     """
 
     def _scan_with_known_spans(self, text: str, spans: list[DetectedSpan],
@@ -153,14 +153,14 @@ class TestOffsetTracking:
         assert "SECOND" not in result.sanitized_text
         assert "[TYPE1:" in result.sanitized_text
         assert "[TYPE2:" in result.sanitized_text
-        # TYPE1 placeholder TYPE2 placeholder'dan önce gelmeli
+        # TYPE1 placeholder should appear before TYPE2 placeholder
         assert result.sanitized_text.index("[TYPE1:") < result.sanitized_text.index("[TYPE2:")
 
     def test_five_replacements_all_correct(self):
-        """5 ardışık entity'nin hepsi doğru konumda replace edilmeli."""
-        # Entity type adlarından farklı değerler kullan; placeholder içinde tip adı geçer
+        """All 5 consecutive entities should be replaced at the correct position."""
+        # Use values different from entity type names; type name appears in placeholder
         text  = "a:CARD b:TCNO c:MAIL d:PHONE e:IBAN_NUM"
-        # Pozisyonları metinden hesapla — manuel hata riskini ortadan kaldırır
+        # Compute positions from the text — eliminates manual error risk
         def _pos(word): s = text.index(word); return s, s + len(word)
         spans = [
             DetectedSpan("CC", "CARD",     *_pos("CARD")),
@@ -172,35 +172,35 @@ class TestOffsetTracking:
         actions = {t: "hash" for t in ["CC", "TC", "EM", "PH", "IB"]}
         result = _engine(spans, actions).scan(text)
 
-        # Orijinal içerik değerleri sanitized metinde olmamalı
+        # Original content values should not be in the sanitized text
         for original in ["CARD", "TCNO", "MAIL", "PHONE", "IBAN_NUM"]:
             assert original not in result.sanitized_text, \
-                f"'{original}' sanitized metinde hâlâ var: {result.sanitized_text!r}"
+                f"'{original}' still present in sanitized text: {result.sanitized_text!r}"
 
-        # Tüm placeholder'lar metin içinde bulunmalı
+        # All placeholders should be present in the text
         for t in ["CC", "TC", "EM", "PH", "IB"]:
             assert f"[{t}:" in result.sanitized_text
 
-        # Sabit metin bölümleri (a:, b:, vb.) korunmalı
+        # Fixed text sections (a:, b:, etc.) should be preserved
         for label in ["a:", "b:", "c:", "d:", "e:"]:
             assert label in result.sanitized_text
 
     def test_warn_does_not_shift_offset(self):
-        """warn action offset'i değiştirmemeli; sonraki hash doğru konumda olmalı."""
+        """warn action should not shift offset; subsequent hash should be at the correct position."""
         text  = "W: WARN | H: HASH"
         spans = [
             DetectedSpan("W", "WARN", 3,  7),
             DetectedSpan("H", "HASH", 13, 17),
         ]
         result = _engine(spans, {"W": "warn", "H": "hash"}).scan(text)
-        assert "WARN" in result.sanitized_text   # warn → değişmez
+        assert "WARN" in result.sanitized_text   # warn → unchanged
         assert "HASH" not in result.sanitized_text
         assert "[H:" in result.sanitized_text
 
     def test_replacement_longer_than_original(self):
-        """Replacement orijinalden uzunsa sonraki span yine doğru yerde olmalı."""
+        """If the replacement is longer than the original, the next span should still be in the correct position."""
         text  = "A: X | B: Y"
-        # 'X' → '[VERY_LONG_TYPE_NAME:abcd1234]' (çok daha uzun)
+        # 'X' → '[VERY_LONG_TYPE_NAME:abcd1234]' (much longer)
         spans = [
             DetectedSpan("VERY_LONG_TYPE_NAME", "X", 3, 4),
             DetectedSpan("B",                   "Y", 10, 11),
@@ -210,7 +210,7 @@ class TestOffsetTracking:
         assert "[B:" in result.sanitized_text
 
     def test_replacement_shorter_than_original(self):
-        """Replacement orijinalden kısa olsa bile sonraki span doğru yerde olmalı."""
+        """Even if the replacement is shorter than the original, the next span should still be in the correct position."""
         text  = "AAAAAAAAAA | B: Y"
         spans = [
             DetectedSpan("LONG", "AAAAAAAAAA", 0, 10),  # 10 char → ~22 char placeholder
@@ -222,12 +222,12 @@ class TestOffsetTracking:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Violation sıralama
+# Violation ordering
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestViolationOrdering:
     def test_violations_in_text_order(self):
-        """Violations, metindeki görünüm sırasında dönmeli."""
+        """Violations should be returned in order of appearance in the text."""
         text  = "first: ALPHA second: BETA third: GAMMA"
         spans = [
             DetectedSpan("C", "GAMMA", 33, 38),
@@ -248,7 +248,7 @@ class TestViolationOrdering:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Boş / minimal girdi
+# Empty / minimal input
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestEmptyAndMinimalInput:

@@ -1,5 +1,5 @@
 """
-Model kataloğu birim testleri.
+Model catalog unit tests.
 """
 from __future__ import annotations
 
@@ -70,5 +70,5 @@ class TestRecommended:
         assert recommended().name == "llama3.1:8b"
 
     def test_recommended_vram_fits_gtx1070(self):
-        """Önerilen model GTX 1070'in 8 GB VRAM'ına sığmalı."""
+        """The recommended model should fit within the GTX 1070's 8 GB VRAM."""
         assert recommended().vram_gb < 8.0

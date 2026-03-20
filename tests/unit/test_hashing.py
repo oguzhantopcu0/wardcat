@@ -11,11 +11,11 @@ def test_salt_changes_output():
 
 def test_empty_salt_still_hashes():
     result = sha256_hash("hello")
-    assert len(result) == 64   # SHA-256 hex digest uzunluğu
+    assert len(result) == 64   # SHA-256 hex digest length
 
 
 def test_rainbow_table_protection():
-    # Aynı değer, farklı salt → farklı hash
+    # Same value, different salt → different hash
     without_salt = sha256_hash("password123")
     with_salt    = sha256_hash("password123", salt="gizli")
     assert without_salt != with_salt

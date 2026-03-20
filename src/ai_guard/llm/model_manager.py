@@ -53,7 +53,7 @@ class ModelManager:
                 answer = input(f"  Download it? (~GB in size) [y/N]: ").strip().lower()
             except (EOFError, KeyboardInterrupt):
                 answer = ""
-            if answer not in ("e", "evet", "y", "yes"):
+            if answer not in ("y", "yes"):
                 print("  Download cancelled.")
                 return False
 

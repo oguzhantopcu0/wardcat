@@ -18,7 +18,7 @@ class TestPostalCode:
         assert any(s.entity_type == "POSTAL_CODE" for s in spans)
 
     def test_invalid_code_out_of_range(self):
-        # 99xxx Türkiye'de geçersiz
+        # 99xxx is invalid in Turkey
         spans = detector().detect("kod: 99000")
         assert not any(s.entity_type == "POSTAL_CODE" for s in spans)
 

@@ -1,11 +1,11 @@
 """
-EU/US/UK entity tipleri için unit testler.
+Unit tests for EU/US/UK entity types.
 
-Kapsam:
-- UK_POSTAL_CODE: İngiliz posta kodları (SW1A 1AA formatı)
-- US_ZIP_CODE: ABD posta kodları (ZIP+4 ve etiketli format)
-- EU_NATIONAL_ID: İspanya DNI/NIE, Fransa INSEE
-- ADDRESS: Fransızca, İspanyolca, İtalyanca, Hollandaca, Almanca sokak desenleri
+Scope:
+- UK_POSTAL_CODE: British postal codes (SW1A 1AA format)
+- US_ZIP_CODE: US postal codes (ZIP+4 and labeled format)
+- EU_NATIONAL_ID: Spanish DNI/NIE, French INSEE
+- ADDRESS: French, Spanish, Italian, Dutch, German street patterns
 """
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ class TestUSZipCode:
         assert any(s.entity_type == "US_ZIP_CODE" for s in spans)
 
     def test_no_false_positive_plain_five_digits(self, detector):
-        # Salt 5 hane bağlam olmadan tespit edilmemeli
+        # Plain 5 digits without context should not be detected
         spans = detector.detect("order #12345 total: 500")
         assert not any(s.entity_type == "US_ZIP_CODE" for s in spans)
 
@@ -110,7 +110,7 @@ class TestEUNationalID:
             assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
 
         def test_no_false_positive_invalid_letter(self, detector):
-            # I, O, U harfleri DNI kontrol harfi olamaz
+            # I, O, U cannot be DNI check letters
             spans = detector.detect("code: 12345678I")
             assert not any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
 
@@ -133,7 +133,7 @@ class TestEUNationalID:
 
     class TestFrenchINSEE:
         def test_male_insee(self, detector):
-            # Erkek: 1 + yıl(2) + ay(01-12) + 9 rakam = 15 hane
+            # Male: 1 + year(2) + month(01-12) + 9 digits = 15 digits
             spans = detector.detect("INSEE: 180027512345678")
             assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
 
@@ -142,18 +142,18 @@ class TestEUNationalID:
             assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
 
         def test_no_false_positive_invalid_month(self, detector):
-            # Ay 13 geçersiz — eşleşmemeli
+            # Month 13 is invalid — should not match
             spans = detector.detect("num: 180137512345678")
             assert not any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
 
         def test_no_false_positive_wrong_prefix(self, detector):
-            # 3 ile başlayan 15 hane — INSEE değil
+            # 15 digits starting with 3 — not INSEE
             spans = detector.detect("ref: 380027512345678")
             assert not any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ADDRESS — Avrupa sokak desenleri
+# ADDRESS — European street patterns
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestEuropeanAddressPatterns:

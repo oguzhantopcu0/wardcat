@@ -129,7 +129,7 @@ class TestNIN:
 
 class TestDisabledEntity:
     def test_disabled_entity_not_detected(self):
-        detector = RegexDetector({"EMAIL"})   # sadece EMAIL aktif
+        detector = RegexDetector({"EMAIL"})   # only EMAIL active
         spans = detector.detect("kart: 4111111111111111 mail: a@b.com")
         types = {s.entity_type for s in spans}
         assert "CREDIT_CARD" not in types

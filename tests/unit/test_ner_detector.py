@@ -1,7 +1,7 @@
 """
-SpaCy NER dedektörü testleri (en_core_web_sm gerektirir).
+SpaCy NER detector tests (requires en_core_web_sm).
 
-pytest -m ner  →  yalnızca bu dosyayı çalıştır
+pytest -m ner  →  run only this file
 """
 from __future__ import annotations
 
@@ -12,12 +12,12 @@ import pytest
 from ai_guard import LLMGuard
 from ai_guard.detectors.ner_detector import NERDetector
 
-pytestmark = pytest.mark.ner   # etiket: uv run pytest -m ner
+pytestmark = pytest.mark.ner   # tag: uv run pytest -m ner
 
 
 @pytest.fixture(scope="module")
 def ner():
-    """Modül başına bir kez yükle (SpaCy ağır)."""
+    """Load once per module (SpaCy is heavy)."""
     return NERDetector({"PERSON", "ORG", "ADDRESS"}, model="en_core_web_sm")
 
 
@@ -26,7 +26,7 @@ def guard_with_ner():
     return LLMGuard(use_ner=True, spacy_model="en_core_web_sm")
 
 
-# ── PERSON tespiti ───────────────────────────────────────────────────────────
+# ── PERSON detection ─────────────────────────────────────────────────────────
 
 class TestPersonDetection:
     def test_full_name_detected(self, ner):
@@ -48,7 +48,7 @@ class TestPersonDetection:
         assert not any(s.entity_type == "PERSON" for s in spans)
 
 
-# ── ORG tespiti ──────────────────────────────────────────────────────────────
+# ── ORG detection ────────────────────────────────────────────────────────────
 
 class TestOrgDetection:
     def test_known_company(self, ner):
@@ -62,7 +62,7 @@ class TestOrgDetection:
         assert "ORG" in types
 
 
-# ── ADDRESS tespiti (GPE / LOC → ADDRESS) ────────────────────────────────────
+# ── ADDRESS detection (GPE / LOC → ADDRESS) ──────────────────────────────────
 
 class TestAddressDetection:
     def test_city_detected_as_address(self, ner):
@@ -74,7 +74,7 @@ class TestAddressDetection:
         assert any(s.entity_type == "ADDRESS" for s in spans)
 
 
-# ── Devre dışı bırakılmış entity ─────────────────────────────────────────────
+# ── Disabled entity ───────────────────────────────────────────────────────────
 
 class TestDisabledNEREntity:
     def test_org_disabled_not_detected(self):
@@ -88,18 +88,18 @@ class TestDisabledNEREntity:
         assert spans == []
 
 
-# ── Bilinmeyen SpaCy etiketi görmezden gelinmeli ─────────────────────────────
+# ── Unknown SpaCy label should be ignored ────────────────────────────────────
 
 class TestUnknownSpacyLabel:
     def test_unmapped_label_ignored(self, ner):
-        """CARDINAL, DATE gibi etiketler mapped değil → ignore."""
+        """CARDINAL, DATE and similar labels are not mapped → ignore."""
         spans = ner.detect("She bought 3 items on Monday.")
         types = {s.entity_type for s in spans}
         assert "CARDINAL" not in types
         assert "DATE"     not in types
 
 
-# ── NER + Regex hibrit (LLMGuard aracılığıyla) ──────────────────────────────
+# ── NER + Regex hybrid (via LLMGuard) ───────────────────────────────────────
 
 class TestNERPlusRegex:
     def test_ner_person_with_regex_email(self, guard_with_ner):
@@ -110,11 +110,11 @@ class TestNERPlusRegex:
         assert "PERSON" in types
 
     def test_ner_does_not_duplicate_regex_entity(self, guard_with_ner):
-        """Regex ve NER aynı span'i yakalarsa overlap çözümü bir tane döndürmeli."""
+        """If regex and NER capture the same span, overlap resolution should return only one."""
         text = "Contact Apple at support@apple.com"
         result = guard_with_ner.scan(text)
         emails = [v for v in result.violations if v.entity_type == "EMAIL"]
-        assert len(emails) == 1   # çift tespit olmamalı
+        assert len(emails) == 1   # no duplicate detection
 
     def test_ner_person_hashed_in_output(self, guard_with_ner):
         result = guard_with_ner.scan("Please call John Smith at 0532 111 22 33")
@@ -124,7 +124,7 @@ class TestNERPlusRegex:
             assert v.replacement.startswith("[PERSON:")
 
     def test_ner_address_warned_not_hashed(self, guard_with_ner):
-        """ADDRESS varsayılan olarak warn; sanitized metinde değişmemeli."""
+        """ADDRESS defaults to warn; the sanitized text should be unchanged."""
         from ai_guard.core.models import Action
         result = guard_with_ner.scan("She is from New York and works in Boston.")
         address_violations = [v for v in result.violations if v.entity_type == "ADDRESS"]
@@ -132,7 +132,7 @@ class TestNERPlusRegex:
             assert v.action == Action.WARN
 
 
-# ── Hata yönetimi ────────────────────────────────────────────────────────────
+# ── Error handling ────────────────────────────────────────────────────────────
 
 class TestNERErrorHandling:
     def test_invalid_model_raises_on_init(self):
@@ -148,6 +148,6 @@ class TestNERErrorHandling:
             "NER" in r.message or "could not be loaded" in r.message or "not installed" in r.message
             for r in caplog.records
         )
-        # Regex hâlâ çalışmalı
+        # Regex should still work
         result = guard.scan("kart: 4111111111111111")
         assert not result.is_clean

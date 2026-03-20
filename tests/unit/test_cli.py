@@ -1,4 +1,4 @@
-"""CLI testleri — subprocess yerine direkt fonksiyon çağrısı."""
+"""CLI tests — direct function calls instead of subprocess."""
 import json
 from pathlib import Path
 

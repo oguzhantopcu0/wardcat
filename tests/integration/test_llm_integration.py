@@ -1,8 +1,8 @@
 """
-LLM dedektörü entegrasyon testleri.
+LLM detector integration tests.
 
-Gerçek Ollama servisi olmadan, LLMGuard + LLMDetector işbirliğini
-mock backend aracılığıyla test eder.
+Tests the cooperation of LLMGuard + LLMDetector via a mock backend,
+without a real Ollama service.
 """
 from __future__ import annotations
 
@@ -27,18 +27,18 @@ def _mock_backend(response: str) -> BaseLLMBackend:
 
 def _guard_with_llm(response: str, entities: set[str] | None = None) -> LLMGuard:
     """
-    LLM backend mock'lanmış LLMGuard döndürür.
-    LLMGuard'ın _build_llm_detector'ını doğrudan patch etmek yerine
-    dedektörü sonradan enjekte ederiz.
+    Returns an LLMGuard with a mocked LLM backend.
+    Instead of patching LLMGuard's _build_llm_detector directly,
+    we inject the detector afterwards.
     """
-    guard = LLMGuard(use_ner=False, use_llm=False)  # önce LLM olmadan kur
+    guard = LLMGuard(use_ner=False, use_llm=False)  # build without LLM first
     enabled = entities or {"CREDIT_CARD", "EMAIL", "PERSON", "TC_ID", "IBAN",
                            "PHONE", "IP_ADDRESS", "ADDRESS", "CUSTOM_SECRET"}
     llm_det = LLMDetector(
         backend=_mock_backend(response),
         enabled_entities=enabled,
     )
-    # Engine config'e LLM entity'lerini ekle (guard._rebuild() yaptığında yoksa warn)
+    # Add LLM entities to engine config (avoid warn if not present when guard._rebuild() runs)
     for e in enabled:
         guard._config["entities"].setdefault(e, {"enabled": True, "action": "warn"})
     guard._config["entities"]["PERSON"]        = {"enabled": True, "action": "hash"}
@@ -50,7 +50,7 @@ def _guard_with_llm(response: str, entities: set[str] | None = None) -> LLMGuard
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# LLM tekil tespit
+# LLM single detection
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestLLMSingleDetection:
@@ -81,12 +81,12 @@ class TestLLMSingleDetection:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# LLM + Regex hibrit
+# LLM + Regex hybrid
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestLLMPlusRegex:
     def test_regex_and_llm_both_detect(self):
-        """Regex kartı, LLM kişiyi tespit eder."""
+        """Regex detects the card, LLM detects the person."""
         llm_response = json.dumps([{"type": "PERSON", "text": "Mehmet Demir"}])
         guard = _guard_with_llm(llm_response)
         text  = "Mehmet Demir kartıyla 4111111111111111 ödedi."
@@ -96,8 +96,8 @@ class TestLLMPlusRegex:
         assert "CREDIT_CARD" in types
 
     def test_llm_and_regex_same_entity_no_duplicate(self):
-        """Her iki dedektör aynı span'i yakalasa overlap çözümü tekrarlamaz."""
-        # Email hem regex hem LLM tarafından yakalanabilir
+        """If both detectors capture the same span, overlap resolution should not duplicate it."""
+        # Email can be captured by both regex and LLM
         llm_response = json.dumps([{"type": "EMAIL", "text": "a@b.com"}])
         guard = _guard_with_llm(llm_response)
         result = guard.scan("a@b.com")
@@ -105,22 +105,22 @@ class TestLLMPlusRegex:
         assert len(emails) == 1
 
     def test_llm_detects_contextual_pii_regex_misses(self):
-        """Regex kalıba uymayan ama bağlamsal olarak hassas olan veriler."""
+        """Data that is contextually sensitive but does not match a regex pattern."""
         secret = "PROJE-ALPHA-GIZLI"
         llm_response = json.dumps([{"type": "CUSTOM_SECRET", "text": secret}])
         guard = _guard_with_llm(llm_response, {"CUSTOM_SECRET"})
-        # Önce regex'in bunu yakalamadığını doğrula
+        # Verify regex does not catch this first
         regex_only = LLMGuard(use_ner=False)
         assert regex_only.scan(f"kod: {secret}").is_clean
 
-        # LLM ile yakalanmalı
+        # LLM should catch it
         result = guard.scan(f"kod: {secret}")
         assert not result.is_clean
         assert secret not in result.sanitized_text
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Sanitized metin bütünlüğü
+# Sanitized text integrity
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestLLMSanitizedIntegrity:
@@ -150,12 +150,12 @@ class TestLLMSanitizedIntegrity:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Hata yönetimi — LLM hata verse diğer dedektörler çalışmalı
+# Error handling — even if LLM errors, other detectors should run
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestLLMFaultTolerance:
     def test_llm_error_doesnt_block_regex(self):
-        """LLM bağlantı hatası olsa bile regex dedektörü çalışmalı."""
+        """Even with an LLM connection error, the regex detector should still work."""
         failing_backend = MagicMock(spec=BaseLLMBackend)
         failing_backend.complete.side_effect = ConnectionError("Ollama çevrimdışı")
 
@@ -169,13 +169,13 @@ class TestLLMFaultTolerance:
             warnings.simplefilter("always")
             result = guard.scan("kart: 4111111111111111")
 
-        # Regex hâlâ çalışmalı
+        # Regex should still work
         assert any(v.entity_type == "CREDIT_CARD" for v in result.violations)
 
     def test_llm_empty_response_doesnt_block(self):
         guard = _guard_with_llm("[]")
         result = guard.scan("kart: 4111111111111111")
-        # Regex çalışmalı
+        # Regex should work
         assert any(v.entity_type == "CREDIT_CARD" for v in result.violations)
 
     def test_llm_malformed_response_doesnt_block(self):
@@ -185,7 +185,7 @@ class TestLLMFaultTolerance:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# LLMGuard konfigürasyon — use_llm flag'i
+# LLMGuard configuration — use_llm flag
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestLLMGuardConfig:
@@ -197,7 +197,7 @@ class TestLLMGuardConfig:
     def test_llm_config_stored_correctly(self):
         guard = LLMGuard(
             use_ner=False,
-            use_llm=False,           # servis olmadan test; config'i kontrol et
+            use_llm=False,           # test without service; check config
             llm_model="mistral",
             llm_base_url="http://10.0.0.5:11434",
         )

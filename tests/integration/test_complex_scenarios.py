@@ -1,27 +1,27 @@
 """
-Karmaşık senaryo testleri.
+Complex scenario tests.
 
-Kapsam:
-  S01 — Gerçekçi müşteri desteği promptu (tüm entity tipleri)
-  S02 — Farklı kart formatları (boşluklu, çizgili, bitişik)
-  S03 — Çoklu aynı tip entity
-  S04 — JSON / kod bloğu içinde gömülü PII
-  S05 — Çok satırlı konuşma (LLM chat formatı)
-  S06 — Karışık dil (TR + EN)
-  S07 — False positive kontrolü (temiz metinler)
-  S08 — Yalnızca warn modu — metnin değişmemesi
-  S09 — Hash tutarlılığı ve salt etkisi
-  S10 — Birden fazla salt değiştirme (idempotentlik)
-  S11 — Çakışan entity'lerin doğru çözümü
-  S12 — TC kimlik sınır değerleri
-  S13 — Kart numaraları arasında false positive olmaması
-  S14 — Toplu tarama (batch) karma senaryo
-  S15 — Büyük/yoğun metin performansı
-  S16 — IBAN büyük/küçük harf duyarsızlığı
-  S17 — Uluslararası telefon formatları
-  S18 — Türkçe özel karakter içeren adres
-  S19 — Posta kodu sınır değerleri
-  S20 — CLI JSON çıktısının şema doğrulaması
+Scope:
+  S01 — Realistic customer support prompt (all entity types)
+  S02 — Different card formats (spaced, dashed, contiguous)
+  S03 — Multiple entities of the same type
+  S04 — PII embedded in JSON / code blocks
+  S05 — Multi-line conversation (LLM chat format)
+  S06 — Mixed language (TR + EN)
+  S07 — False positive check (clean texts)
+  S08 — Warn-only mode — text should not change
+  S09 — Hash consistency and salt effect
+  S10 — Multiple salt changes (idempotency)
+  S11 — Correct resolution of overlapping entities
+  S12 — TC identity boundary values
+  S13 — No false positives between card numbers
+  S14 — Batch scan mixed scenario
+  S15 — Large/dense text performance
+  S16 — IBAN case insensitivity
+  S17 — International phone formats
+  S18 — Address with Turkish special characters
+  S19 — Postal code boundary values
+  S20 — CLI JSON output schema validation
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from ai_guard.__main__ import _build_parser, cmd_scan
 from ai_guard.core.models import Action
 
 
-# ── yardımcı ────────────────────────────────────────────────────────────────
+# ── helper ───────────────────────────────────────────────────────────────────
 
 def _types(result) -> set[str]:
     return {v.entity_type for v in result.violations}
@@ -50,7 +50,7 @@ def _guard(**kw) -> LLMGuard:
     return LLMGuard(use_ner=False, **kw)
 
 
-# ── S01: Gerçekçi müşteri desteği promptu ───────────────────────────────────
+# ── S01: Realistic customer support prompt ───────────────────────────────────
 
 CUSTOMER_SUPPORT_PROMPT = """
 [SYSTEM] Aşağıdaki müşteri bilgileri ile işlem yap.
@@ -79,7 +79,7 @@ class TestS01CustomerSupportPrompt:
 
     def test_hashed_entities_removed_from_text(self):
         result = _guard().scan(CUSTOMER_SUPPORT_PROMPT)
-        # Varsayılan: CC, IBAN, TC_ID → hash
+        # Default: CC, IBAN, TC_ID → hash
         assert "4532 0151 1283 0366"          not in result.sanitized_text
         assert "TR330006100519786457841326"    not in result.sanitized_text
         assert "12345678950"                  not in result.sanitized_text
@@ -98,32 +98,32 @@ class TestS01CustomerSupportPrompt:
             assert CUSTOMER_SUPPORT_PROMPT[v.start:v.end] == v.original
 
 
-# ── S02: Farklı kart formatları ─────────────────────────────────────────────
+# ── S02: Different card formats ──────────────────────────────────────────────
 
 class TestS02CardFormats:
     @pytest.mark.parametrize("card", [
-        "4111111111111111",        # Visa bitişik
-        "4111 1111 1111 1111",     # Visa boşluklu
-        "4111-1111-1111-1111",     # Visa çizgili
-        "5500 0000 0000 0004",     # MasterCard boşluklu
-        "3782 822463 10005",       # Amex (4-6-5 grubu)
-        "6011 1111 1111 1117",     # Discover boşluklu
+        "4111111111111111",        # Visa contiguous
+        "4111 1111 1111 1111",     # Visa spaced
+        "4111-1111-1111-1111",     # Visa dashed
+        "5500 0000 0000 0004",     # MasterCard spaced
+        "3782 822463 10005",       # Amex (4-6-5 group)
+        "6011 1111 1111 1117",     # Discover spaced
     ])
     def test_card_detected(self, card):
         result = _guard().scan(f"kartım: {card} ödeme")
-        assert "CREDIT_CARD" in _types(result), f"Tespit edilemedi: {card}"
+        assert "CREDIT_CARD" in _types(result), f"Not detected: {card}"
 
     @pytest.mark.parametrize("not_card", [
-        "1234 5678",               # 8 hane — kart değil
-        "0000 0000 0000 0000",     # sıfır başlangıçlı — Visa değil
-        "sipariş: 2024031801234",  # sipariş numarası
+        "1234 5678",               # 8 digits — not a card
+        "0000 0000 0000 0000",     # zero-starting — not Visa
+        "sipariş: 2024031801234",  # order number
     ])
     def test_non_card_not_detected(self, not_card):
         result = _guard().scan(not_card)
         assert "CREDIT_CARD" not in _types(result), f"False positive: {not_card}"
 
 
-# ── S03: Çoklu aynı tip entity ───────────────────────────────────────────────
+# ── S03: Multiple entities of the same type ───────────────────────────────────
 
 class TestS03MultipleEntities:
     def test_three_emails(self):
@@ -145,7 +145,7 @@ class TestS03MultipleEntities:
         assert len(phones) == 2
 
 
-# ── S04: JSON / kod bloğu içinde PII ────────────────────────────────────────
+# ── S04: PII in JSON / code blocks ───────────────────────────────────────────
 
 class TestS04EmbeddedInCode:
     def test_json_payload(self):
@@ -175,7 +175,7 @@ config = {
         assert "IBAN" in _types(result)
 
 
-# ── S05: Çok satırlı LLM chat formatı ───────────────────────────────────────
+# ── S05: Multi-line LLM chat format ─────────────────────────────────────────
 
 CHAT_TEXT = """\
 [SYSTEM] Sen bir banka asistanısın.
@@ -200,11 +200,11 @@ class TestS05MultilineChat:
         for v in result.violations:
             extracted = CHAT_TEXT[v.start:v.end]
             assert extracted == v.original, (
-                f"{v.entity_type}: beklenen '{v.original}', pozisyon {v.start}:{v.end} → '{extracted}'"
+                f"{v.entity_type}: expected '{v.original}', position {v.start}:{v.end} → '{extracted}'"
             )
 
 
-# ── S06: Karışık dil (TR + EN) ───────────────────────────────────────────────
+# ── S06: Mixed language (TR + EN) ────────────────────────────────────────────
 
 MIXED_LANG = (
     "Dear support team, my Turkish ID is 12345678950 "
@@ -224,7 +224,7 @@ class TestS06MixedLanguage:
         assert "IBAN"        in found
 
 
-# ── S07: False positive kontrolü ────────────────────────────────────────────
+# ── S07: False positive check ────────────────────────────────────────────────
 
 class TestS07FalsePositives:
     @pytest.mark.parametrize("clean_text", [
@@ -244,7 +244,7 @@ class TestS07FalsePositives:
         )
 
 
-# ── S08: Yalnızca warn modu ──────────────────────────────────────────────────
+# ── S08: Warn-only mode ──────────────────────────────────────────────────────
 
 class TestS08WarnOnlyMode:
     def test_sanitized_text_unchanged_when_all_warn(self):
@@ -263,7 +263,7 @@ class TestS08WarnOnlyMode:
         assert all(v.replacement is None    for v in result.violations)
 
 
-# ── S09: Hash tutarlılığı ve salt etkisi ─────────────────────────────────────
+# ── S09: Hash consistency and salt effect ────────────────────────────────────
 
 class TestS09HashConsistency:
     def test_same_input_same_hash(self):
@@ -285,18 +285,18 @@ class TestS09HashConsistency:
         assert guard.scan(text).sanitized_text == guard.scan(text).sanitized_text
 
     def test_hash_placeholder_length_stable(self):
-        # Placeholder formatı: [TIP:8karakterhex]
+        # Placeholder format: [TYPE:8hexchars]
         guard = _guard(salt="tuz")
         guard.configure_entity("EMAIL", enabled=True, action="hash")
         result = guard.scan("a@b.com")
         v = next(v for v in result.violations if v.entity_type == "EMAIL")
-        # [EMAIL:xxxxxxxx] → 8 hex karakter
+        # [EMAIL:xxxxxxxx] → 8 hex characters
         assert v.replacement is not None
         hex_part = v.replacement.split(":")[1].rstrip("]")
         assert len(hex_part) == 16
 
 
-# ── S10: Salt değiştirme idempotentliği ─────────────────────────────────────
+# ── S10: Salt change idempotency ─────────────────────────────────────────────
 
 class TestS10SaltIdempotency:
     def test_set_salt_twice_uses_last(self):
@@ -308,12 +308,12 @@ class TestS10SaltIdempotency:
         assert r1.sanitized_text == r2.sanitized_text
 
 
-# ── S11: Çakışan entity çözümü ───────────────────────────────────────────────
+# ── S11: Overlapping entity resolution ───────────────────────────────────────
 
 class TestS11OverlapResolution:
     def test_longer_span_wins(self):
-        # TC_ID (11 hane) ve PHONE aynı bölgede olmamalı
-        # 12345678950 → TC_ID (11 hane), PHONE olmaz çünkü 0 ön eki yok
+        # TC_ID (11 digits) and PHONE should not overlap
+        # 12345678950 → TC_ID (11 digits), PHONE not possible because no 0 prefix
         result = _guard().scan("numara: 12345678950 sonu")
         types = _types(result)
         assert "TC_ID" in types
@@ -325,29 +325,29 @@ class TestS11OverlapResolution:
         assert len(cc_violations) == 1
 
 
-# ── S12: TC kimlik sınır değerleri ───────────────────────────────────────────
+# ── S12: TC identity boundary values ─────────────────────────────────────────
 
 class TestS12TCIDBoundary:
     @pytest.mark.parametrize("valid", [
-        "12345678950",   # standart
-        "10000000078",   # minimum (1 ile başlar)
-        "99999999990",   # maksimum
+        "12345678950",   # standard
+        "10000000078",   # minimum (starts with 1)
+        "99999999990",   # maximum
     ])
     def test_valid_tc_detected(self, valid):
         result = _guard().scan(f"TC: {valid}")
         assert "TC_ID" in _types(result)
 
     @pytest.mark.parametrize("invalid", [
-        "1234567890",    # 10 hane — eksik
-        "012345678950",  # 12 hane — fazla
-        "01234567890",   # 0 ile başlıyor — geçersiz
+        "1234567890",    # 10 digits — too short
+        "012345678950",  # 12 digits — too long
+        "01234567890",   # starts with 0 — invalid
     ])
     def test_invalid_tc_not_detected(self, invalid):
         result = _guard().scan(f"TC: {invalid}")
         assert "TC_ID" not in _types(result)
 
 
-# ── S13: Kart numaraları arası false positive ────────────────────────────────
+# ── S13: False positives between card numbers ─────────────────────────────────
 
 class TestS13CardFalsePositives:
     def test_order_number_not_card(self):
@@ -363,18 +363,18 @@ class TestS13CardFalsePositives:
         assert "CREDIT_CARD" not in _types(result)
 
 
-# ── S14: Toplu tarama karma senaryo ─────────────────────────────────────────
+# ── S14: Batch scan mixed scenario ───────────────────────────────────────────
 
 class TestS14BatchMixedScenario:
     LINES = [
-        "Merhaba, nasılsın?",                       # temiz
+        "Merhaba, nasılsın?",                       # clean
         "kartım: 4111111111111111",                  # CC
         "ali@test.com",                              # email
         "TC kimliğim: 12345678950",                  # TC_ID
         "IBAN: TR330006100519786457841326",           # IBAN
         "Tel: 0532 123 45 67",                       # phone
         "Sunucu: 10.0.0.1",                          # IP
-        "Başka temiz metin.",                        # temiz
+        "Başka temiz metin.",                        # clean
     ]
 
     def test_correct_result_count(self):
@@ -396,16 +396,16 @@ class TestS14BatchMixedScenario:
         assert "IP_ADDRESS"  in _types(results[6])
 
     def test_batch_isolation(self):
-        """Bir satırdaki tespit diğer satırları etkilememeli."""
+        """Detection in one line should not affect other lines."""
         results = _guard().scan_batch(self.LINES)
         for i, result in enumerate(results):
             if i in (0, 7):
                 continue
-            # Her satırın original_text kendi LINES elemanına eşit olmalı
+            # Each line's original_text should equal its LINES entry
             assert result.original_text == self.LINES[i]
 
 
-# ── S15: Büyük / yoğun metin performansı ────────────────────────────────────
+# ── S15: Large / dense text performance ──────────────────────────────────────
 
 class TestS15LargeText:
     def test_dense_pii_text_scanned_under_2s(self):
@@ -413,7 +413,7 @@ class TestS15LargeText:
             "TC: 12345678950 kart: 4111111111111111 "
             "mail: a@b.com tel: 0532 123 45 67\n"
         )
-        big_text = pii_block * 200   # 200 tekrar
+        big_text = pii_block * 200   # 200 repetitions
 
         guard = _guard(salt="perf-test")
         start = time.perf_counter()
@@ -421,48 +421,48 @@ class TestS15LargeText:
         elapsed = time.perf_counter() - start
 
         assert len(result.violations) > 0
-        assert elapsed < 2.0, f"Tarama çok yavaş: {elapsed:.2f}s"
+        assert elapsed < 2.0, f"Scan too slow: {elapsed:.2f}s"
 
 
-# ── S16: IBAN büyük/küçük harf duyarsızlığı ─────────────────────────────────
+# ── S16: IBAN case insensitivity ─────────────────────────────────────────────
 
 class TestS16IBANCaseInsensitive:
     @pytest.mark.parametrize("iban", [
-        "TR330006100519786457841326",    # büyük harf (standart)
-        "tr330006100519786457841326",    # küçük harf
-        "Tr330006100519786457841326",    # karışık
+        "TR330006100519786457841326",    # uppercase (standard)
+        "tr330006100519786457841326",    # lowercase
+        "Tr330006100519786457841326",    # mixed
     ])
     def test_iban_detected_regardless_of_case(self, iban):
         result = _guard().scan(f"IBAN: {iban}")
-        assert "IBAN" in _types(result), f"Tespit edilemedi: {iban}"
+        assert "IBAN" in _types(result), f"Not detected: {iban}"
 
 
-# ── S17: Uluslararası telefon formatları ─────────────────────────────────────
+# ── S17: International phone formats ─────────────────────────────────────────
 
 class TestS17PhoneFormats:
     @pytest.mark.parametrize("phone", [
-        "0532 123 45 67",       # ulusal boşluklu
-        "05321234567",          # ulusal bitişik
-        "+90 532 123 45 67",    # uluslararası boşluklu
-        "+905321234567",        # uluslararası bitişik
-        "90 532 123 45 67",     # 90 ile başlayan
-        "0(532)1234567",        # parantezli
+        "0532 123 45 67",       # national spaced
+        "05321234567",          # national contiguous
+        "+90 532 123 45 67",    # international spaced
+        "+905321234567",        # international contiguous
+        "90 532 123 45 67",     # starting with 90
+        "0(532)1234567",        # with parentheses
     ])
     def test_phone_detected(self, phone):
         result = _guard().scan(f"tel: {phone} ara")
-        assert "PHONE" in _types(result), f"Tespit edilemedi: {phone}"
+        assert "PHONE" in _types(result), f"Not detected: {phone}"
 
     @pytest.mark.parametrize("non_phone", [
-        "1234567890",           # ön ek yok → false positive olmamalı
-        "12 34 56",             # çok kısa
-        "2024-03-18",           # tarih
+        "1234567890",           # no prefix → should not be false positive
+        "12 34 56",             # too short
+        "2024-03-18",           # date
     ])
     def test_non_phone_not_detected(self, non_phone):
         result = _guard().scan(non_phone)
         assert "PHONE" not in _types(result), f"False positive: {non_phone}"
 
 
-# ── S18: Türkçe özel karakter içeren adres ───────────────────────────────────
+# ── S18: Address with Turkish special characters ──────────────────────────────
 
 class TestS18TurkishAddressChars:
     @pytest.mark.parametrize("address", [
@@ -473,33 +473,33 @@ class TestS18TurkishAddressChars:
     ])
     def test_turkish_address_detected(self, address):
         result = _guard().scan(address)
-        assert "ADDRESS" in _types(result), f"Tespit edilemedi: {address}"
+        assert "ADDRESS" in _types(result), f"Not detected: {address}"
 
 
-# ── S19: Posta kodu sınır değerleri ─────────────────────────────────────────
+# ── S19: Postal code boundary values ─────────────────────────────────────────
 
 class TestS19PostalCodeBoundary:
     @pytest.mark.parametrize("code", [
         "01000",   # minimum (Adana)
-        "81999",   # maksimum (Düzce)
-        "34000",   # İstanbul
+        "81999",   # maximum (Duzce)
+        "34000",   # Istanbul
         "06100",   # Ankara
     ])
     def test_valid_postal_code(self, code):
         result = _guard().scan(f"posta kodu: {code}")
-        assert "POSTAL_CODE" in _types(result), f"Tespit edilemedi: {code}"
+        assert "POSTAL_CODE" in _types(result), f"Not detected: {code}"
 
     @pytest.mark.parametrize("invalid", [
-        "00000",   # 00xxx geçersiz
-        "82000",   # 82+ geçersiz
-        "99999",   # geçersiz
+        "00000",   # 00xxx invalid
+        "82000",   # 82+ invalid
+        "99999",   # invalid
     ])
     def test_invalid_postal_code_not_detected(self, invalid):
         result = _guard().scan(f"posta: {invalid}")
         assert "POSTAL_CODE" not in _types(result), f"False positive: {invalid}"
 
 
-# ── S20: CLI JSON çıktısının şema doğrulaması ────────────────────────────────
+# ── S20: CLI JSON output schema validation ────────────────────────────────────
 
 class TestS20CLIJsonSchema:
     def test_scan_json_schema(self, capsys):
@@ -525,10 +525,10 @@ class TestS20CLIJsonSchema:
             assert v["end"] > v["start"]
 
 
-# ── S21: Yeni global entity tipleri ─────────────────────────────────────────
+# ── S21: New global entity types ─────────────────────────────────────────────
 
 class TestS21GlobalEntityTypes:
-    """UUID, SSN, MAC_ADDRESS, JWT, IPv6, NIN detection testleri (regex tabanlı)."""
+    """UUID, SSN, MAC_ADDRESS, JWT, IPv6, NIN detection tests (regex-based)."""
 
     def test_uuid_detected(self):
         result = _guard().scan("User UUID: 550e8400-e29b-41d4-a716-446655440000")

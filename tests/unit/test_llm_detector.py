@@ -1,8 +1,8 @@
 """
-LLMDetector birim testleri.
+LLMDetector unit tests.
 
-Gerçek LLM çağrısı yapılmaz; backend mock'lanır.
-Bu sayede Ollama kurulu olmadan testler çalışır.
+No real LLM calls are made; the backend is mocked.
+This allows tests to run without Ollama installed.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from ai_guard.llm.backends.base import BaseLLMBackend
 from ai_guard.llm.prompt import build_prompt
 
 
-# ── Mock backend yardımcısı ──────────────────────────────────────────────────
+# ── Mock backend helper ──────────────────────────────────────────────────────
 
 def _mock_backend(response: str) -> BaseLLMBackend:
     backend = MagicMock(spec=BaseLLMBackend)
@@ -35,7 +35,7 @@ def _detector(response: str, entities: set[str] | None = None) -> LLMDetector:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# JSON yanıt ayrıştırma
+# JSON response parsing
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestParseResponse:
@@ -58,7 +58,7 @@ class TestParseResponse:
         assert any(s.entity_type == "PERSON" for s in spans)
 
     def test_json_with_surrounding_text(self):
-        """Küçük modeller açıklama metni ekleyebilir."""
+        """Small models may add explanation text."""
         response = 'Tespit ettim:\n[{"type":"EMAIL","text":"x@y.com"}]\nBaşka bir şey yok.'
         det = _detector(response)
         spans = det.detect("x@y.com")
@@ -70,7 +70,7 @@ class TestParseResponse:
         assert spans == []
 
     def test_truncated_json_returns_empty(self):
-        det = _detector('[{"type":"EMAIL","text":"x@y.co')  # kesilmiş
+        det = _detector('[{"type":"EMAIL","text":"x@y.co')  # truncated
         spans = det.detect("x@y.com")
         assert spans == []
 
@@ -81,7 +81,7 @@ class TestParseResponse:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Span konumlandırma
+# Span location
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestSpanLocation:
@@ -102,7 +102,7 @@ class TestSpanLocation:
         assert spans[1].start == 11
 
     def test_entity_not_in_text_skipped(self):
-        """LLM halüsinasyon yaptığında (metinde olmayan metin) atlanmalı."""
+        """When the LLM hallucinates (text not in input), it should be skipped."""
         det = _detector('[{"type":"EMAIL","text":"hayali@yok.com"}]')
         spans = det.detect("başka bir metin")
         assert spans == []
@@ -120,10 +120,10 @@ class TestSpanLocation:
         assert "CREDIT_CARD" in types
 
     def test_no_duplicate_spans_for_same_position(self):
-        """Aynı entity iki kez döndürülse de tek span oluşmalı."""
+        """Even if the same entity is returned twice, only one span should be created."""
         response = json.dumps([
             {"type": "EMAIL", "text": "a@b.com"},
-            {"type": "EMAIL", "text": "a@b.com"},   # tekrar
+            {"type": "EMAIL", "text": "a@b.com"},   # duplicate
         ])
         det = _detector(response)
         spans = det.detect("a@b.com")
@@ -131,15 +131,15 @@ class TestSpanLocation:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Entity filtresi
+# Entity filter
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestEntityFilter:
     def test_disabled_entity_skipped(self):
-        """LLM disabled entity döndürse de span oluşmamalı."""
+        """Even if the LLM returns a disabled entity, no span should be created."""
         det = _detector(
             '[{"type":"ORG","text":"Apple"}]',
-            entities={"PERSON"},   # ORG kapalı
+            entities={"PERSON"},   # ORG disabled
         )
         spans = det.detect("Apple şirketi")
         assert not any(s.entity_type == "ORG" for s in spans)
@@ -153,34 +153,34 @@ class TestEntityFilter:
         assert spans == []
 
     def test_entity_type_normalized_to_uppercase(self):
-        """LLM küçük harf döndürse bile entity tipi normalize edilmeli."""
+        """Even if the LLM returns lowercase, the entity type should be normalized."""
         det = _detector(
             '[{"type":"email","text":"a@b.com"}]',
             entities={"EMAIL"},
         )
         spans = det.detect("a@b.com")
-        # küçük harf "email" → enabled_entities'de "EMAIL" var mı?
-        # _locate_spans içinde upper() uygulanıyor → eşleşmeli
+        # lowercase "email" → is "EMAIL" in enabled_entities?
+        # upper() is applied inside _locate_spans → should match
         assert len(spans) == 1
         assert spans[0].entity_type == "EMAIL"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Hata yönetimi
+# Error handling
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestErrorHandling:
     def test_connection_error_returns_empty_with_warning(self, caplog):
         import logging
         backend = MagicMock(spec=BaseLLMBackend)
-        backend.complete_messages.side_effect = ConnectionError("Bağlantı reddedildi")
+        backend.complete_messages.side_effect = ConnectionError("Connection refused")
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
 
         with caplog.at_level(logging.WARNING, logger="ai_guard.detectors.llm_detector"):
             spans = det.detect("a@b.com")
 
         assert spans == []
-        assert any("bağlantı" in r.message.lower() for r in caplog.records)
+        assert any("connection error" in r.message.lower() for r in caplog.records)
 
     def test_generic_exception_returns_empty_with_warning(self, caplog):
         import logging
@@ -212,7 +212,7 @@ class TestErrorHandling:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Prompt oluşturma
+# Prompt building
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TestPromptBuilding:

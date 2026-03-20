@@ -6,7 +6,7 @@ from ai_guard.core.models import Action
 
 @pytest.fixture
 def guard():
-    # NER kapalı → SpaCy kurulu olmasa da testler çalışır
+    # NER disabled → tests run even without SpaCy installed
     return LLMGuard(use_ner=False)
 
 
@@ -31,7 +31,7 @@ def test_hash_action_replaces_text(guard):
 def test_warn_action_preserves_text(guard):
     guard.configure_entity("EMAIL", enabled=True, action="warn")
     result = guard.scan("Mail: admin@secret.com")
-    # warn → orijinal metin değişmemeli
+    # warn → original text should not change
     assert "admin@secret.com" in result.sanitized_text
     assert result.violations[0].action == Action.WARN
 

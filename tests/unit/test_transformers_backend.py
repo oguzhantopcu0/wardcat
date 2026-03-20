@@ -1,8 +1,8 @@
 """
-TransformersBackend birim testleri.
+TransformersBackend unit tests.
 
-Tüm testler torch ve transformers kütüphanelerini içe aktarmadan
-unittest.mock.patch ve MagicMock kullanarak backend'i test eder.
+All tests use unittest.mock.patch and MagicMock to test the backend
+without importing torch and transformers libraries.
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ class TestCompleteMessages:
         assert result == "test response"
 
     def test_returns_last_chat_message_content(self):
-        """Chat format çıktısında son mesajın içeriği döndürülmeli."""
+        """In chat format output, the content of the last message should be returned."""
         backend = self._make_backend()
         mock_pipe = MagicMock()
         mock_pipe.return_value = [
@@ -121,7 +121,7 @@ class TestLazyLoading:
             backend.complete_messages([{"role": "user", "content": "test"}])
             backend.complete_messages([{"role": "user", "content": "test2"}])
 
-        # _load_pipeline sadece bir kez çağrılmalı
+        # _load_pipeline should only be called once
         mock_load.assert_called_once()
 
     def test_pipeline_reused_on_subsequent_calls(self):
@@ -133,7 +133,7 @@ class TestLazyLoading:
             backend.complete_messages([{"role": "user", "content": "first"}])
             backend.complete_messages([{"role": "user", "content": "second"}])
 
-        # Pipeline iki kez çağrılmış olmalı (iki mesaj)
+        # Pipeline should have been called twice (two messages)
         assert mock_pipe.call_count == 2
 
 
@@ -148,7 +148,7 @@ class TestPullModel:
             "ai_guard.llm.backends.transformers_backend.snapshot_download",
             create=True,
         ) as mock_dl:
-            # huggingface_hub modülünü mock'la
+            # mock the huggingface_hub module
             mock_hf_hub = MagicMock()
             mock_hf_hub.snapshot_download = mock_dl
             with patch.dict(
@@ -173,7 +173,7 @@ class TestPullModel:
     def test_pull_model_raises_import_error_without_huggingface_hub(self):
         backend = TransformersBackend(model="meta-llama/Llama-3.2-1B-Instruct")
 
-        # huggingface_hub modülünü import edilemez hale getir
+        # Make huggingface_hub unimportable
         original = sys.modules.get("huggingface_hub")
         sys.modules["huggingface_hub"] = None  # type: ignore[assignment]
         try:
@@ -207,10 +207,10 @@ class TestPullModel:
 
 class TestImportError:
     def test_import_error_raised_when_transformers_missing(self):
-        """transformers kurulu değilse _load_pipeline ImportError fırlatmalı."""
+        """If transformers is not installed, _load_pipeline should raise ImportError."""
         backend = TransformersBackend(model="meta-llama/Llama-3.2-1B-Instruct")
 
-        # transformers ve torch'u import edilemez hale getir
+        # Make transformers and torch unimportable
         with patch.dict(sys.modules, {"transformers": None, "torch": None}):  # type: ignore[dict-item]
             with pytest.raises(ImportError, match="transformers"):
                 backend._load_pipeline()
@@ -223,7 +223,7 @@ class TestOutputEdgeCases:
         return TransformersBackend(model="meta-llama/Llama-3.2-1B-Instruct")
 
     def test_raises_on_empty_outputs_list(self):
-        """Pipeline boş liste döndürürse ValueError fırlatılmalı."""
+        """If the pipeline returns an empty list, ValueError should be raised."""
         backend = self._make_backend()
         mock_pipe = MagicMock(return_value=[])
 
@@ -232,7 +232,7 @@ class TestOutputEdgeCases:
                 backend.complete_messages([{"role": "user", "content": "hi"}])
 
     def test_raises_on_empty_chat_format_list(self):
-        """Chat format: generated_text boş listeyse ValueError fırlatılmalı."""
+        """Chat format: if generated_text is an empty list, ValueError should be raised."""
         backend = self._make_backend()
         mock_pipe = MagicMock(return_value=[{"generated_text": []}])
 
@@ -241,10 +241,10 @@ class TestOutputEdgeCases:
                 backend.complete_messages([{"role": "user", "content": "hi"}])
 
     def test_missing_content_key_returns_empty_string(self):
-        """Chat format: son mesajda 'content' yoksa boş string döner."""
+        """Chat format: if the last message has no 'content', an empty string is returned."""
         backend = self._make_backend()
         mock_pipe = MagicMock(return_value=[
-            {"generated_text": [{"role": "assistant"}]}  # content yok
+            {"generated_text": [{"role": "assistant"}]}  # no content
         ])
 
         with patch.object(backend, "_get_pipeline", return_value=mock_pipe):
@@ -253,7 +253,7 @@ class TestOutputEdgeCases:
         assert result == ""
 
     def test_raises_on_pipeline_exception(self):
-        """Pipeline RuntimeError fırlatırsa ValueError'a çevrilmeli."""
+        """If the pipeline raises RuntimeError, it should be converted to ValueError."""
         backend = self._make_backend()
         mock_pipe = MagicMock(side_effect=RuntimeError("CUDA out of memory"))
 
@@ -262,7 +262,7 @@ class TestOutputEdgeCases:
                 backend.complete_messages([{"role": "user", "content": "hi"}])
 
     def test_generated_text_as_plain_string(self):
-        """Plain string çıktı (non-chat model) string olarak döner."""
+        """Plain string output (non-chat model) is returned as a string."""
         backend = self._make_backend()
         mock_pipe = MagicMock(return_value=[{"generated_text": "plain output"}])
 
@@ -276,12 +276,12 @@ class TestOutputEdgeCases:
 
 class TestChatTemplateValidation:
     def test_warns_when_no_chat_template(self, caplog):
-        """Tokenizer'da chat_template yoksa uyarı loglanmalı."""
+        """A warning should be logged if the tokenizer has no chat_template."""
         import logging
         backend = TransformersBackend(model="meta-llama/Llama-3.2-1B-Instruct")
 
         mock_tokenizer = MagicMock()
-        del mock_tokenizer.chat_template  # attribute yok
+        del mock_tokenizer.chat_template  # attribute missing
 
         mock_pipe = MagicMock()
         mock_pipe.tokenizer = mock_tokenizer
@@ -293,7 +293,7 @@ class TestChatTemplateValidation:
         assert any("chat_template" in r.message for r in caplog.records)
 
     def test_no_warning_when_chat_template_present(self, caplog):
-        """Tokenizer'da chat_template varsa uyarı loglanmamalı."""
+        """No warning should be logged if the tokenizer has chat_template."""
         import logging
         backend = TransformersBackend(model="meta-llama/Llama-3.2-1B-Instruct")
 
