@@ -62,7 +62,13 @@ class OpenAICompatBackend(BaseLLMBackend):
                 timeout=timeout,
             )
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
+            data = response.json()
+            try:
+                return data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError) as exc:
+                raise ConnectionError(
+                    f"Unexpected response format from LLM service (missing expected keys): {exc}"
+                )
         except httpx.ConnectError:
             raise ConnectionError(
                 f"Could not connect to LLM service: {self.base_url}"

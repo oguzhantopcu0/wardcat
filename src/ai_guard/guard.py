@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -16,11 +15,6 @@ from ai_guard.detectors.regex_detector import RegexDetector
 
 logger = logging.getLogger(__name__)
 
-# Protect concurrent spaCy model loading — spaCy 3.x is generally thread-safe,
-# but the first load (disk I/O + registry lookups) can race in multi-threaded contexts.
-_SPACY_LOAD_LOCK = threading.Lock()
-
-
 def _resolve_spacy_model(model: str) -> str:
     """Suggests an alternative if the requested SpaCy model is not installed.
 
@@ -28,21 +22,19 @@ def _resolve_spacy_model(model: str) -> str:
     - Returns the model as-is if it is installed.
     - If not installed, lists available SpaCy models and logs a warning.
     - If no model is found at all, returns the original name (NERDetector will raise its own error).
-    """
-    with _SPACY_LOAD_LOCK:
-        try:
-            import spacy
-            spacy.load(model)
-            return model
-        except OSError:
-            pass
 
-        # Scan installed models
-        try:
-            import spacy.util
-            installed = list(spacy.util.get_installed_models())
-        except Exception:
-            installed = []
+    Thread safety: uses spacy.util.get_installed_models() (read-only registry lookup)
+    rather than spacy.load() to avoid a redundant full model load — NERDetector
+    already loads and caches the model under its own lock (_CACHE_LOCK).
+    """
+    try:
+        import spacy.util
+        installed = list(spacy.util.get_installed_models())
+    except Exception:
+        installed = []
+
+    if model in installed:
+        return model
 
     if not installed:
         logger.warning(
@@ -221,8 +213,8 @@ class LLMGuard:
                 return idx, self._engine.scan(text)
             except Exception as exc:
                 logger.error(
-                    "scan_batch item %d failed, returning original text: %s",
-                    idx, exc, exc_info=True,
+                    "scan_batch item %d failed (%s: %s), returning original text.",
+                    idx, type(exc).__name__, exc,
                 )
                 return idx, ScanResult(
                     original_text=text,

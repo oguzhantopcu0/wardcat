@@ -65,7 +65,12 @@ class OllamaBackend(BaseLLMBackend):
                 timeout=timeout,
             )
             response.raise_for_status()
-            return response.json()["response"]
+            data = response.json()
+            if "response" not in data:
+                raise ConnectionError(
+                    f"Unexpected response format from Ollama (missing 'response' key): {data}"
+                )
+            return data["response"]
         except httpx.ConnectError:
             raise ConnectionError(
                 f"Could not connect to Ollama service: {self.base_url}\n"

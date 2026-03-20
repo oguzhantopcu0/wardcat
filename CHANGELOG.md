@@ -71,10 +71,10 @@ Initial release.
 
 ### Added
 
-- **Hybrid detection engine** — regex + SpaCy NER + on-prem LLM (Ollama / OpenAI-compatible / Claude)
+- **Hybrid detection engine** — regex + SpaCy NER + on-prem LLM (Ollama / OpenAI-compatible)
 - **Regex detectors** — `CREDIT_CARD`, `EMAIL`, `PHONE`, `IBAN`, `TC_ID`, `IP_ADDRESS`, `ADDRESS`, `POSTAL_CODE`
 - **NER detector** — `PERSON`, `ORG`, `ADDRESS` via SpaCy (English `en_core_web_sm` and Turkish `tr_core_news_*` models)
-- **LLM detector** — `CUSTOM_SECRET` and any entity type via Ollama, OpenAI-compatible, or Anthropic Claude backends
+- **LLM detector** — `CUSTOM_SECRET` and any entity type via Ollama or OpenAI-compatible backends
 - **Two actions** — `warn` (report, keep text) and `hash` (replace with `[TYPE:8hex]` using salted SHA-256)
 - **Python API** — `LLMGuard`, `ScanResult`, `Violation`, `Action`; method-chaining configuration
 - **YAML API** — declarative policy files with per-entity enable/action settings
@@ -86,7 +86,7 @@ Initial release.
 - **Hallucination filtering** — structural validators per entity type (e.g. PERSON requires ≥2 words, TC_ID must be exactly 11 digits)
 - **Overlap resolution** — longer span wins when two detectors produce overlapping matches
 - **PEP 561 compliance** — `py.typed` marker for typed library consumers
-- **Optional extras** — `[ner]` for SpaCy, `[claude]` for Anthropic SDK, `[all]` for everything
+- **Optional extras** — `[ner]` for SpaCy, `[transformers]` for HuggingFace, `[all]` for everything
 - **ReDoS protection** — adversarial input tests with 30-second timeout guardrails
 - **Thread-safety** — concurrent scan tests validating shared-state safety
 
