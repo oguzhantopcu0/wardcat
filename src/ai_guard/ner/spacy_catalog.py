@@ -33,6 +33,8 @@ class SpacyModelInfo:
     """SpaCy version constraint for this model, e.g. ``">=3.4,<3.5"``."""
     note: str = ""
     """Optional compatibility or installation note shown to the user."""
+    extra_packages: tuple[str, ...] = ()
+    """Additional pip packages to install after the wheel (e.g. ``("spacy-transformers",)``)."""
 
 
 SPACY_CATALOG: list[SpacyModelInfo] = [
@@ -99,15 +101,16 @@ SPACY_CATALOG: list[SpacyModelInfo] = [
         note        = "Hosted on HuggingFace (v1.0). Built for SpaCy 3.4.x — installed with --no-deps on newer versions.",
     ),
     SpacyModelInfo(
-        name        = "tr_core_news_trf",
-        language    = "Turkish",
-        lang_code   = "tr",
-        size        = "trf",
-        ram_mb      = 450,
-        description = "Transformer (BERTurk) · Best Turkish accuracy · Requires GPU for speed",
-        wheel_url   = "https://huggingface.co/turkish-nlp-suite/tr_core_news_trf/resolve/main/tr_core_news_trf-1.0-py3-none-any.whl",
-        spacy_compat= ">=3.4,<3.5",
-        note        = "Hosted on HuggingFace (v1.0). Built for SpaCy 3.4.x — installed with --no-deps on newer versions.",
+        name           = "tr_core_news_trf",
+        language       = "Turkish",
+        lang_code      = "tr",
+        size           = "trf",
+        ram_mb         = 850,
+        description    = "Transformer (BERTurk) · Best Turkish accuracy · Requires GPU for speed",
+        wheel_url      = "https://huggingface.co/turkish-nlp-suite/tr_core_news_trf/resolve/main/tr_core_news_trf-1.0-py3-none-any.whl",
+        spacy_compat   = ">=3.4,<3.5",
+        note           = "Hosted on HuggingFace (v1.0). Requires spacy-transformers (installed automatically). Built for SpaCy 3.4.x — installed with --no-deps on newer versions.",
+        extra_packages = ("spacy-transformers",),
     ),
 
     # ── German ───────────────────────────────────────────────────────────

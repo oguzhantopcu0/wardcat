@@ -315,12 +315,33 @@ def cmd_spacy(args: argparse.Namespace) -> None:
 
         print(f"Downloading SpaCy model: {model_name}", flush=True)
 
-        uv_bin  = shutil.which("uv")
+        uv_bin   = shutil.which("uv")
         env_skip = {**os.environ, "UV_SKIP_WHEEL_FILENAME_CHECK": "1"}
+
+        # Check pip availability once upfront to avoid noisy "No module named pip" output.
+        _pip_ok = subprocess.run(
+            [sys.executable, "-m", "pip", "--version"],
+            capture_output=True,
+        ).returncode == 0
 
         def _run(cmd: list[str], *, skip_check: bool = False) -> int:
             e = env_skip if skip_check else None
             return subprocess.run(cmd, check=False, env=e).returncode
+
+        def _install(packages: list[str], *, no_deps: bool = False) -> int:
+            """Install packages using pip if available, otherwise fall back to uv."""
+            cmd_suffix = ["--no-deps"] if no_deps else []
+            if _pip_ok:
+                rc = _run([sys.executable, "-m", "pip", "install"] + packages + cmd_suffix)
+                if rc == 0:
+                    return 0
+            if uv_bin:
+                print("Using uv pip install…", flush=True)
+                return _run(
+                    [uv_bin, "pip", "install"] + packages + cmd_suffix,
+                    skip_check=True,
+                )
+            return 1
 
         result_code = 1
 
@@ -328,17 +349,20 @@ def cmd_spacy(args: argparse.Namespace) -> None:
             # Models with explicit wheel URL (e.g. Turkish / HuggingFace).
             # Installed with --no-deps because the wheel metadata may pin an old
             # SpaCy version that conflicts with what is currently installed.
-            wheel = info.wheel_url
-            result_code = _run([sys.executable, "-m", "pip", "install", wheel, "--no-deps"])
-            if result_code != 0 and uv_bin:
-                print("Trying uv pip install…", flush=True)
-                result_code = _run(
-                    [uv_bin, "pip", "install", wheel, "--no-deps"], skip_check=True
+            result_code = _install([info.wheel_url], no_deps=True)
+
+            # Install extra packages declared by this model (e.g. spacy-transformers for trf).
+            if result_code == 0 and info.extra_packages:
+                print(
+                    f"Installing extra dependencies: {', '.join(info.extra_packages)}",
+                    flush=True,
                 )
+                result_code = _install(list(info.extra_packages))
         else:
             # Standard SpaCy models (explosion/spacy-models GitHub releases).
             # 1. Try `python -m spacy download` (works in pip-based virtualenvs).
-            result_code = _run([sys.executable, "-m", "spacy", "download", model_name])
+            if _pip_ok:
+                result_code = _run([sys.executable, "-m", "spacy", "download", model_name])
 
             # 2. In uv environments pip is absent — construct the GitHub wheel URL
             #    using the installed SpaCy minor version (models follow x.y.0 tags).
@@ -350,7 +374,7 @@ def cmd_spacy(args: argparse.Namespace) -> None:
                     f"https://github.com/explosion/spacy-models/releases/download/"
                     f"{model_name}-{model_ver}/{model_name}-{model_ver}-py3-none-any.whl"
                 )
-                print(f"Trying uv pip install from GitHub ({model_ver})…", flush=True)
+                print(f"Using uv pip install from GitHub ({model_ver})…", flush=True)
                 result_code = _run([uv_bin, "pip", "install", gh_url])
 
         if result_code != 0:
