@@ -310,6 +310,23 @@ def cmd_spacy(args: argparse.Namespace) -> None:
         import shutil
         import subprocess
 
+        # Compatibility check: warn (or abort) if model's spacy_compat excludes current version.
+        if info and info.spacy_compat:
+            from packaging.specifiers import SpecifierSet, InvalidSpecifier
+            try:
+                spec = SpecifierSet(info.spacy_compat)
+                current_ver = spacy.__version__
+                if current_ver not in spec:
+                    print(
+                        f"ERROR: {model_name!r} requires SpaCy {info.spacy_compat} "
+                        f"but {current_ver} is installed.\n"
+                        f"{info.note}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+            except InvalidSpecifier:
+                pass  # malformed spacy_compat — skip check
+
         if info and info.note:
             print(f"Note: {info.note}", flush=True)
 

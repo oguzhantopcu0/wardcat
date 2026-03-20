@@ -106,11 +106,12 @@ SPACY_CATALOG: list[SpacyModelInfo] = [
         lang_code      = "tr",
         size           = "trf",
         ram_mb         = 850,
-        description    = "Transformer (BERTurk) · Best Turkish accuracy · Requires GPU for speed",
+        description    = "Transformer (BERTurk) · NOT compatible with SpaCy 3.5+",
         wheel_url      = "https://huggingface.co/turkish-nlp-suite/tr_core_news_trf/resolve/main/tr_core_news_trf-1.0-py3-none-any.whl",
         spacy_compat   = ">=3.4,<3.5",
-        note           = "Hosted on HuggingFace (v1.0). Requires spacy-transformers (installed automatically). Built for SpaCy 3.4.x — installed with --no-deps on newer versions.",
-        extra_packages = ("spacy-transformers",),
+        note           = "INCOMPATIBLE with SpaCy 3.5+: the transformer component API changed. "
+                         "This model requires SpaCy >=3.4.2,<3.5.0 — no compatible release exists for 3.8.x. "
+                         "Use tr_core_news_lg for the best available Turkish accuracy.",
     ),
 
     # ── German ───────────────────────────────────────────────────────────
