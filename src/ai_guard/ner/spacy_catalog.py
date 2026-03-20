@@ -35,6 +35,9 @@ class SpacyModelInfo:
     """Optional compatibility or installation note shown to the user."""
     extra_packages: tuple[str, ...] = ()
     """Additional pip packages to install after the wheel (e.g. ``("spacy-transformers",)``)."""
+    incompatible: bool = False
+    """``True`` if this model cannot be loaded on the currently supported SpaCy versions.
+    Download will be blocked with a clear error message."""
 
 
 SPACY_CATALOG: list[SpacyModelInfo] = [
@@ -112,6 +115,7 @@ SPACY_CATALOG: list[SpacyModelInfo] = [
         note           = "INCOMPATIBLE with SpaCy 3.5+: the transformer component API changed. "
                          "This model requires SpaCy >=3.4.2,<3.5.0 — no compatible release exists for 3.8.x. "
                          "Use tr_core_news_lg for the best available Turkish accuracy.",
+        incompatible   = True,
     ),
 
     # ── German ───────────────────────────────────────────────────────────
