@@ -93,7 +93,8 @@ class TestPullStillWorks:
         mgr.pull("llama3.1:8b", verbose=False)
         mgr.backend.pull_model.assert_called_once()
 
-    def test_pull_verbose_prints(self, capsys):
+    def test_pull_verbose_prints(self, capsys, caplog):
+        import logging
         backend = MagicMock(spec=BaseLLMBackend)
 
         def fake_pull(model, *, on_progress=None):
@@ -102,6 +103,8 @@ class TestPullStillWorks:
                 on_progress(PullProgress("success", 100, 100))
 
         backend.pull_model.side_effect = fake_pull
-        ModelManager(backend).pull("llama3.1:8b", verbose=True)
-        out = capsys.readouterr().out
-        assert "llama3.1:8b" in out
+        with caplog.at_level(logging.INFO, logger="ai_guard.llm.model_manager"):
+            ModelManager(backend).pull("llama3.1:8b", verbose=True)
+        # Model name appears in log messages; progress bar goes to stdout
+        assert "llama3.1:8b" in caplog.text
+        assert capsys.readouterr().out != ""   # progress bar still printed

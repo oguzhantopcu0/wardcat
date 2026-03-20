@@ -3,9 +3,12 @@ Model management: downloading, listing, availability checking.
 """
 from __future__ import annotations
 
+import logging
 import sys
 
 from ai_guard.llm.backends.base import BaseLLMBackend, PullProgress
+
+logger = logging.getLogger(__name__)
 
 
 class ModelManager:
@@ -44,17 +47,17 @@ class ModelManager:
         """
         if self.is_available(model):
             if verbose:
-                print(f"  ✓ Model already available: {model}")
+                logger.info("Model already available: %s", model)
             return True
 
         if verbose:
-            print(f"  Model not found: {model}")
+            logger.info("Model not found: %s", model)
             try:
                 answer = input(f"  Download it? (~GB in size) [y/N]: ").strip().lower()
             except (EOFError, KeyboardInterrupt):
                 answer = ""
             if answer not in ("y", "yes"):
-                print("  Download cancelled.")
+                logger.info("Download cancelled by user")
                 return False
 
         self.pull(model, verbose=verbose)
@@ -68,7 +71,7 @@ class ModelManager:
         :param verbose: Print progress to the terminal
         """
         if verbose:
-            print(f"Downloading model: {model}")
+            logger.info("Downloading model: %s", model)
 
         def _on_progress(p: PullProgress) -> None:
             if not verbose:
@@ -84,4 +87,4 @@ class ModelManager:
         self.backend.pull_model(model, on_progress=_on_progress)
 
         if verbose:
-            print(f"\r  Model ready: {model}{' ' * 40}")
+            logger.info("Model ready: %s", model)

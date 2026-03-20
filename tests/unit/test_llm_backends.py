@@ -124,7 +124,7 @@ class TestOpenAICompatBackend:
         mock_response.raise_for_status = MagicMock()
 
         with patch("httpx.post", return_value=mock_response) as mock_post:
-            b = OpenAICompatBackend(base_url="http://vllm:8000/v1", model="llama3")
+            b = OpenAICompatBackend(base_url="http://localhost:8000/v1", model="llama3")
             result = b.complete("prompt")
 
         assert result == "result"
@@ -140,7 +140,7 @@ class TestOpenAICompatBackend:
         mock_response.raise_for_status = MagicMock()
 
         with patch("httpx.post", return_value=mock_response) as mock_post:
-            b = OpenAICompatBackend(base_url="http://x", model="m", api_key="secret")
+            b = OpenAICompatBackend(base_url="http://localhost", model="m", api_key="secret")
             b.complete("test")
 
         headers = mock_post.call_args[1]["headers"]
@@ -152,14 +152,14 @@ class TestOpenAICompatBackend:
         mock_response.raise_for_status = MagicMock()
 
         with patch("httpx.post", return_value=mock_response) as mock_post:
-            b = OpenAICompatBackend(base_url="http://x", model="m")
+            b = OpenAICompatBackend(base_url="http://localhost", model="m")
             b.complete("test")
 
         headers = mock_post.call_args[1].get("headers", {})
         assert "Authorization" not in headers
 
     def test_pull_model_raises_not_implemented(self):
-        b = OpenAICompatBackend(base_url="http://x", model="m")
+        b = OpenAICompatBackend(base_url="http://localhost", model="m")
         with pytest.raises(NotImplementedError):
             b.pull_model("any-model")
 
@@ -171,7 +171,7 @@ class TestOpenAICompatBackend:
         mock_response.raise_for_status = MagicMock()
 
         with patch("httpx.get", return_value=mock_response):
-            b = OpenAICompatBackend(base_url="http://x", model="m")
+            b = OpenAICompatBackend(base_url="http://localhost", model="m")
             models = b.list_models()
 
         assert "llama3"  in models
@@ -215,7 +215,8 @@ class TestModelManager:
         ModelManager(backend).pull("llama3.2", verbose=False)
         assert capsys.readouterr().out == ""
 
-    def test_pull_verbose_true_prints_progress(self, capsys):
+    def test_pull_verbose_true_prints_progress(self, capsys, caplog):
+        import logging
         backend = MagicMock(spec=BaseLLMBackend)
 
         def fake_pull(model, *, on_progress=None):
@@ -224,9 +225,10 @@ class TestModelManager:
                 on_progress(PullProgress("success", 100, 100))
 
         backend.pull_model.side_effect = fake_pull
-        ModelManager(backend).pull("llama3.2", verbose=True)
-        out = capsys.readouterr().out
-        assert "llama3.2" in out
+        with caplog.at_level(logging.INFO, logger="ai_guard.llm.model_manager"):
+            ModelManager(backend).pull("llama3.2", verbose=True)
+        assert "llama3.2" in caplog.text
+        assert capsys.readouterr().out != ""   # progress bar still printed
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -252,7 +254,7 @@ class TestHttpxImportError:
     def test_openai_compat_httpx_missing_raises(self):
         with patch("ai_guard.llm.backends.openai_compat._httpx", side_effect=ImportError("httpx missing")):
             backend = OpenAICompatBackend.__new__(OpenAICompatBackend)
-            backend.base_url = "http://x"
+            backend.base_url = "http://localhost"
             backend.model = "m"
             backend._headers = {}
             with pytest.raises(ImportError, match="httpx"):
@@ -304,10 +306,10 @@ class TestOpenAICompatConnectErrors:
         import httpx
         with patch("httpx.post", side_effect=httpx.ConnectError("refused")):
             with pytest.raises(ConnectionError, match="LLM service"):
-                OpenAICompatBackend(base_url="http://x", model="m").complete("test")
+                OpenAICompatBackend(base_url="http://localhost", model="m").complete("test")
 
     def test_list_models_connect_error(self):
         import httpx
         with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
             with pytest.raises(ConnectionError, match="LLM service"):
-                OpenAICompatBackend(base_url="http://x", model="m").list_models()
+                OpenAICompatBackend(base_url="http://localhost", model="m").list_models()

@@ -185,7 +185,7 @@ class TestErrorHandling:
     def test_generic_exception_returns_empty_with_warning(self, caplog):
         import logging
         backend = MagicMock(spec=BaseLLMBackend)
-        backend.complete_messages.side_effect = RuntimeError("Beklenmedik hata")
+        backend.complete_messages.side_effect = OSError("Beklenmedik hata")
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
 
         with caplog.at_level(logging.WARNING, logger="ai_guard.detectors.llm_detector"):

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Dict, List, Set, Tuple
 
 from ai_guard.detectors.base import BaseDetector, DetectedSpan
+
+logger = logging.getLogger(__name__)
 
 # (pattern, flags) tuple — per-entity flag support
 _SEP = r"[\s\-]?"   # optional space/dash in card numbers
@@ -45,9 +48,12 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         0,
     ),
     # ── IBAN ─────────────────────────────────────────────────────────
-    # Case-insensitive (TR330006... or tr330006... both matched)
+    # Supports both compact (TR330006...) and spaced (TR33 0006 1005...) formats.
+    # Groups of 4 alphanumeric characters, optionally separated by single spaces.
+    # Minimum BBAN: 2 full groups (e.g. Norway 15 chars); maximum: 8 groups + remainder.
+    # Checksum is validated by _validate_iban() which strips spaces before mod-97.
     "IBAN": (
-        r"\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}(?:[A-Z0-9]?\d{0,16})\b",
+        r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,8}(?:[ ]?[A-Z0-9]{1,4})?\b",
         re.IGNORECASE,
     ),
     # ── IP address ────────────────────────────────────────────────────
@@ -164,6 +170,31 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         r"\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b",
         re.IGNORECASE,
     ),
+    # ── Date of Birth ─────────────────────────────────────────────────
+    # Two detection strategies to balance recall vs. false positives:
+    #
+    # 1. Month-name formats (DD Month YYYY) — low false-positive risk;
+    #    matched without requiring a keyword prefix.
+    #    e.g.  "15 Mart 1988"  "3 January 2001"
+    #
+    # 2. Numeric / ISO formats (DD.MM.YYYY, YYYY-MM-DD) — high false-positive
+    #    risk (any date can appear in this format); matched ONLY when preceded
+    #    by an explicit birth-date keyword.
+    #    e.g.  "doğum tarihi: 15.03.1988"  "date of birth: 1988-03-15"
+    #          "born: 01/05/1992"          "dob: 1990-07-22"
+    "DATE_OF_BIRTH": (
+        # Strategy 1: DD <MonthName> YYYY — no keyword required
+        r"\b\d{1,2}\s+"
+        r"(?:Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık"
+        r"|January|February|March|April|May|June|July|August|September|October|November|December"
+        r"|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+        r"\s+(?:19|20)\d{2}\b"
+        r"|"
+        # Strategy 2: numeric/ISO formats — keyword required
+        r"(?:doğum(?:\s+tarihi)?|d\.?t\.?|born(?:\s+on)?|date\s+of\s+birth|d\.?o\.?b\.?|birthday)\s*:?\s*"
+        r"(?:\d{1,2}[./]\d{1,2}[./](?:19|20)\d{2}|(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))",
+        re.IGNORECASE,
+    ),
     # ── Custom Secret ─────────────────────────────────────────────────
     # Known token/credential prefix patterns — services with well-defined formats.
     # Contextual detection (password=VALUE) is delegated to the LLM detector.
@@ -243,6 +274,19 @@ _COMPILED: Dict[str, re.Pattern] = {
 }
 
 
+# ISO 3166-1 alpha-2 country codes that have published IBAN formats (SWIFT/IBAN registry).
+_VALID_IBAN_COUNTRIES: frozenset[str] = frozenset({
+    "AD", "AE", "AL", "AT", "AZ", "BA", "BE", "BG", "BH", "BR", "BY",
+    "CH", "CR", "CY", "CZ", "DE", "DK", "DO", "EE", "EG", "ES", "FI",
+    "FO", "FR", "GB", "GE", "GI", "GL", "GR", "GT", "HR", "HU", "IE",
+    "IL", "IQ", "IS", "IT", "JO", "KW", "KZ", "LB", "LC", "LI", "LT",
+    "LU", "LV", "LY", "MC", "MD", "ME", "MK", "MR", "MT", "MU", "NL",
+    "NO", "PK", "PL", "PS", "PT", "QA", "RO", "RS", "SA", "SC", "SD",
+    "SE", "SI", "SK", "SM", "ST", "SV", "TL", "TN", "TR", "UA", "VA",
+    "VG", "XK",
+})
+
+
 def _validate_iban(value: str) -> bool:
     """IBAN mod-97 checksum validation (ISO 13616).
 
@@ -254,6 +298,8 @@ def _validate_iban(value: str) -> bool:
     """
     cleaned = value.replace(" ", "").upper()
     if len(cleaned) < 5:
+        return False
+    if cleaned[:2] not in _VALID_IBAN_COUNTRIES:
         return False
     rearranged = cleaned[4:] + cleaned[:4]
     numeric = ""
@@ -306,8 +352,18 @@ class RegexDetector(BaseDetector):
                 value = match.group()
                 # Checksum validations — suppress false positives
                 if entity_type == "TC_ID" and not _validate_tc_id(value):
+                    logger.debug(
+                        "TC_ID format match rejected (invalid checksum): %r — "
+                        "if this is real PII, the number may be incorrectly formatted.",
+                        value,
+                    )
                     continue
                 if entity_type == "IBAN" and not _validate_iban(value):
+                    logger.debug(
+                        "IBAN format match rejected (invalid checksum): %r — "
+                        "if this is real PII, the number may be incorrectly formatted.",
+                        value,
+                    )
                     continue
                 spans.append(
                     DetectedSpan(

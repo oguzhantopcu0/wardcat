@@ -158,6 +158,7 @@ class TestLLMFaultTolerance:
         """Even with an LLM connection error, the regex detector should still work."""
         failing_backend = MagicMock(spec=BaseLLMBackend)
         failing_backend.complete.side_effect = ConnectionError("Ollama çevrimdışı")
+        failing_backend.complete_messages.side_effect = ConnectionError("Ollama çevrimdışı")
 
         guard = LLMGuard(use_ner=False)
         llm_det = LLMDetector(backend=failing_backend, enabled_entities={"PERSON"})

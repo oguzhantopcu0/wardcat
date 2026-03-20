@@ -13,6 +13,10 @@ Usage:
     python -m ai_guard models setup
     python -m ai_guard models pull llama3.1:8b
     python -m ai_guard models pull llama3.1:8b --llm-url http://10.0.0.5:11434
+    python -m ai_guard spacy list
+    python -m ai_guard spacy list --lang tr
+    python -m ai_guard spacy download tr_core_news_sm
+    python -m ai_guard spacy installed
 
 Environment variables:
     LLMGUARD_SALT         — instead of --salt
@@ -77,6 +81,27 @@ def _build_parser() -> argparse.ArgumentParser:
                               help="Scan each line in a file as a separate text")
     p_batch.add_argument("--file", metavar="PATH", type=Path, required=True,
                          help="File where each line is an independent text")
+
+    # ── spacy ───────────────────────────────────────────────────────────
+    p_spacy = sub.add_parser("spacy", help="SpaCy NER model management")
+    spacy_sub = p_spacy.add_subparsers(dest="spacy_command", required=True)
+
+    # spacy list
+    p_spacy_list = spacy_sub.add_parser("list", help="List supported SpaCy models")
+    p_spacy_list.add_argument(
+        "--lang", metavar="CODE", default="",
+        help="Filter by language code, e.g. tr, en, de, fr, es, it, nl, pt",
+    )
+
+    # spacy download
+    p_spacy_dl = spacy_sub.add_parser("download", help="Download a SpaCy model")
+    p_spacy_dl.add_argument(
+        "model_name",
+        help="SpaCy model name, e.g. tr_core_news_sm (see: ai-guard spacy list)",
+    )
+
+    # spacy installed
+    spacy_sub.add_parser("installed", help="List currently installed SpaCy models")
 
     # ── models ──────────────────────────────────────────────────────────
     p_models = sub.add_parser("models", help="On-prem LLM model management")
@@ -240,6 +265,122 @@ def cmd_batch(args: argparse.Namespace) -> None:
             _print_text(result, label=f"Line {i}: {line[:60]}{'…' if len(line) > 60 else ''}")
 
 
+def cmd_spacy(args: argparse.Namespace) -> None:
+    """Handle the ``spacy`` sub-command — list and download SpaCy NER models."""
+    from ai_guard.ner.spacy_catalog import SPACY_CATALOG, get_models_by_language
+
+    if args.spacy_command == "list":
+        lang = args.lang.lower().strip()
+        models = get_models_by_language(lang) if lang else SPACY_CATALOG
+
+        if not models:
+            print(f"No models found for language code: {lang!r}")
+            print("Supported codes: en, tr, de, fr, es, it, nl, pt")
+            return
+
+        print(f"\n{'Language':<12} {'Model':<30} {'Size':<5} {'RAM':>6}  Description")
+        print(f"{'-'*12} {'-'*30} {'-'*5} {'-'*6}  {'-'*40}")
+        for m in models:
+            tag  = " ←" if m.recommended else ""
+            ram  = f"{m.ram_mb} MB"
+            print(f"{m.language:<12} {m.name:<30} {m.size:<5} {ram:>6}  {m.description}{tag}")
+        print()
+        print("Download a model:  python -m ai_guard spacy download <model>")
+        print("Check installed:   python -m ai_guard spacy installed")
+        print()
+
+    elif args.spacy_command == "download":
+        from ai_guard.ner.spacy_catalog import get_spacy_model
+        model_name = args.model_name
+        info = get_spacy_model(model_name)
+        if info is None:
+            print(
+                f"Warning: {model_name!r} is not in the ai-guard catalog.\n"
+                "Download will proceed but compatibility is not guaranteed.\n"
+                "See supported models: python -m ai_guard spacy list",
+                file=sys.stderr,
+            )
+        try:
+            import spacy  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "spacy is required for NER detection.\n"
+                "Install with: uv add 'ai-guard[ner]'  or  pip install 'ai-guard[ner]'"
+            )
+        import shutil
+        import subprocess
+
+        if info and info.note:
+            print(f"Note: {info.note}", flush=True)
+
+        print(f"Downloading SpaCy model: {model_name}", flush=True)
+
+        uv_bin  = shutil.which("uv")
+        env_skip = {**os.environ, "UV_SKIP_WHEEL_FILENAME_CHECK": "1"}
+
+        def _run(cmd: list[str], *, skip_check: bool = False) -> int:
+            e = env_skip if skip_check else None
+            return subprocess.run(cmd, check=False, env=e).returncode
+
+        result_code = 1
+
+        if info and info.wheel_url:
+            # Models with explicit wheel URL (e.g. Turkish / HuggingFace).
+            # Installed with --no-deps because the wheel metadata may pin an old
+            # SpaCy version that conflicts with what is currently installed.
+            wheel = info.wheel_url
+            result_code = _run([sys.executable, "-m", "pip", "install", wheel, "--no-deps"])
+            if result_code != 0 and uv_bin:
+                print("Trying uv pip install…", flush=True)
+                result_code = _run(
+                    [uv_bin, "pip", "install", wheel, "--no-deps"], skip_check=True
+                )
+        else:
+            # Standard SpaCy models (explosion/spacy-models GitHub releases).
+            # 1. Try `python -m spacy download` (works in pip-based virtualenvs).
+            result_code = _run([sys.executable, "-m", "spacy", "download", model_name])
+
+            # 2. In uv environments pip is absent — construct the GitHub wheel URL
+            #    using the installed SpaCy minor version (models follow x.y.0 tags).
+            if result_code != 0 and uv_bin:
+                import spacy as _spacy
+                v = _spacy.__version__.split(".")
+                model_ver = f"{v[0]}.{v[1]}.0"
+                gh_url = (
+                    f"https://github.com/explosion/spacy-models/releases/download/"
+                    f"{model_name}-{model_ver}/{model_name}-{model_ver}-py3-none-any.whl"
+                )
+                print(f"Trying uv pip install from GitHub ({model_ver})…", flush=True)
+                result_code = _run([uv_bin, "pip", "install", gh_url])
+
+        if result_code != 0:
+            raise ValueError(
+                f"SpaCy model download failed: {model_name!r}\n"
+                "The model may not be compatible with your installed SpaCy version.\n"
+                "Check available models:  python -m ai_guard spacy list\n"
+                "Check SpaCy version:     python -m spacy info"
+            )
+        print(f"\nModel ready. Use it with:")
+        print(f"  guard = LLMGuard(spacy_model={model_name!r})")
+        print(f"  python -m ai_guard scan --model {model_name} --text \"...\"")
+
+    elif args.spacy_command == "installed":
+        try:
+            import spacy.util
+            installed = list(spacy.util.get_installed_models())
+        except ImportError:
+            print("SpaCy is not installed. Run: uv add 'ai-guard[ner]'")
+            return
+        if installed:
+            print("Installed SpaCy models:")
+            for name in sorted(installed):
+                print(f"  • {name}")
+        else:
+            print("No SpaCy models installed.")
+            print("Download one with: python -m ai_guard spacy download <model>")
+            print("See available:     python -m ai_guard spacy list")
+
+
 def cmd_models(args: argparse.Namespace) -> None:
     """Handle the ``models`` sub-command — list, setup, or pull on-prem LLM models."""
     from ai_guard.llm.model_manager import ModelManager
@@ -353,6 +494,8 @@ def main() -> None:
             cmd_scan(args)
         elif args.command == "batch":
             cmd_batch(args)
+        elif args.command == "spacy":
+            cmd_spacy(args)
         elif args.command == "models":
             cmd_models(args)
     except FileNotFoundError as exc:

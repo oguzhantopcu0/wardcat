@@ -66,6 +66,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # SpaCy NER-based
         "PERSON":       {"enabled": True,  "action": "hash"},
         "ORG":          {"enabled": False, "action": "warn"},
+        # Date detection
+        "DATE_OF_BIRTH": {"enabled": True, "action": "hash"},
     },
 }
 
@@ -83,6 +85,11 @@ _ENV_VARS = {
 _VALID_ACTIONS = {"warn", "hash"}
 # Valid backend values
 _VALID_BACKENDS = {"ollama", "openai_compatible", "transformers"}
+# Valid top-level config keys — used to catch typos in YAML files
+_KNOWN_CONFIG_KEYS = frozenset({
+    "salt", "spacy_model", "use_ner", "scan_batch_workers",
+    "llm_detector", "entities",
+})
 
 
 def load_config(path: Optional[str | Path] = None) -> Dict[str, Any]:
@@ -107,7 +114,7 @@ def load_config(path: Optional[str | Path] = None) -> Dict[str, Any]:
             yaml_text = files("ai_guard.config").joinpath("default.yaml").read_text(encoding="utf-8")
             user_config: Dict[str, Any] = yaml.safe_load(yaml_text) or {}
         else:
-            file_path = Path(path)
+            file_path = Path(path).resolve()
             if not file_path.exists():
                 raise FileNotFoundError(f"Config file not found: {file_path}")
             with file_path.open("r", encoding="utf-8") as fh:
@@ -123,6 +130,14 @@ def validate_config(config: Dict[str, Any]) -> None:
     """
     Validate the configuration. Raises ValueError if any value is invalid.
     """
+    unknown_keys = set(config.keys()) - _KNOWN_CONFIG_KEYS
+    if unknown_keys:
+        logger.warning(
+            "Unknown configuration key(s): %s — check for typos. "
+            "Valid top-level keys: %s",
+            sorted(unknown_keys), sorted(_KNOWN_CONFIG_KEYS),
+        )
+
     entities = config.get("entities", {})
     for entity_name, entity_cfg in entities.items():
         if not isinstance(entity_cfg, dict):

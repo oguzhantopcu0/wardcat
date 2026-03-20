@@ -124,7 +124,13 @@ class TransformersBackend(BaseLLMBackend):
             # Chat format: return the content of the last message
             if not generated:
                 raise ValueError(f"Model chat output is empty: {self._model_name}")
-            return generated[-1].get("content", "") or ""
+            last = generated[-1]
+            if not isinstance(last, dict):
+                raise ValueError(
+                    f"Unexpected chat output format from {self._model_name}: "
+                    f"expected dict, got {type(last).__name__}"
+                )
+            return last.get("content", "") or ""
         return str(generated)
 
     def list_models(self) -> list[str]:

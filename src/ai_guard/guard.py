@@ -62,7 +62,7 @@ _REGEX_ENTITIES = {
     "TC_ID", "ADDRESS", "POSTAL_CODE",
     "UUID", "SSN", "MAC_ADDRESS", "JWT", "NIN", "CUSTOM_SECRET",
     "UK_POSTAL_CODE", "US_ZIP_CODE", "EU_NATIONAL_ID",
-    "PASSPORT", "CODICE_FISCALE",
+    "PASSPORT", "CODICE_FISCALE", "DATE_OF_BIRTH",
 }
 _NER_ENTITIES   = {"PERSON", "ORG", "ADDRESS"}
 
@@ -220,6 +220,7 @@ class LLMGuard:
                     original_text=text,
                     sanitized_text=text,
                     violations=[],
+                    scan_error=f"{type(exc).__name__}: {exc}",
                 )
 
         with ThreadPoolExecutor(max_workers=workers) as executor:

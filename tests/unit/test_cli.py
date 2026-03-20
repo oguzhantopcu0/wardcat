@@ -110,7 +110,7 @@ class TestMakeBackend:
     def test_openai_compat_backend(self):
         from ai_guard.__main__ import _make_backend, _build_parser
         parser = _build_parser()
-        args = parser.parse_args(["models", "list", "--llm-backend", "openai_compatible", "--llm-url", "http://x:8000"])
+        args = parser.parse_args(["models", "list", "--llm-backend", "openai_compatible", "--llm-url", "http://localhost:8000"])
         backend = _make_backend(args)
         from ai_guard.llm.backends.openai_compat import OpenAICompatBackend
         assert isinstance(backend, OpenAICompatBackend)

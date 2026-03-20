@@ -1,19 +1,36 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from ai_guard.llm.backends.base import BaseLLMBackend, ProgressCallback
 
 logger = logging.getLogger(__name__)
 
+_LOCALHOST_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]"}
+
 
 def _warn_if_http(url: str) -> None:
-    """Warn if an unencrypted HTTP connection is being used."""
-    if url.startswith("http://"):
+    """Enforce HTTPS for remote hosts; warn only for localhost.
+
+    See :func:`ai_guard.llm.backends.ollama._warn_if_http` for policy details.
+    """
+    if not url.startswith("http://"):
+        return
+    if os.environ.get("LLMGUARD_ALLOW_HTTP", "").lower() in ("1", "true", "yes"):
+        return
+    host = url[len("http://"):].split("/")[0].split(":")[0]
+    if host in _LOCALHOST_HOSTS:
         logger.warning(
             "LLM backend is using HTTP: %s — PII will be transmitted unencrypted. "
             "Use HTTPS in production (e.g. nginx/Caddy reverse proxy).",
             url,
+        )
+    else:
+        raise ValueError(
+            f"LLM backend HTTP connection to remote host is not allowed: {url}\n"
+            "PII would be transmitted unencrypted over the network.\n"
+            "Use HTTPS, or set LLMGUARD_ALLOW_HTTP=true to override (not recommended)."
         )
 
 

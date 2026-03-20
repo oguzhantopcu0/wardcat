@@ -24,7 +24,7 @@ KNOWN_ENTITY_TYPES: frozenset[str] = frozenset({
     "TC_ID", "IP_ADDRESS", "IPv6", "ADDRESS", "POSTAL_CODE", "CUSTOM_SECRET",
     "UUID", "SSN", "MAC_ADDRESS", "JWT", "NIN",
     "UK_POSTAL_CODE", "US_ZIP_CODE", "EU_NATIONAL_ID", "PASSPORT",
-    "CODICE_FISCALE",
+    "CODICE_FISCALE", "DATE_OF_BIRTH",
 })
 
 
@@ -74,6 +74,10 @@ class ScanResult:
     """Output text with PII masked/reported."""
     violations: List[Violation] = field(default_factory=list)
     """List of all detected violations. The ``original`` fields contain raw PII."""
+    scan_error: str | None = None
+    """Set when this item failed during :meth:`~ai_guard.LLMGuard.scan_batch`.
+    The original text is returned unchanged. Non-None means the scan result
+    is incomplete — callers should not treat the text as clean."""
 
     @property
     def is_clean(self) -> bool:
@@ -97,6 +101,7 @@ class ScanResult:
         return {
             "is_clean":       self.is_clean,
             "sanitized_text": self.sanitized_text,
+            "scan_error":     self.scan_error,
             "violations": [
                 {
                     "entity_type": v.entity_type,

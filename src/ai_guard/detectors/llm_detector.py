@@ -96,8 +96,8 @@ class LLMDetector(BaseDetector):
             return spans
         except ConnectionError as exc:
             logger.warning("LLM detector connection error: %s", exc)
-        except Exception as exc:
-            logger.warning("LLM detector failed: %s", exc, exc_info=True)
+        except (TimeoutError, ValueError, OSError) as exc:
+            logger.warning("LLM detector failed: %s", exc)
         return []
 
     # ------------------------------------------------------------------
