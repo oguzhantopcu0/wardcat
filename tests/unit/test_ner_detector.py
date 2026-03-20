@@ -170,6 +170,11 @@ class TestPersonFilter:
         assert _is_valid_person("TR33")   is False
         assert _is_valid_person("No:42")  is False
 
+    def test_all_lowercase_filtered(self):
+        assert _is_valid_person("adresine veya") is False
+        assert _is_valid_person("veya")          is False
+        assert _is_valid_person("olan kişi")     is False
+
     def test_valid_names_pass(self):
         assert _is_valid_person("Ahmet Yılmaz") is True
         assert _is_valid_person("John Smith")   is True

@@ -48,6 +48,7 @@ def _is_valid_person(text: str) -> bool:
     - Very short tokens (≤2 chars) — abbreviations like "TC", "Mr"
     - Spans containing digits or address punctuation — "No:42", "Blok/3"
     - Spans containing street/address keywords — "Moda Caddesi No:42"
+    - Spans with no uppercase-initial word — "adresine veya", "veya", common words
     """
     stripped = text.strip()
     if len(stripped) <= 2:
@@ -58,6 +59,11 @@ def _is_valid_person(text: str) -> bool:
         return False
     if _ADDRESS_KW.search(stripped):
         logger.debug("NER PERSON filtered (address keyword): %r", text)
+        return False
+    # At least one word must start with an uppercase letter.
+    # Person names are always capitalized; common word sequences ("adresine veya") are not.
+    if not any(word[:1].isupper() for word in stripped.split()):
+        logger.debug("NER PERSON filtered (no uppercase word): %r", text)
         return False
     return True
 
