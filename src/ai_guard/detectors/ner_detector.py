@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from typing import Any, List, Set
 
@@ -21,6 +22,44 @@ _SPACY_LABEL_MAP: dict[str, str] = {
     "NORP":   "ORG",       # Nationality, religious group, etc.
     "FAC":    "ADDRESS",   # Building, bridge, etc.
 }
+
+# ── PERSON false-positive filters ─────────────────────────────────────────────
+# Turkish NER models often mis-label addresses and short tokens as PERSON.
+# These patterns identify spans that are clearly NOT person names.
+
+# Span contains digits or characters typical of addresses/codes (No:, /, :)
+_NON_PERSON_CHARS = re.compile(r"[0-9/:]")
+
+# Span contains address-type keywords (Turkish + English)
+_ADDRESS_KW = re.compile(
+    r"\b(?:"
+    r"Caddesi|Cad\.|Sokağı|Sokak|Sok\.|Mahallesi|Mah\.|Bulvarı|Blv\."
+    r"|Apartmanı|Apt\.|Sitesi|No\b"
+    r"|Street|St\.|Avenue|Ave\.|Road|Rd\.|Boulevard|Lane|Drive|Court"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_valid_person(text: str) -> bool:
+    """Return False if the span is unlikely to be a real person name.
+
+    Filters out:
+    - Very short tokens (≤2 chars) — abbreviations like "TC", "Mr"
+    - Spans containing digits or address punctuation — "No:42", "Blok/3"
+    - Spans containing street/address keywords — "Moda Caddesi No:42"
+    """
+    stripped = text.strip()
+    if len(stripped) <= 2:
+        logger.debug("NER PERSON filtered (too short): %r", text)
+        return False
+    if _NON_PERSON_CHARS.search(stripped):
+        logger.debug("NER PERSON filtered (contains digits/punct): %r", text)
+        return False
+    if _ADDRESS_KW.search(stripped):
+        logger.debug("NER PERSON filtered (address keyword): %r", text)
+        return False
+    return True
 
 # ── SpaCy model singleton cache ────────────────────────────────────────────
 # The SpaCy nlp object is loaded only once per model name.
@@ -55,13 +94,17 @@ class NERDetector(BaseDetector):
         spans: List[DetectedSpan] = []
         for ent in doc.ents:
             mapped = _SPACY_LABEL_MAP.get(ent.label_)
-            if mapped and mapped in self.enabled_entities:
-                spans.append(
-                    DetectedSpan(
-                        entity_type=mapped,
-                        text=ent.text,
-                        start=ent.start_char,
-                        end=ent.end_char,
-                    )
+            if not mapped or mapped not in self.enabled_entities:
+                continue
+            # Apply false-positive filter for PERSON entities.
+            if mapped == "PERSON" and not _is_valid_person(ent.text):
+                continue
+            spans.append(
+                DetectedSpan(
+                    entity_type=mapped,
+                    text=ent.text,
+                    start=ent.start_char,
+                    end=ent.end_char,
                 )
+            )
         return spans

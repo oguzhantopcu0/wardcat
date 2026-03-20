@@ -34,12 +34,15 @@ def _resolve_spacy_model(model: str) -> str:
         installed = []
 
     if model in installed:
+        logger.info("SpaCy model loaded: %r", model)
         return model
 
     if not installed:
         logger.warning(
-            "SpaCy model not found: %r. Install with: python -m spacy download %s",
-            model, model,
+            "SpaCy model %r is not installed and no models are available. "
+            "Install with: python -m spacy download %s  "
+            "or: python -m ai_guard spacy download %s",
+            model, model, model,
         )
         return model
 
@@ -49,9 +52,10 @@ def _resolve_spacy_model(model: str) -> str:
     fallback = same_lang[0] if same_lang else installed[0]
 
     logger.warning(
-        "SpaCy model %r is not installed. Using alternative: %r. "
-        "For the correct model: python -m spacy download %s",
-        model, fallback, model,
+        "SpaCy model %r is not installed — falling back to %r.\n"
+        "  Installed models: %s\n"
+        "  To install the correct model: python -m ai_guard spacy download %s",
+        model, fallback, installed, model,
     )
     return fallback
 

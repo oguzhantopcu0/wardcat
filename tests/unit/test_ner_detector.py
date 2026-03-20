@@ -1,29 +1,51 @@
 """
-SpaCy NER detector tests (requires en_core_web_sm).
+SpaCy NER detector tests (requires en_core_web_sm and tr_core_news_md).
 
-pytest -m ner  →  run only this file
+pytest -m ner          →  run only this file
+pytest -m "ner and tr" →  Turkish-only tests
 """
 from __future__ import annotations
 
+import logging
 import warnings
 
 import pytest
+import spacy.util
 
 from ai_guard import LLMGuard
-from ai_guard.detectors.ner_detector import NERDetector
+from ai_guard.detectors.ner_detector import NERDetector, _is_valid_person
 
 pytestmark = pytest.mark.ner   # tag: uv run pytest -m ner
+
+_INSTALLED = set(spacy.util.get_installed_models())
+needs_tr = pytest.mark.skipif(
+    not any(m.startswith("tr_") for m in _INSTALLED),
+    reason="No Turkish SpaCy model installed (run: python -m ai_guard spacy download tr_core_news_md)",
+)
 
 
 @pytest.fixture(scope="module")
 def ner():
-    """Load once per module (SpaCy is heavy)."""
+    """English NER detector — load once per module (SpaCy is heavy)."""
     return NERDetector({"PERSON", "ORG", "ADDRESS"}, model="en_core_web_sm")
+
+
+@pytest.fixture(scope="module")
+def ner_tr():
+    """Turkish NER detector — uses the first installed tr_* model."""
+    tr_model = next(m for m in sorted(_INSTALLED) if m.startswith("tr_"))
+    return NERDetector({"PERSON", "ORG", "ADDRESS"}, model=tr_model)
 
 
 @pytest.fixture(scope="module")
 def guard_with_ner():
     return LLMGuard(use_ner=True, spacy_model="en_core_web_sm")
+
+
+@pytest.fixture(scope="module")
+def guard_tr():
+    tr_model = next((m for m in sorted(_INSTALLED) if m.startswith("tr_")), "en_core_web_sm")
+    return LLMGuard(use_ner=True, spacy_model=tr_model)
 
 
 # ── PERSON detection ─────────────────────────────────────────────────────────
@@ -130,6 +152,106 @@ class TestNERPlusRegex:
         address_violations = [v for v in result.violations if v.entity_type == "ADDRESS"]
         for v in address_violations:
             assert v.action == Action.WARN
+
+
+# ── PERSON false-positive filter (unit) ──────────────────────────────────────
+
+class TestPersonFilter:
+    def test_short_token_filtered(self):
+        assert _is_valid_person("TC") is False
+        assert _is_valid_person("A")  is False
+
+    def test_address_keyword_filtered(self):
+        assert _is_valid_person("Moda Caddesi No:42") is False
+        assert _is_valid_person("Atatürk Bulvarı")    is False
+        assert _is_valid_person("Main Street")        is False
+
+    def test_digit_in_span_filtered(self):
+        assert _is_valid_person("TR33")   is False
+        assert _is_valid_person("No:42")  is False
+
+    def test_valid_names_pass(self):
+        assert _is_valid_person("Ahmet Yılmaz") is True
+        assert _is_valid_person("John Smith")   is True
+        assert _is_valid_person("Emily")        is True
+
+
+# ── Turkish NER tests ─────────────────────────────────────────────────────────
+
+class TestTurkishNER:
+    @needs_tr
+    def test_turkish_person_detected(self, ner_tr):
+        spans = ner_tr.detect("Ahmet Yılmaz bir yazılım geliştiricisidir.")
+        assert any(s.entity_type == "PERSON" for s in spans), \
+            "Expected PERSON detection for 'Ahmet Yılmaz'"
+
+    @needs_tr
+    def test_turkish_address_not_person(self, ner_tr):
+        """'Moda Caddesi No:42' must not appear as PERSON (false positive filter)."""
+        spans = ner_tr.detect("Moda Caddesi No:42 adresinde ikamet etmektedir.")
+        person_texts = [s.text for s in spans if s.entity_type == "PERSON"]
+        assert not any("Caddesi" in t or "No:" in t for t in person_texts), \
+            f"Address mis-labeled as PERSON: {person_texts}"
+
+    @needs_tr
+    def test_short_token_not_person(self, ner_tr):
+        """'TC' abbreviation must not appear as PERSON."""
+        spans = ner_tr.detect("TC kimlik numarası 12345678950 olan kişi.")
+        person_texts = [s.text for s in spans if s.entity_type == "PERSON"]
+        assert "TC" not in person_texts, f"'TC' mis-labeled as PERSON"
+
+    @needs_tr
+    def test_turkish_model_actually_loaded(self, caplog):
+        """Guard must log which SpaCy model is actually loaded (info level)."""
+        tr_model = next(m for m in sorted(_INSTALLED) if m.startswith("tr_"))
+        with caplog.at_level(logging.INFO, logger="ai_guard.guard"):
+            LLMGuard(use_ner=True, spacy_model=tr_model)
+        loaded = [r.message for r in caplog.records if "SpaCy model loaded" in r.message]
+        assert loaded, "Expected 'SpaCy model loaded' info log"
+        assert any("tr_" in msg for msg in loaded), \
+            f"Expected a tr_* model to be logged, got: {loaded}"
+
+    @needs_tr
+    def test_turkish_full_scan(self, guard_tr):
+        """Turkish PII scan: name, email, phone, credit card, IBAN all detected."""
+        text = (
+            "Ahmet Yılmaz, ahmet@example.com adresine veya 0532 123 45 67 numarasına ulaşın. "
+            "Kredi kartı: 4111 1111 1111 1111. IBAN: TR33 0006 1005 1978 6457 8413 26"
+        )
+        result = guard_tr.scan(text)
+        types = {v.entity_type for v in result.violations}
+        assert "PERSON"      in types, "PERSON not detected"
+        assert "EMAIL"       in types, "EMAIL not detected"
+        assert "PHONE"       in types, "PHONE not detected"
+        assert "CREDIT_CARD" in types, "CREDIT_CARD not detected"
+        assert "IBAN"        in types, "IBAN not detected"
+
+
+# ── Model fallback transparency ───────────────────────────────────────────────
+
+class TestModelFallback:
+    def test_fallback_logged_when_model_not_installed(self, caplog):
+        """Requesting a non-installed model must log a WARNING with fallback info."""
+        with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
+            LLMGuard(use_ner=True, spacy_model="xx_fake_model_xyz")
+        warnings_with_fallback = [
+            r for r in caplog.records
+            if r.levelno == logging.WARNING and "falling back" in r.message.lower()
+        ]
+        # Either fallback warning OR "not installed" warning should appear
+        assert any(
+            "falling back" in r.message.lower() or "not installed" in r.message.lower()
+            for r in caplog.records
+        )
+
+    def test_correct_model_logged_at_info(self, caplog):
+        """When model is installed, INFO log must show the exact model name."""
+        with caplog.at_level(logging.INFO, logger="ai_guard.guard"):
+            LLMGuard(use_ner=True, spacy_model="en_core_web_sm").scan("test")
+        assert any(
+            "en_core_web_sm" in r.message for r in caplog.records
+            if r.levelno == logging.INFO
+        )
 
 
 # ── Error handling ────────────────────────────────────────────────────────────
