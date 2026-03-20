@@ -16,6 +16,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "salt": "",
     "spacy_model": "en_core_web_sm",
     "use_ner": True,
+    "scan_batch_workers": 4,   # thread pool size for scan_batch()
     # ── LLM detector configuration ────────────────────────────────────────
     "llm_detector": {
         "enabled":  False,

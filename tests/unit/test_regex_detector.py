@@ -134,3 +134,38 @@ class TestDisabledEntity:
         types = {s.entity_type for s in spans}
         assert "CREDIT_CARD" not in types
         assert "EMAIL" in types
+
+
+from ai_guard.detectors.regex_detector import _validate_iban, _validate_tc_id
+
+
+class TestValidateIBAN:
+    def test_short_string_returns_false(self):
+        assert _validate_iban("TR") is False
+
+    def test_invalid_checksum_returns_false(self):
+        assert _validate_iban("TR000006100519786457841326") is False
+
+    def test_valid_iban_returns_true(self):
+        assert _validate_iban("TR330006100519786457841326") is True
+
+    def test_iban_with_spaces_normalized(self):
+        assert _validate_iban("TR33 0006 1005 1978 6457 8413 26") is True
+
+
+class TestValidateTCID:
+    def test_too_short_returns_false(self):
+        assert _validate_tc_id("1234567890") is False
+
+    def test_starts_with_zero_returns_false(self):
+        assert _validate_tc_id("01234567890") is False
+
+    def test_non_digits_returns_false(self):
+        assert _validate_tc_id("1234567890A") is False
+
+    def test_wrong_checksum_d9_returns_false(self):
+        # Valid format but wrong checksum
+        assert _validate_tc_id("12345678900") is False
+
+    def test_valid_tc_returns_true(self):
+        assert _validate_tc_id("12345678950") is True

@@ -42,3 +42,23 @@ def test_empty_yaml_keeps_defaults(tmp_path: Path):
     cfg_file.write_text("")
     config = load_config(cfg_file)
     assert config["entities"] == DEFAULT_CONFIG["entities"]
+
+
+def test_load_bundled_default():
+    """load_config('default') should load the bundled default.yaml."""
+    config = load_config("default")
+    assert "entities" in config
+    assert "EMAIL" in config["entities"]
+
+
+def test_missing_yaml_file_raises():
+    with pytest.raises(FileNotFoundError, match="Config file not found"):
+        load_config("/tmp/does_not_exist_xyz.yaml")
+
+
+def test_deep_copy_handles_list():
+    from ai_guard.config.loader import _deep_copy
+    original = {"key": [1, 2, {"nested": True}]}
+    copied = _deep_copy(original)
+    copied["key"][0] = 99
+    assert original["key"][0] == 1  # original unchanged

@@ -227,3 +227,87 @@ class TestModelManager:
         ModelManager(backend).pull("llama3.2", verbose=True)
         out = capsys.readouterr().out
         assert "llama3.2" in out
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# httpx ImportError
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestHttpxImportError:
+    def test_ollama_httpx_missing_raises(self):
+        import sys
+        from unittest.mock import patch
+        with patch.dict(sys.modules, {"httpx": None}):
+            from ai_guard.llm.backends import ollama as _ollama_mod
+            import importlib
+            # _httpx() is called on use, not import — call complete() to trigger it
+            backend = OllamaBackend.__new__(OllamaBackend)
+            backend.base_url = "http://localhost:11434"
+            backend.model = "llama3.2"
+            # Patch _httpx directly
+            with patch("ai_guard.llm.backends.ollama._httpx", side_effect=ImportError("httpx missing")):
+                with pytest.raises(ImportError, match="httpx"):
+                    backend.complete("test")
+
+    def test_openai_compat_httpx_missing_raises(self):
+        with patch("ai_guard.llm.backends.openai_compat._httpx", side_effect=ImportError("httpx missing")):
+            backend = OpenAICompatBackend.__new__(OpenAICompatBackend)
+            backend.base_url = "http://x"
+            backend.model = "m"
+            backend._headers = {}
+            with pytest.raises(ImportError, match="httpx"):
+                backend.complete("test")
+
+
+class TestOllamaConnectErrors:
+    def test_list_models_connect_error(self):
+        import httpx
+        with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
+            with pytest.raises(ConnectionError, match="Ollama"):
+                OllamaBackend().list_models()
+
+    def test_pull_model_connect_error(self):
+        import httpx
+        with patch("httpx.stream", side_effect=httpx.ConnectError("refused")):
+            with pytest.raises(ConnectionError, match="Ollama"):
+                OllamaBackend().pull_model("llama3.2")
+
+    def test_pull_model_skips_empty_lines(self):
+        """Empty lines in the streaming response should be silently skipped."""
+        lines = ["", '{"status": "pulling"}', "", '{"status": "success"}']
+        mock_stream = MagicMock()
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        mock_stream.iter_lines = MagicMock(return_value=iter(lines))
+        mock_stream.raise_for_status = MagicMock()
+
+        collected = []
+        with patch("httpx.stream", return_value=mock_stream):
+            OllamaBackend().pull_model("llama3.2", on_progress=collected.append)
+
+        # Only non-empty lines produce progress events
+        assert len(collected) == 2
+
+    def test_complete_messages_delegates(self):
+        """complete_messages delegates to complete() via base class."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": "result"}  # /api/generate format
+        mock_response.raise_for_status = MagicMock()
+        with patch("httpx.post", return_value=mock_response):
+            backend = OllamaBackend(model="llama3.2")
+            result = backend.complete_messages([{"role": "user", "content": "hello"}])
+        assert result == "result"
+
+
+class TestOpenAICompatConnectErrors:
+    def test_complete_connect_error(self):
+        import httpx
+        with patch("httpx.post", side_effect=httpx.ConnectError("refused")):
+            with pytest.raises(ConnectionError, match="LLM service"):
+                OpenAICompatBackend(base_url="http://x", model="m").complete("test")
+
+    def test_list_models_connect_error(self):
+        import httpx
+        with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
+            with pytest.raises(ConnectionError, match="LLM service"):
+                OpenAICompatBackend(base_url="http://x", model="m").list_models()

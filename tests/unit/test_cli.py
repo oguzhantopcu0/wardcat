@@ -79,3 +79,108 @@ class TestCmdBatch:
         out = capsys.readouterr().out
         assert "Line 1" in out
         assert "Line 2" in out
+
+
+from unittest.mock import patch, MagicMock
+
+
+class TestResolveURL:
+    def test_args_url_takes_priority(self):
+        from ai_guard.__main__ import _resolve_llm_url
+        result = _resolve_llm_url("http://myserver:11434")
+        assert result == "http://myserver:11434"
+
+    def test_env_fallback(self):
+        from ai_guard.__main__ import _resolve_llm_url
+        import os
+        with patch.dict(os.environ, {"LLMGUARD_LLM_URL": "http://env:11434"}, clear=False):
+            result = _resolve_llm_url("")
+        assert result == "http://env:11434"
+
+    def test_default_fallback(self):
+        from ai_guard.__main__ import _resolve_llm_url
+        import os
+        env = {k: v for k, v in os.environ.items() if k != "LLMGUARD_LLM_URL"}
+        with patch.dict(os.environ, env, clear=True):
+            result = _resolve_llm_url("")
+        assert result == "http://localhost:11434"
+
+
+class TestMakeBackend:
+    def test_openai_compat_backend(self):
+        from ai_guard.__main__ import _make_backend, _build_parser
+        parser = _build_parser()
+        args = parser.parse_args(["models", "list", "--llm-backend", "openai_compatible", "--llm-url", "http://x:8000"])
+        backend = _make_backend(args)
+        from ai_guard.llm.backends.openai_compat import OpenAICompatBackend
+        assert isinstance(backend, OpenAICompatBackend)
+
+
+class TestCmdModelsPull:
+    def test_pull_calls_backend(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_models
+        parser = _build_parser()
+        args = parser.parse_args(["models", "pull", "llama3.1:8b", "--llm-url", "http://localhost:11434"])
+        mock_backend = MagicMock()
+        with patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend):
+            cmd_models(args)
+        mock_backend.pull_model.assert_called_once()
+
+
+class TestCmdSetupEOF:
+    def test_eof_cancels_setup(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_models
+        parser = _build_parser()
+        args = parser.parse_args(["models", "setup"])
+        mock_backend = MagicMock()
+        with (
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
+            patch("builtins.input", side_effect=EOFError),
+        ):
+            cmd_models(args)
+        out = capsys.readouterr().out
+        assert "Cancelled" in out or "cancelled" in out.lower()
+
+
+class TestMainHandlers:
+    def test_main_file_not_found_exits_1(self):
+        import sys
+        from ai_guard.__main__ import main
+        with (
+            patch("sys.argv", ["ai-guard", "scan", "--file", "/no/such/file.txt", "--no-ner"]),
+            pytest.raises(SystemExit) as exc,
+        ):
+            main()
+        assert exc.value.code == 1
+
+    def test_main_value_error_exits_1(self, tmp_path):
+        import sys
+        from ai_guard.__main__ import main
+        f = tmp_path / "bad.txt"
+        f.write_bytes(b"\xff\xfe bad encoding")
+        with (
+            patch("sys.argv", ["ai-guard", "scan", "--file", str(f), "--no-ner"]),
+            pytest.raises(SystemExit) as exc,
+        ):
+            main()
+        assert exc.value.code == 1
+
+    def test_main_keyboard_interrupt_exits_130(self):
+        from ai_guard.__main__ import main
+        with (
+            patch("sys.argv", ["ai-guard", "scan", "--text", "test", "--no-ner"]),
+            patch("ai_guard.__main__.cmd_scan", side_effect=KeyboardInterrupt),
+            pytest.raises(SystemExit) as exc,
+        ):
+            main()
+        assert exc.value.code == 130
+
+    def test_main_connection_error_exits_1(self):
+        from ai_guard.__main__ import main
+        with (
+            patch("sys.argv", ["ai-guard", "scan", "--text", "test", "--no-ner"]),
+            patch("ai_guard.__main__.cmd_scan", side_effect=ConnectionError("refused")),
+            pytest.raises(SystemExit) as exc,
+        ):
+            main()
+        assert exc.value.code == 1

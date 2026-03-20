@@ -167,3 +167,48 @@ class TestFullPipelineFalsePositives:
                 f"False positive in: {text!r}\n"
                 f"Violations: {[(v.entity_type, v.original) for v in result.violations]}"
             )
+
+
+# ── ADDRESS False Positives ───────────────────────────────────────────────────
+
+class TestAddressFalsePositives:
+    """
+    Address regex is the broadest pattern — most likely to produce false positives.
+    These texts should NOT trigger ADDRESS detection.
+    """
+    NOT_ADDRESSES = [
+        "Please review section 3 of the document.",
+        "The team completed 5 tasks this sprint.",
+        "Error code: 404",
+        "Chapter 2: Introduction",
+        "Step 1: Open the terminal.",
+        "Revision 10: updated terms.",
+        "Track 3 was the most popular song.",
+        "Table 5 shows the results.",
+    ]
+
+    def test_no_false_positives(self):
+        det = _regex({"ADDRESS"})
+        for text in self.NOT_ADDRESSES:
+            spans = det.detect(text)
+            assert not spans, (
+                f"False positive ADDRESS in: {text!r}\n"
+                f"Matched: {[s.text for s in spans]}"
+            )
+
+
+# ── scan_batch_workers config ─────────────────────────────────────────────────
+
+class TestScanBatchWorkersConfig:
+    def test_default_workers_from_config(self):
+        """scan_batch should use config value when max_workers not specified."""
+        from ai_guard.config.loader import load_config
+        cfg = load_config()
+        assert cfg["scan_batch_workers"] == 4
+
+    def test_explicit_max_workers_override(self):
+        guard = LLMGuard(use_ner=False)
+        texts = ["a@b.com"] * 8
+        results = guard.scan_batch(texts, max_workers=2)
+        assert len(results) == 8
+        assert all(not r.is_clean for r in results)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -15,6 +16,10 @@ from ai_guard.detectors.regex_detector import RegexDetector
 
 logger = logging.getLogger(__name__)
 
+# Protect concurrent spaCy model loading — spaCy 3.x is generally thread-safe,
+# but the first load (disk I/O + registry lookups) can race in multi-threaded contexts.
+_SPACY_LOAD_LOCK = threading.Lock()
+
 
 def _resolve_spacy_model(model: str) -> str:
     """Suggests an alternative if the requested SpaCy model is not installed.
@@ -24,19 +29,20 @@ def _resolve_spacy_model(model: str) -> str:
     - If not installed, lists available SpaCy models and logs a warning.
     - If no model is found at all, returns the original name (NERDetector will raise its own error).
     """
-    try:
-        import spacy
-        spacy.load(model)
-        return model
-    except OSError:
-        pass
+    with _SPACY_LOAD_LOCK:
+        try:
+            import spacy
+            spacy.load(model)
+            return model
+        except OSError:
+            pass
 
-    # Scan installed models
-    try:
-        import spacy.util
-        installed = list(spacy.util.get_installed_models())
-    except Exception:
-        installed = []
+        # Scan installed models
+        try:
+            import spacy.util
+            installed = list(spacy.util.get_installed_models())
+        except Exception:
+            installed = []
 
     if not installed:
         logger.warning(
@@ -188,7 +194,9 @@ class LLMGuard:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self.scan, text)
 
-    def scan_batch(self, texts: List[str], *, max_workers: int = 4) -> List[ScanResult]:
+    def scan_batch(
+        self, texts: List[str], *, max_workers: Optional[int] = None
+    ) -> List[ScanResult]:
         """
         Scan multiple texts in parallel using a thread pool.
 
@@ -197,11 +205,14 @@ class LLMGuard:
         for any item that fails.
 
         :param texts:       List of texts to scan
-        :param max_workers: Maximum number of parallel threads (default: 4)
+        :param max_workers: Number of parallel threads. Defaults to the
+                            ``scan_batch_workers`` config value (default: 4).
         :returns:           List of ``ScanResult`` in the same order as ``texts``
         """
         if not texts:
             return []
+
+        workers = max_workers or self._config.get("scan_batch_workers", 4)
 
         results: List[ScanResult | None] = [None] * len(texts)
 
@@ -219,7 +230,7 @@ class LLMGuard:
                     violations=[],
                 )
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
                 executor.submit(_scan_one, i, text): i
                 for i, text in enumerate(texts)
@@ -231,7 +242,7 @@ class LLMGuard:
         return results  # type: ignore[return-value]
 
     async def scan_batch_async(
-        self, texts: List[str], *, max_workers: int = 4
+        self, texts: List[str], *, max_workers: Optional[int] = None
     ) -> List[ScanResult]:
         """Async wrapper for :meth:`scan_batch` — runs in a thread pool executor."""
         loop = asyncio.get_event_loop()
