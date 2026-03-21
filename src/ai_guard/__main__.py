@@ -513,8 +513,18 @@ def _cmd_setup(args: argparse.Namespace) -> None:
 
 # ── main ────────────────────────────────────────────────────────────────
 
+_BANNER = """\
+    _    ___        ____  _   _    _    ____  ____
+   / \\  |_ _|      / ___|| | | |  / \\  |  _ \\|  _ \\
+  / _ \\  | |  ___ | |  _ | | | | / _ \\ | |_) | | | |
+ / ___ \\ | | |___|| |_| || |_| |/ ___ \\|  _ <| |_| |
+/_/   \\_|___|      \\____| \\___//_/   \\_|_| \\_|____/
+"""
+
+
 def main() -> None:
     """CLI entry point — parse arguments and dispatch to the appropriate command handler."""
+    print(_BANNER)
     parser = _build_parser()
     args = parser.parse_args()
 
