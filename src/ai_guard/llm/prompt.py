@@ -114,6 +114,15 @@ Output: [{{"type":"MAC_ADDRESS","text":"00:1A:2B:3C:4D:5E"}},{{"type":"IPv6","te
 Input: "User UUID: 550e8400-e29b-41d4-a716-446655440000, SSN: 123-45-6789, NIN: AB123456C"
 Output: [{{"type":"UUID","text":"550e8400-e29b-41d4-a716-446655440000"}},{{"type":"SSN","text":"123-45-6789"}},{{"type":"NIN","text":"AB123456C"}}]
 
+Input: "Pasaport numaram A12345678, ülke: Türkiye."
+Output: [{{"type":"PASSPORT","text":"A12345678"}}]
+
+Input: "My passport number is P9876543, issued in Germany."
+Output: [{{"type":"PASSPORT","text":"P9876543"}}]
+
+Input: "Şifremi unuttum: qwerty123"
+Output: [{{"type":"CUSTOM_SECRET","text":"qwerty123"}}]
+
 Input: "Toplantı saat 14:00'te 3. katta."
 Output: []
 """
