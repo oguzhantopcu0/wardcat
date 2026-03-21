@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -17,6 +18,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "spacy_model": "en_core_web_sm",
     "use_ner": True,
     "scan_batch_workers": 4,   # thread pool size for scan_batch()
+    "max_text_bytes": 500_000,  # maximum input size in bytes
+    "custom_patterns": {},      # user-defined regex patterns
     # ── LLM detector configuration ────────────────────────────────────────
     "llm_detector": {
         "enabled":  False,
@@ -88,6 +91,7 @@ _VALID_BACKENDS = {"ollama", "openai_compatible", "transformers"}
 # Valid top-level config keys — used to catch typos in YAML files
 _KNOWN_CONFIG_KEYS = frozenset({
     "salt", "spacy_model", "use_ner", "scan_batch_workers",
+    "max_text_bytes", "custom_patterns",
     "llm_detector", "entities",
 })
 
@@ -150,6 +154,34 @@ def validate_config(config: Dict[str, Any]) -> None:
             raise ValueError(
                 f"Invalid action '{action}' (entity: {entity_name}). "
                 f"Valid values: {sorted(_VALID_ACTIONS)}"
+            )
+
+    custom_patterns = config.get("custom_patterns", {})
+    for pattern_name, pattern_cfg in custom_patterns.items():
+        if not isinstance(pattern_cfg, dict):
+            raise ValueError(
+                f"Invalid custom_patterns entry '{pattern_name}': expected dict, "
+                f"got {type(pattern_cfg).__name__}."
+            )
+        if "pattern" not in pattern_cfg:
+            raise ValueError(
+                f"Custom pattern '{pattern_name}' is missing required 'pattern' key."
+            )
+        if not isinstance(pattern_cfg["pattern"], str):
+            raise ValueError(
+                f"Custom pattern '{pattern_name}'.pattern must be a string."
+            )
+        action = pattern_cfg.get("action", "warn")
+        if action not in _VALID_ACTIONS:
+            raise ValueError(
+                f"Invalid action '{action}' for custom pattern '{pattern_name}'. "
+                f"Valid values: {sorted(_VALID_ACTIONS)}"
+            )
+        try:
+            re.compile(pattern_cfg["pattern"])
+        except re.error as exc:
+            raise ValueError(
+                f"Custom pattern '{pattern_name}' has invalid regex: {exc}"
             )
 
     llm_cfg = config.get("llm_detector", {})

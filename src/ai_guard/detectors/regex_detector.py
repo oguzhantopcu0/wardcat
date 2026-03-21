@@ -9,7 +9,7 @@ from ai_guard.detectors.base import BaseDetector, DetectedSpan
 logger = logging.getLogger(__name__)
 
 # (pattern, flags) tuple — per-entity flag support
-_SEP = r"[\s\-]?"   # optional space/dash in card numbers
+_SEP = r"[ \-\.]{0,2}"   # optional space/dash/dot in card numbers (up to 2 chars)
 
 _PATTERNS: Dict[str, Tuple[str, int]] = {
     # ── Credit card ──────────────────────────────────────────────────
@@ -29,7 +29,7 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
     ),
     # ── Email ──────────────────────────────────────────────────────────
     "EMAIL": (
-        r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b",
+        r"\b[\w._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b",
         0,
     ),
     # ── Phone ──────────────────────────────────────────────────────────
@@ -339,8 +339,19 @@ def _validate_tc_id(value: str) -> bool:
 class RegexDetector(BaseDetector):
     """Detects structural PII patterns using regex (CC, IBAN, TC_ID, email, …)."""
 
-    def __init__(self, enabled_entities: Set[str]) -> None:
+    def __init__(self, enabled_entities: Set[str], custom_patterns: dict = {}) -> None:
         self.enabled_entities = enabled_entities
+        # Compile custom patterns: {entity_type: (compiled_pattern, action)}
+        self._custom_compiled: Dict[str, Tuple[re.Pattern, str]] = {}
+        for name, cfg in custom_patterns.items():
+            pattern_str = cfg.get("pattern", "")
+            action = cfg.get("action", "warn")
+            try:
+                self._custom_compiled[name] = (re.compile(pattern_str), action)
+            except re.error as exc:
+                logger.warning(
+                    "Custom pattern %r could not be compiled: %s — skipped.", name, exc
+                )
 
     def detect(self, text: str) -> List[DetectedSpan]:
         """Return all regex matches for enabled entity types."""
@@ -365,6 +376,18 @@ class RegexDetector(BaseDetector):
                         value,
                     )
                     continue
+                spans.append(
+                    DetectedSpan(
+                        entity_type=entity_type,
+                        text=value,
+                        start=match.start(),
+                        end=match.end(),
+                    )
+                )
+        # Custom patterns — no checksum validation
+        for entity_type, (pattern, _action) in self._custom_compiled.items():
+            for match in pattern.finditer(text):
+                value = match.group()
                 spans.append(
                     DetectedSpan(
                         entity_type=entity_type,

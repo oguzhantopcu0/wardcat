@@ -169,3 +169,80 @@ class TestValidateTCID:
 
     def test_valid_tc_returns_true(self):
         assert _validate_tc_id("12345678950") is True
+
+
+# ── G1 bypass fix tests ────────────────────────────────────────────────────
+
+class TestCreditCardSeparatorFixes:
+    """G1a: credit card with double-space and dot separators."""
+
+    def test_double_space_separator(self, detector):
+        spans = detector.detect("card: 4111  1111  1111  1111")
+        assert any(s.entity_type == "CREDIT_CARD" for s in spans)
+
+    def test_dot_separator(self, detector):
+        spans = detector.detect("card: 4111.1111.1111.1111")
+        assert any(s.entity_type == "CREDIT_CARD" for s in spans)
+
+    def test_single_space_still_works(self, detector):
+        spans = detector.detect("card: 4111 1111 1111 1111")
+        assert any(s.entity_type == "CREDIT_CARD" for s in spans)
+
+    def test_dash_separator_still_works(self, detector):
+        spans = detector.detect("card: 4111-1111-1111-1111")
+        assert any(s.entity_type == "CREDIT_CARD" for s in spans)
+
+
+class TestEmailCyrillicHomoglyph:
+    """G1b: Cyrillic lookalike characters in email local-part."""
+
+    def test_cyrillic_a_in_local_part(self, detector):
+        # Cyrillic 'а' (U+0430) looks like Latin 'a'
+        cyrillic_email = "аli@example.com"
+        spans = detector.detect(f"email: {cyrillic_email}")
+        assert any(s.entity_type == "EMAIL" for s in spans)
+
+    def test_standard_ascii_email_still_works(self, detector):
+        spans = detector.detect("email: ali@example.com")
+        assert any(s.entity_type == "EMAIL" for s in spans)
+
+
+class TestCustomPatternsInRegexDetector:
+    """G6: custom patterns in RegexDetector."""
+
+    def test_custom_pattern_detected(self):
+        custom = {
+            "EMPLOYEE_ID": {"pattern": r"\bEMP-\d{6}\b", "action": "hash"},
+        }
+        det = RegexDetector(set(), custom_patterns=custom)
+        spans = det.detect("employee EMP-123456 signed in")
+        assert any(s.entity_type == "EMPLOYEE_ID" and s.text == "EMP-123456" for s in spans)
+
+    def test_custom_pattern_with_warn_action(self):
+        custom = {
+            "PROJECT_CODE": {"pattern": r"\bPRJ-[A-Z]{3}-\d{4}\b", "action": "warn"},
+        }
+        det = RegexDetector(set(), custom_patterns=custom)
+        spans = det.detect("project PRJ-ABC-1234 budget approved")
+        assert any(s.entity_type == "PROJECT_CODE" for s in spans)
+
+    def test_custom_and_builtin_patterns_together(self):
+        custom = {
+            "EMPLOYEE_ID": {"pattern": r"\bEMP-\d{6}\b", "action": "hash"},
+        }
+        det = RegexDetector({"EMAIL"}, custom_patterns=custom)
+        text = "user ali@example.com with id EMP-123456"
+        spans = det.detect(text)
+        entity_types = {s.entity_type for s in spans}
+        assert "EMAIL" in entity_types
+        assert "EMPLOYEE_ID" in entity_types
+
+    def test_invalid_custom_pattern_skipped(self):
+        """An invalid regex in custom_patterns should be skipped (logged as warning)."""
+        custom = {
+            "BAD_PATTERN": {"pattern": r"[invalid", "action": "warn"},
+        }
+        # Should not raise — just skip the bad pattern
+        det = RegexDetector(set(), custom_patterns=custom)
+        spans = det.detect("test text")
+        assert not any(s.entity_type == "BAD_PATTERN" for s in spans)

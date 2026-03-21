@@ -81,6 +81,9 @@ def _build_parser() -> argparse.ArgumentParser:
                               help="Scan each line in a file as a separate text")
     p_batch.add_argument("--file", metavar="PATH", type=Path, required=True,
                          help="File where each line is an independent text")
+    p_batch.add_argument("--batch-workers", metavar="N", type=int, default=None,
+                         dest="batch_workers",
+                         help="Number of parallel workers for batch scanning (default: config value)")
 
     # ── spacy ───────────────────────────────────────────────────────────
     p_spacy = sub.add_parser("spacy", help="SpaCy NER model management")
@@ -252,7 +255,8 @@ def cmd_batch(args: argparse.Namespace) -> None:
     guard = _make_guard(args)
     content = _read_file(args.file)
     lines = [ln for ln in content.splitlines() if ln.strip()]
-    results = guard.scan_batch(lines)
+    max_workers = getattr(args, "batch_workers", None)
+    results = guard.scan_batch(lines, max_workers=max_workers)
 
     if args.format == "json":
         output = [

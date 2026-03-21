@@ -3,7 +3,7 @@ name = "ai-guard"
 version = "0.2.0b1"
 description = "PII detection and anonymization for LLM inputs — regex, NER and on-prem LLM hybrid engine"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [
     { name = "ai-guard contributors" },
@@ -65,9 +65,9 @@ dev = [
 ai-guard = "ai_guard.__main__:main"
 
 [project.urls]
-"Homepage"    = "https://github.com/ai-guard/ai-guard"
-"Bug Tracker" = "https://github.com/ai-guard/ai-guard/issues"
-"Changelog"   = "https://github.com/ai-guard/ai-guard/blob/main/CHANGELOG.md"
+"Homepage"    = "https://github.com/oguzhantopcu0/ai-guard"
+"Bug Tracker" = "https://github.com/oguzhantopcu0/ai-guard/issues"
+"Changelog"   = "https://github.com/oguzhantopcu0/ai-guard/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]

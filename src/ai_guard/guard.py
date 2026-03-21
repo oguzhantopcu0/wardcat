@@ -264,7 +264,9 @@ class LLMGuard:
         :param enabled:     Include this entity in the scan engine
         :param action:      "warn" or "hash"
         """
-        warn_unknown_entity(entity_type)
+        custom_patterns = self._config.get("custom_patterns", {})
+        if entity_type not in custom_patterns:
+            warn_unknown_entity(entity_type)
         if action not in ("warn", "hash"):
             raise ValueError(
                 f"Invalid action {action!r}. Valid values: 'warn', 'hash'"
@@ -292,12 +294,16 @@ class LLMGuard:
         entity_cfg = self._config.get("entities", {})
 
         # Regex detector
+        custom_patterns = self._config.get("custom_patterns", {})
+        # Register custom pattern actions in entities config so the engine can look them up
+        for cp_name, cp_cfg in custom_patterns.items():
+            entity_cfg.setdefault(cp_name, {"enabled": True, "action": cp_cfg.get("action", "warn")})
         enabled_regex = {
             e for e in _REGEX_ENTITIES
             if entity_cfg.get(e, {}).get("enabled", True)
         }
-        if enabled_regex:
-            self._detectors.append(RegexDetector(enabled_regex))
+        if enabled_regex or custom_patterns:
+            self._detectors.append(RegexDetector(enabled_regex, custom_patterns=custom_patterns))
 
         # SpaCy NER detector (optional)
         if self._config.get("use_ner", True):

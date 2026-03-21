@@ -10,7 +10,7 @@ from ai_guard.utils.hashing import sha256_hash
 
 logger = logging.getLogger(__name__)
 
-# Upper limit for safe input size.
+# Default upper limit for safe input size.
 # If exceeded, scan() raises ValueError — does not lock the regex engine.
 _MAX_TEXT_BYTES = 500_000
 
@@ -26,6 +26,7 @@ class DetectionEngine:
         self.detectors = detectors
         self.salt: str = config.get("salt", "")
         self.entity_config: Dict[str, Any] = config.get("entities", {})
+        self._max_text_bytes: int = config.get("max_text_bytes", _MAX_TEXT_BYTES)
 
         if not self.salt:
             logger.debug(
@@ -39,10 +40,10 @@ class DetectionEngine:
 
         # Hard input size limit — reject if exceeded (DoS protection)
         byte_len = len(text.encode("utf-8", errors="replace"))
-        if byte_len > _MAX_TEXT_BYTES:
+        if byte_len > self._max_text_bytes:
             raise ValueError(
                 f"Input text is too large: {byte_len:,} bytes "
-                f"(maximum: {_MAX_TEXT_BYTES:,} bytes). "
+                f"(maximum: {self._max_text_bytes:,} bytes). "
                 "Split the text into smaller chunks."
             )
 

@@ -142,6 +142,26 @@ class TestCmdSetupEOF:
         assert "Cancelled" in out or "cancelled" in out.lower()
 
 
+class TestBatchWorkersCLI:
+    """G2b: --batch-workers flag for batch subcommand."""
+
+    def test_batch_workers_parsed(self):
+        args = parse(["batch", "--file", "/tmp/x.txt", "--batch-workers", "8"])
+        assert args.batch_workers == 8
+
+    def test_batch_workers_default_is_none(self):
+        args = parse(["batch", "--file", "/tmp/x.txt"])
+        assert args.batch_workers is None
+
+    def test_batch_workers_used_in_scan(self, tmp_path: Path, capsys):
+        f = tmp_path / "lines.txt"
+        f.write_text("a@b.com\ntemiz metin\n")
+        args = parse(["batch", "--file", str(f), "--no-ner", "--batch-workers", "2"])
+        cmd_batch(args)
+        out = capsys.readouterr().out
+        assert "Line 1" in out
+
+
 class TestMainHandlers:
     def test_main_file_not_found_exits_1(self):
         import sys
