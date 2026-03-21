@@ -187,7 +187,7 @@ class LLMGuard:
 
     async def scan_async(self, text: str) -> ScanResult:
         """Async wrapper for :meth:`scan` — runs in a thread pool executor."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.scan, text)
 
     def scan_batch(
@@ -242,7 +242,7 @@ class LLMGuard:
         self, texts: List[str], *, max_workers: Optional[int] = None
     ) -> List[ScanResult]:
         """Async wrapper for :meth:`scan_batch` — runs in a thread pool executor."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, lambda: self.scan_batch(texts, max_workers=max_workers)
         )
