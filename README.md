@@ -44,7 +44,21 @@ print(result.sanitized_text)
 
 ## Installation
 
-Clone and install with [uv](https://github.com/astral-sh/uv):
+```bash
+# Base install — regex detection + Ollama/OpenAI-compatible LLM backend
+pip install ai-guard
+
+# + SpaCy NER (PERSON, ORG, ADDRESS detection)
+pip install "ai-guard[ner]"
+
+# + HuggingFace Transformers backend (local GPU/CPU inference)
+pip install "ai-guard[transformers]"
+
+# Everything at once
+pip install "ai-guard[all]"
+```
+
+Or clone and install with [uv](https://github.com/astral-sh/uv):
 
 ```bash
 git clone https://github.com/oguzhantopcu0/ai-guard.git
