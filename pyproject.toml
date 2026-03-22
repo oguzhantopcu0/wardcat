@@ -47,6 +47,9 @@ transformers = [
     "transformers>=4.40,<5",
     "torch>=2.0",
     "accelerate>=0.26",       # required for device_map="auto"
+    "bitsandbytes>=0.43",     # required for 4-bit/8-bit quantization
+    "sentencepiece>=0.1.99",  # required for Mistral/Llama tokenizer
+    "protobuf>=3.20",         # required for tokenizer serialization
 ]
 # Install everything at once
 all = [
@@ -54,6 +57,9 @@ all = [
     "transformers>=4.40,<5",
     "torch>=2.0",
     "accelerate>=0.26",
+    "bitsandbytes>=0.43",
+    "sentencepiece>=0.1.99",
+    "protobuf>=3.20",
 ]
 dev = [
     "pytest>=8.0",

@@ -198,7 +198,7 @@ class TransformersBackend(BaseLLMBackend):
         """Create and return the transformers pipeline."""
         try:
             import torch
-            from transformers import pipeline
+            from transformers import BitsAndBytesConfig, pipeline
         except ImportError:
             raise ImportError(
                 "'transformers' and 'torch' are required for the Transformers backend.\n"
@@ -208,16 +208,16 @@ class TransformersBackend(BaseLLMBackend):
         logger.info("Loading Transformers model: %s", self._model_name)
 
         kwargs: dict[str, Any] = {
-            "task":        "text-generation",
-            "model":       self._model_name,
-            "device_map":  self._device_map,
-            "torch_dtype": torch.bfloat16,
+            "task":       "text-generation",
+            "model":      self._model_name,
+            "device_map": self._device_map,
+            "dtype":      torch.bfloat16,
         }
 
         if self._load_in_8bit:
-            kwargs["load_in_8bit"] = True
+            kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
         elif self._load_in_4bit:
-            kwargs["load_in_4bit"] = True
+            kwargs["quantization_config"] = BitsAndBytesConfig(load_in_4bit=True)
 
         pipe = pipeline(**kwargs)
         logger.info("Transformers model ready: %s", self._model_name)
