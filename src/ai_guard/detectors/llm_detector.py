@@ -12,9 +12,13 @@ than 100+ transitive dependencies.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
+import threading
+import time
+from dataclasses import dataclass, field
 from typing import List, Set
 
 from ai_guard.detectors.base import BaseDetector, DetectedSpan
@@ -25,6 +29,13 @@ logger = logging.getLogger(__name__)
 
 # For extracting the JSON array from the LLM response
 _JSON_RE = re.compile(r"\[.*?\]", re.DOTALL)
+
+
+@dataclass
+class _CacheEntry:
+    """A single TTL cache entry."""
+    spans: List[DetectedSpan]
+    expires_at: float
 
 # Minimum format validation patterns for structural entities.
 # If the LLM returns these types, the content must also match the format;
@@ -78,14 +89,26 @@ class LLMDetector(BaseDetector):
         enabled_entities: Set[str],
         *,
         timeout: int = 60,
+        cache_ttl: int = 0,
     ) -> None:
         self.backend          = backend
         self.enabled_entities = enabled_entities
         self.timeout          = timeout
+        self._cache_ttl       = cache_ttl   # seconds; 0 = disabled
+        self._cache: dict[str, _CacheEntry] = {}
+        self._cache_lock      = threading.Lock()
 
     def detect(self, text: str) -> List[DetectedSpan]:
         if not text.strip():
             return []
+
+        if self._cache_ttl > 0:
+            key = hashlib.md5(text.encode("utf-8", errors="replace")).hexdigest()
+            with self._cache_lock:
+                entry = self._cache.get(key)
+                if entry is not None and time.monotonic() < entry.expires_at:
+                    logger.debug("LLM detector: cache hit for text of length %d", len(text))
+                    return entry.spans
 
         messages = build_messages(text, self.enabled_entities)
         try:
@@ -93,12 +116,57 @@ class LLMDetector(BaseDetector):
             entities = self._parse_llm_response(raw)
             spans = self._locate_spans(text, entities)
             logger.debug("LLM detector: %d entity/entities returned, %d span(s) located", len(entities), len(spans))
-            return spans
         except ConnectionError as exc:
             logger.warning("LLM detector connection error: %s", exc)
+            return []
         except (TimeoutError, ValueError, OSError) as exc:
             logger.warning("LLM detector failed: %s", exc)
-        return []
+            return []
+
+        if self._cache_ttl > 0:
+            with self._cache_lock:
+                self._cache[key] = _CacheEntry(
+                    spans=spans,
+                    expires_at=time.monotonic() + self._cache_ttl,
+                )
+
+        return spans
+
+    async def detect_async(self, text: str) -> List[DetectedSpan]:
+        """Async variant — uses the backend's native async HTTP client."""
+        if not text.strip():
+            return []
+
+        if self._cache_ttl > 0:
+            key = hashlib.md5(text.encode("utf-8", errors="replace")).hexdigest()
+            with self._cache_lock:
+                entry = self._cache.get(key)
+                if entry is not None and time.monotonic() < entry.expires_at:
+                    logger.debug("LLM detector: cache hit for text of length %d", len(text))
+                    return entry.spans
+        else:
+            key = None
+
+        messages = build_messages(text, self.enabled_entities)
+        try:
+            raw = await self.backend.complete_messages_async(messages, timeout=self.timeout)
+            entities = self._parse_llm_response(raw)
+            spans = self._locate_spans(text, entities)
+        except ConnectionError as exc:
+            logger.warning("LLM detector connection error: %s", exc)
+            return []
+        except (TimeoutError, ValueError, OSError) as exc:
+            logger.warning("LLM detector failed: %s", exc)
+            return []
+
+        if self._cache_ttl > 0 and key is not None:
+            with self._cache_lock:
+                self._cache[key] = _CacheEntry(
+                    spans=spans,
+                    expires_at=time.monotonic() + self._cache_ttl,
+                )
+
+        return spans
 
     # ------------------------------------------------------------------
 
@@ -168,6 +236,7 @@ class LLMDetector(BaseDetector):
                         text=entity_text,
                         start=pos,
                         end=pos + len(entity_text),
+                        confidence=0.85,
                     ))
                 start = pos + 1
 

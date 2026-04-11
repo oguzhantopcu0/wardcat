@@ -17,6 +17,9 @@ class DetectedSpan:
     """Start index in the original text (inclusive)."""
     end: int
     """End index in the original text (exclusive)."""
+    confidence: float = 1.0
+    """Detection confidence in [0.0, 1.0]. Regex/checksum detections are 1.0;
+    NER and LLM detections are 0.85 (model-based, not fully deterministic)."""
 
 
 class BaseDetector(ABC):

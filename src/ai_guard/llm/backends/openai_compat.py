@@ -91,6 +91,33 @@ class OpenAICompatBackend(BaseLLMBackend):
                 f"Could not connect to LLM service: {self.base_url}"
             )
 
+    async def complete_async(self, prompt: str, *, timeout: int = 60) -> str:
+        """Native async variant using ``httpx.AsyncClient``."""
+        httpx = _httpx()
+        try:
+            async with httpx.AsyncClient(headers=self._headers) as client:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0,
+                    },
+                    timeout=timeout,
+                )
+                response.raise_for_status()
+                data = response.json()
+                try:
+                    return data["choices"][0]["message"]["content"]
+                except (KeyError, IndexError) as exc:
+                    raise ConnectionError(
+                        f"Unexpected response format from LLM service: {exc}"
+                    )
+        except httpx.ConnectError:
+            raise ConnectionError(
+                f"Could not connect to LLM service: {self.base_url}"
+            )
+
     def list_models(self) -> list[str]:
         httpx = _httpx()
         try:

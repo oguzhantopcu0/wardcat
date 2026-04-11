@@ -75,3 +75,56 @@ class TestScanBatchAsync:
         results = asyncio.run(guard.scan_batch_async(texts))
         assert any(v.entity_type == "EMAIL" for v in results[0].violations)
         assert results[1].is_clean
+
+
+class TestScanAsyncActions:
+    """Test that hash/redact/mask actions work correctly through the async path."""
+
+    def test_hash_action_in_async(self):
+        guard = LLMGuard(use_ner=False, salt="s")
+        guard.configure_entity("EMAIL", enabled=True, action="hash")
+        result = asyncio.run(guard.scan_async("a@b.com"))
+        assert "a@b.com" not in result.sanitized_text
+        assert "[EMAIL:" in result.sanitized_text
+
+    def test_redact_action_in_async(self):
+        guard = LLMGuard(use_ner=False)
+        guard.configure_entity("EMAIL", enabled=True, action="redact")
+        result = asyncio.run(guard.scan_async("a@b.com"))
+        assert result.sanitized_text == "[EMAIL]"
+
+    def test_mask_action_in_async(self):
+        guard = LLMGuard(use_ner=False)
+        guard.configure_entity("EMAIL", enabled=True, action="mask")
+        result = asyncio.run(guard.scan_async("a@b.com"))
+        replacement = result.violations[0].replacement
+        assert replacement is not None
+        assert "*" in replacement
+
+    def test_allowlist_in_async(self):
+        guard = LLMGuard(use_ner=False)
+        guard.configure_entity("EMAIL", enabled=True, action="warn")
+        guard.add_allowlist(["a@b.com"])
+        result = asyncio.run(guard.scan_async("a@b.com"))
+        assert result.is_clean
+
+    def test_denylist_in_async(self):
+        guard = LLMGuard(use_ner=False)
+        guard.configure_entity("PERSON", enabled=True, action="warn")
+        guard.add_denylist([{"value": "Jane Doe", "entity_type": "PERSON"}])
+        result = asyncio.run(guard.scan_async("Hello Jane Doe"))
+        assert any(v.entity_type == "PERSON" for v in result.violations)
+
+    def test_scan_async_oversized_input_raises(self):
+        import pytest
+        import tempfile
+        import yaml
+        from pathlib import Path
+
+        with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+            yaml.dump({"max_text_bytes": 10}, f)
+            cfg_path = f.name
+
+        guard = LLMGuard(config_path=cfg_path, use_ner=False)
+        with pytest.raises(ValueError, match="too large"):
+            asyncio.run(guard.scan_async("x" * 11))

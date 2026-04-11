@@ -34,13 +34,13 @@ class TestCardSeparatorVariants:
     def test_mixed_separator(self, g):
         assert "CREDIT_CARD" in {v.entity_type for v in g.scan("4111 1111-1111 1111").violations}
 
-    @pytest.mark.xfail(reason="Double-space evasion: regex only supports single separator")
-    def test_double_space_separator_evades(self, g):
+    def test_double_space_separator_detected(self, g):
+        """Double-space separator is now detected: _SEP = r'[ \\-\\.]{0,2}' allows 2 chars."""
         result = g.scan("4111  1111  1111  1111")
         assert "CREDIT_CARD" in {v.entity_type for v in result.violations}
 
-    @pytest.mark.xfail(reason="Dot separator: regex [\\s\\-]? does not match dots")
-    def test_dot_separator_evades(self, g):
+    def test_dot_separator_detected(self, g):
+        """Dot separator is now detected: _SEP includes '.' in the separator character class."""
         result = g.scan("4111.1111.1111.1111")
         assert "CREDIT_CARD" in {v.entity_type for v in result.violations}
 
@@ -53,9 +53,8 @@ class TestUnicodeAdversarial:
     def test_normal_email_detected(self, g):
         assert "EMAIL" in {v.entity_type for v in g.scan("ali@test.com").violations}
 
-    @pytest.mark.xfail(reason="Cyrillic 'а' looks the same as Latin 'a'; regex is ASCII-specific")
-    def test_cyrillic_homoglyph_evades(self, g):
-        """Cyrillic character email: аli@test.com ('а' = U+0430, Cyrillic)"""
+    def test_cyrillic_homoglyph_detected(self, g):
+        """Cyrillic 'а' (U+0430) is now detected: Python's \\w matches Unicode word chars."""
         cyrillic_a = "\u0430"   # Cyrillic lowercase а
         email = f"{cyrillic_a}li@test.com"
         result = g.scan(email)
@@ -168,12 +167,8 @@ class TestPartialData:
         result = g.scan("TR330006100")   # 11 characters — below regex minimum
         assert "IBAN" not in {v.entity_type for v in result.violations}
 
-    @pytest.mark.xfail(
-        reason="A 15-character sequence satisfies the IBAN regex minimum (2+2+4+7); "
-               "length validation is outside regex scope"
-    )
-    def test_15_char_iban_lookalike_evades(self, g):
-        """15 characters satisfies the minimum IBAN pattern but is not a real IBAN."""
+    def test_15_char_iban_lookalike_rejected(self, g):
+        """15-char IBAN lookalike is correctly rejected by mod-97 checksum validation."""
         result = g.scan("TR3300061005197")
         assert "IBAN" not in {v.entity_type for v in result.violations}
 

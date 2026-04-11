@@ -188,6 +188,7 @@ def _result_to_dict(result) -> dict:
                 "end":         v.end,
                 "action":      v.action.value,
                 "replacement": v.replacement,
+                "confidence":  v.confidence,
             }
             for v in result.violations
         ],

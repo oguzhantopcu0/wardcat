@@ -165,3 +165,62 @@ def test_custom_patterns_detected_in_scan(tmp_path: Path):
     guard = LLMGuard(config_path=str(cfg_file), use_ner=False)
     result = guard.scan("employee EMP-123456 logged in")
     assert any(v.entity_type == "EMPLOYEE_ID" for v in result.violations)
+
+
+def test_entity_config_not_a_dict_raises(tmp_path: Path):
+    """Entity config value must be a dict; a bare string raises ValueError."""
+    cfg_file = tmp_path / "policy.yaml"
+    cfg_file.write_text("entities:\n  EMAIL: hash\n")  # value is string, not dict
+    with pytest.raises(ValueError, match="expected dict"):
+        load_config(cfg_file)
+
+
+def test_custom_pattern_entry_not_a_dict_raises(tmp_path: Path):
+    """custom_patterns value must be a dict; a bare string raises ValueError."""
+    cfg_file = tmp_path / "policy.yaml"
+    cfg_file.write_text("custom_patterns:\n  MY_PAT: somestring\n")
+    with pytest.raises(ValueError, match="expected dict"):
+        load_config(cfg_file)
+
+
+def test_custom_pattern_pattern_not_a_string_raises(tmp_path: Path):
+    """custom_patterns.<name>.pattern must be a string; an integer raises ValueError."""
+    override = {"custom_patterns": {"MY_PAT": {"pattern": 12345, "action": "warn"}}}
+    cfg_file = tmp_path / "policy.yaml"
+    cfg_file.write_text(yaml.dump(override))
+    with pytest.raises(ValueError, match="must be a string"):
+        load_config(cfg_file)
+
+
+def test_check_redos_timeout_rejects_pattern(tmp_path: Path):
+    """A pattern that times out during ReDoS check should be rejected."""
+    import concurrent.futures
+    from unittest.mock import MagicMock, patch
+
+    override = {"custom_patterns": {"SAFE": {"pattern": r"\btest\b", "action": "warn"}}}
+    cfg_file = tmp_path / "policy.yaml"
+    cfg_file.write_text(yaml.dump(override))
+
+    # Make _check_redos simulate a timeout
+    mock_future = MagicMock()
+    mock_future.result.side_effect = concurrent.futures.TimeoutError()
+    mock_executor = MagicMock()
+    mock_executor.submit.return_value = mock_future
+    mock_ctx = MagicMock()
+    mock_ctx.__enter__ = MagicMock(return_value=mock_executor)
+    mock_ctx.__exit__ = MagicMock(return_value=False)
+
+    with (
+        patch("ai_guard.config.loader.concurrent.futures.ThreadPoolExecutor",
+              return_value=mock_ctx),
+        pytest.raises(ValueError, match="catastrophic backtracking"),
+    ):
+        load_config(cfg_file)
+
+
+def test_invalid_llm_timeout_env_ignored(monkeypatch):
+    """Invalid LLMGUARD_LLM_TIMEOUT env var should be ignored with a warning."""
+    monkeypatch.setenv("LLMGUARD_LLM_TIMEOUT", "not_a_number")
+    config = load_config()
+    # Should not raise; invalid value is skipped and default timeout preserved
+    assert isinstance(config["llm_detector"]["timeout"], (int, float))

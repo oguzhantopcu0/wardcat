@@ -215,6 +215,90 @@ class TestErrorHandling:
 # Prompt building
 # ═══════════════════════════════════════════════════════════════════════════
 
+class TestHallucinationFilter:
+    def test_person_single_word_rejected(self):
+        """PERSON with a single word (no space) fails the format validator → not returned."""
+        det = _detector('[{"type":"PERSON","text":"customer"}]', entities={"PERSON"})
+        spans = det.detect("customer order placed")
+        assert not any(s.entity_type == "PERSON" for s in spans)
+
+    def test_tc_id_wrong_format_rejected(self):
+        """TC_ID that doesn't match \\d{11} fails format validation → not returned."""
+        det = _detector('[{"type":"TC_ID","text":"abc"}]', entities={"TC_ID"})
+        spans = det.detect("abc 12345678950")
+        assert not any(s.entity_type == "TC_ID" and s.text == "abc" for s in spans)
+
+    def test_valid_person_two_words_accepted(self):
+        """PERSON with two words passes the format validator → returned."""
+        det = _detector('[{"type":"PERSON","text":"Ali Veli"}]', entities={"PERSON"})
+        spans = det.detect("Ali Veli burada.")
+        assert any(s.entity_type == "PERSON" for s in spans)
+
+    def test_json_decode_error_returns_empty(self):
+        """Response containing [invalid json] triggers JSONDecodeError → []."""
+        det = _detector("[not valid json content]")
+        spans = det.detect("some text")
+        assert spans == []
+
+    def test_json_non_list_returns_empty(self):
+        """Response where the matched [...] contains non-JSON → []."""
+        # _JSON_RE matches first [...]. If that content is invalid, JSONDecodeError → []
+        det = _detector("[{broken json here}]")
+        spans = det.detect("some text")
+        assert spans == []
+
+
+class TestCache:
+    def test_cache_disabled_by_default(self):
+        """With default cache_ttl=0, cache is not used."""
+        backend = MagicMock()
+        backend.complete_messages.return_value = "[]"
+        det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
+        det.detect("text1")
+        det.detect("text1")
+        assert backend.complete_messages.call_count == 2  # called twice (no cache)
+
+    def test_cache_hit_returns_cached_spans(self):
+        """Second call with same text returns cached spans without calling backend."""
+        backend = MagicMock()
+        backend.complete_messages.return_value = '[{"type":"EMAIL","text":"a@b.com"}]'
+        det = LLMDetector(backend=backend, enabled_entities={"EMAIL"}, cache_ttl=60)
+        spans1 = det.detect("a@b.com here")
+        spans2 = det.detect("a@b.com here")
+        assert backend.complete_messages.call_count == 1   # second call used cache
+        assert len(spans1) == len(spans2) == 1
+
+    def test_cache_miss_calls_backend(self):
+        """Different texts get different cache entries, each calls backend."""
+        backend = MagicMock()
+        backend.complete_messages.return_value = "[]"
+        det = LLMDetector(backend=backend, enabled_entities={"EMAIL"}, cache_ttl=60)
+        det.detect("text one")
+        det.detect("text two")
+        assert backend.complete_messages.call_count == 2
+
+    def test_cache_expiry_calls_backend_again(self):
+        """After TTL expires, backend is called again."""
+        import time
+        backend = MagicMock()
+        backend.complete_messages.return_value = "[]"
+        det = LLMDetector(backend=backend, enabled_entities={"EMAIL"}, cache_ttl=0.01)
+        det.detect("text")
+        time.sleep(0.05)   # wait for cache to expire
+        det.detect("text")
+        assert backend.complete_messages.call_count == 2
+
+    def test_cache_stores_spans(self):
+        """Cached spans are identical to original detection result."""
+        backend = MagicMock()
+        backend.complete_messages.return_value = '[{"type":"EMAIL","text":"a@b.com"}]'
+        det = LLMDetector(backend=backend, enabled_entities={"EMAIL"}, cache_ttl=60)
+        spans_first  = det.detect("contact a@b.com please")
+        spans_second = det.detect("contact a@b.com please")
+        assert spans_first[0].text  == spans_second[0].text
+        assert spans_first[0].start == spans_second[0].start
+
+
 class TestPromptBuilding:
     def test_prompt_contains_text(self):
         prompt = build_prompt("gizli metin burada", {"EMAIL"})
@@ -240,3 +324,47 @@ class TestPromptBuilding:
         combined = " ".join(m["content"] for m in messages)
         assert "a@b.com" in combined
         assert "EMAIL"   in combined
+
+
+# ── detect_async ─────────────────────────────────────────────────────────────
+
+import asyncio
+from unittest.mock import AsyncMock
+
+
+class TestDetectAsync:
+    def _async_backend(self, response: str):
+        backend = MagicMock(spec=BaseLLMBackend)
+        backend.complete_messages.return_value = response
+        backend.complete_messages_async = AsyncMock(return_value=response)
+        return backend
+
+    def test_detect_async_returns_spans(self):
+        payload = json.dumps([{"type": "EMAIL", "text": "a@b.com"}])
+        backend = self._async_backend(payload)
+        det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
+        spans = asyncio.run(det.detect_async("email: a@b.com"))
+        assert any(s.entity_type == "EMAIL" for s in spans)
+
+    def test_detect_async_empty_text_returns_empty(self):
+        backend = self._async_backend("[]")
+        det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
+        spans = asyncio.run(det.detect_async("   "))
+        assert spans == []
+
+    def test_detect_async_cache_hit(self):
+        payload = json.dumps([{"type": "EMAIL", "text": "a@b.com"}])
+        backend = self._async_backend(payload)
+        det = LLMDetector(backend=backend, enabled_entities={"EMAIL"}, cache_ttl=60)
+        # First call — populates cache
+        asyncio.run(det.detect_async("email: a@b.com"))
+        # Second call — should use cache; complete_messages_async called only once
+        asyncio.run(det.detect_async("email: a@b.com"))
+        assert backend.complete_messages_async.call_count == 1
+
+    def test_detect_async_connection_error_returns_empty(self):
+        backend = MagicMock(spec=BaseLLMBackend)
+        backend.complete_messages_async = AsyncMock(side_effect=ConnectionError("refused"))
+        det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
+        spans = asyncio.run(det.detect_async("a@b.com"))
+        assert spans == []

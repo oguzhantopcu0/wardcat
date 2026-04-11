@@ -111,6 +111,7 @@ class NERDetector(BaseDetector):
                     text=ent.text,
                     start=ent.start_char,
                     end=ent.end_char,
+                    confidence=0.85,
                 )
             )
         return spans

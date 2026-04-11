@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from ai_guard.core.models import Action, ScanResult, Violation
 from ai_guard.detectors.base import BaseDetector, DetectedSpan
@@ -13,6 +15,74 @@ logger = logging.getLogger(__name__)
 # Default upper limit for safe input size.
 # If exceeded, scan() raises ValueError — does not lock the regex engine.
 _MAX_TEXT_BYTES = 500_000
+
+
+def _mask_value(entity_type: str, text: str) -> str:
+    """Produce an entity-aware masked version of *text*.
+
+    Masking rules per entity type:
+
+    ============== =================================================
+    CREDIT_CARD    Last 4 digits visible: ``************1111``
+    EMAIL          First char + stars + full domain: ``u***@example.com``
+    PHONE          Last 4 digits visible: ``*******5678``
+    SSN            Standard US format: ``***-**-6789``
+    IBAN           Country code + last 4: ``TR**...**1326``
+    TC_ID          Last 3 digits: ``********950``
+    NIN            Last 3: ``AB123***``
+    *default*      First 2 + stars + last 2: ``ab****cd``
+    ============== =================================================
+    """
+    n = len(text)
+    if entity_type == "CREDIT_CARD":
+        digits = re.sub(r"[^0-9]", "", text)
+        if len(digits) >= 4:
+            return "*" * (len(digits) - 4) + digits[-4:]
+        return "*" * n
+
+    if entity_type == "EMAIL":
+        at = text.find("@")
+        if at > 0:
+            local = text[:at]
+            domain = text[at:]
+            masked_local = local[0] + "*" * max(len(local) - 1, 1)
+            return masked_local + domain
+        return "*" * n
+
+    if entity_type == "PHONE":
+        digits = re.sub(r"[^0-9]", "", text)
+        if len(digits) >= 4:
+            return "*" * (n - 4) + text[-4:]
+        return "*" * n
+
+    if entity_type == "SSN":
+        digits = re.sub(r"[^0-9]", "", text)
+        if len(digits) >= 4:
+            return f"***-**-{digits[-4:]}"
+        return "*" * n
+
+    if entity_type == "IBAN":
+        # Keep country code (2 chars) + last 4
+        if n >= 6:
+            return text[:2] + "*" * (n - 6) + text[-4:]
+        return "*" * n
+
+    if entity_type == "TC_ID":
+        # Last 3 digits visible
+        if n >= 3:
+            return "*" * (n - 3) + text[-3:]
+        return "*" * n
+
+    if entity_type == "NIN":
+        # Last 3 chars visible
+        if n >= 3:
+            return "*" * (n - 3) + text[-3:]
+        return "*" * n
+
+    # Default: first 2 + stars + last 2
+    if n >= 4:
+        return text[:2] + "*" * (n - 4) + text[-2:]
+    return "*" * n
 
 
 class DetectionEngine:
@@ -27,6 +97,8 @@ class DetectionEngine:
         self.salt: str = config.get("salt", "")
         self.entity_config: Dict[str, Any] = config.get("entities", {})
         self._max_text_bytes: int = config.get("max_text_bytes", _MAX_TEXT_BYTES)
+        self._allowlist: set[str] = set(config.get("allowlist", []))
+        self._denylist: List[Dict[str, str]] = config.get("denylist", [])
 
         if not self.salt:
             logger.debug(
@@ -34,11 +106,70 @@ class DetectionEngine:
                 "Set the LLMGUARD_SALT environment variable in production."
             )
 
+    # ------------------------------------------------------------------
+    # Public scan API
+    # ------------------------------------------------------------------
+
     def scan(self, text: str) -> ScanResult:
         """Run all detectors, apply actions, and return the result."""
         t_start = time.perf_counter()
+        self._check_size(text)
 
-        # Hard input size limit — reject if exceeded (DoS protection)
+        raw_spans: List[DetectedSpan] = []
+        for detector in self.detectors:
+            t_det = time.perf_counter()
+            spans = detector.detect(text)
+            logger.debug(
+                "%s: %d span(s) detected (%.1f ms)",
+                type(detector).__name__, len(spans),
+                (time.perf_counter() - t_det) * 1000,
+            )
+            raw_spans.extend(spans)
+
+        raw_spans.extend(self._collect_denylist_spans(text))
+        spans = self._filter_spans(raw_spans)
+        sanitized, violations = self._apply_actions(text, spans)
+
+        elapsed_ms = (time.perf_counter() - t_start) * 1000
+        logger.info(
+            "scan completed: %d violation(s), %d character(s), %.1f ms",
+            len(violations), len(text), elapsed_ms,
+        )
+        return ScanResult(original_text=text, sanitized_text=sanitized, violations=violations)
+
+    async def scan_async(self, text: str) -> ScanResult:
+        """Async variant — uses native async for I/O-bound detectors (LLM backend).
+
+        CPU-bound detectors (regex, NER) run via ``asyncio.to_thread``;
+        the LLM detector uses its own ``detect_async()`` method with a
+        native ``httpx.AsyncClient``.
+        """
+        t_start = time.perf_counter()
+        self._check_size(text)
+
+        async def _run(detector: BaseDetector) -> List[DetectedSpan]:
+            if hasattr(detector, "detect_async"):
+                return await detector.detect_async(text)
+            return await asyncio.to_thread(detector.detect, text)
+
+        results = await asyncio.gather(*(_run(d) for d in self.detectors))
+        raw_spans: List[DetectedSpan] = [s for batch in results for s in batch]
+        raw_spans.extend(self._collect_denylist_spans(text))
+        spans = self._filter_spans(raw_spans)
+        sanitized, violations = self._apply_actions(text, spans)
+
+        elapsed_ms = (time.perf_counter() - t_start) * 1000
+        logger.info(
+            "scan_async completed: %d violation(s), %d character(s), %.1f ms",
+            len(violations), len(text), elapsed_ms,
+        )
+        return ScanResult(original_text=text, sanitized_text=sanitized, violations=violations)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _check_size(self, text: str) -> None:
         byte_len = len(text.encode("utf-8", errors="replace"))
         if byte_len > self._max_text_bytes:
             raise ValueError(
@@ -47,67 +178,99 @@ class DetectionEngine:
                 "Split the text into smaller chunks."
             )
 
-        # 1. Collect spans from all detectors
-        raw_spans: List[DetectedSpan] = []
-        for detector in self.detectors:
-            detector_name = type(detector).__name__
-            t_det = time.perf_counter()
-            spans = detector.detect(text)
-            logger.debug(
-                "%s: %d span(s) detected (%.1f ms)",
-                detector_name,
-                len(spans),
-                (time.perf_counter() - t_det) * 1000,
-            )
-            raw_spans.extend(spans)
-
-        # 2. Sort by position and resolve overlaps
+    def _filter_spans(self, raw_spans: List[DetectedSpan]) -> List[DetectedSpan]:
+        """Sort, resolve overlaps, and apply allowlist filter."""
         spans = self._resolve_overlaps(sorted(raw_spans, key=lambda s: s.start))
+        if self._allowlist:
+            spans = [s for s in spans if s.text not in self._allowlist]
+        return spans
 
-        # 3. Apply actions
+    def _compute_replacement(self, action: Action, span: DetectedSpan) -> str | None:
+        """Return the replacement string for *span* under *action*, or None for WARN."""
+        if action == Action.HASH:
+            digest = sha256_hash(span.text, self.salt)[:16]
+            return f"[{span.entity_type}:{digest}]"
+        if action == Action.REDACT:
+            return f"[{span.entity_type}]"
+        if action == Action.MASK:
+            return _mask_value(span.entity_type, span.text)
+        return None  # WARN
+
+    def _apply_actions(
+        self, text: str, spans: List[DetectedSpan]
+    ) -> Tuple[str, List[Violation]]:
+        """Apply configured actions to *spans* and return (sanitized_text, violations)."""
         violations: List[Violation] = []
         sanitized = text
-        offset = 0  # track position shift as text is modified
+        offset = 0
 
         for span in spans:
             entity_cfg = self.entity_config.get(span.entity_type, {})
             action = Action(entity_cfg.get("action", "warn"))
+            replacement = self._compute_replacement(action, span)
 
-            replacement: str | None = None
-            if action == Action.HASH:
-                digest = sha256_hash(span.text, self.salt)[:16]
-                replacement = f"[{span.entity_type}:{digest}]"
+            if replacement is not None:
                 adj_start = span.start + offset
-                adj_end = span.end + offset
-                sanitized = sanitized[:adj_start] + replacement + sanitized[adj_end:]
-                offset += len(replacement) - (span.end - span.start)
+                adj_end   = span.end   + offset
+                sanitized  = sanitized[:adj_start] + replacement + sanitized[adj_end:]
+                offset    += len(replacement) - (span.end - span.start)
 
-            violations.append(
-                Violation(
-                    entity_type=span.entity_type,
-                    original=span.text,
-                    start=span.start,
-                    end=span.end,
-                    action=action,
-                    replacement=replacement,
-                )
-            )
+            violations.append(Violation(
+                entity_type=span.entity_type,
+                original=span.text,
+                start=span.start,
+                end=span.end,
+                action=action,
+                replacement=replacement,
+                confidence=span.confidence,
+            ))
 
-        elapsed_ms = (time.perf_counter() - t_start) * 1000
-        logger.info(
-            "scan completed: %d violation(s), %d character(s), %.1f ms",
-            len(violations),
-            len(text),
-            elapsed_ms,
-        )
+        return sanitized, violations
 
-        return ScanResult(
-            original_text=text,
-            sanitized_text=sanitized,
-            violations=violations,
-        )
+    def _collect_denylist_spans(self, text: str) -> List[DetectedSpan]:
+        """Match denylist entries (exact value or regex pattern) against *text*."""
+        spans: List[DetectedSpan] = []
+        for entry in self._denylist:
+            entity_type = entry.get("entity_type", "CUSTOM")
 
-    # ------------------------------------------------------------------
+            if "pattern" in entry:
+                # Regex denylist entry
+                try:
+                    compiled = re.compile(entry["pattern"])
+                except re.error:
+                    logger.warning(
+                        "Denylist pattern %r is invalid — skipped.", entry["pattern"]
+                    )
+                    continue
+                for m in compiled.finditer(text):
+                    spans.append(DetectedSpan(
+                        entity_type=entity_type,
+                        text=m.group(),
+                        start=m.start(),
+                        end=m.end(),
+                        confidence=1.0,
+                    ))
+
+            elif "value" in entry:
+                # Exact-match denylist entry
+                value = entry["value"]
+                if not value:
+                    continue
+                start = 0
+                while True:
+                    pos = text.find(value, start)
+                    if pos == -1:
+                        break
+                    spans.append(DetectedSpan(
+                        entity_type=entity_type,
+                        text=value,
+                        start=pos,
+                        end=pos + len(value),
+                        confidence=1.0,
+                    ))
+                    start = pos + 1
+
+        return spans
 
     def _resolve_overlaps(self, spans: List[DetectedSpan]) -> List[DetectedSpan]:
         """Keeps the longer span when overlapping spans are found."""
@@ -116,9 +279,9 @@ class DetectionEngine:
         result: List[DetectedSpan] = [spans[0]]
         for span in spans[1:]:
             last = result[-1]
-            if span.start < last.end:          # overlap detected
+            if span.start < last.end:
                 if (span.end - span.start) > (last.end - last.start):
-                    result[-1] = span          # keep the longer one
+                    result[-1] = span
             else:
                 result.append(span)
         return result

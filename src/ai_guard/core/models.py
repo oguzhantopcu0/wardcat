@@ -15,6 +15,12 @@ class Action(str, Enum):
     """Leave the text as-is, report only as a violation."""
     HASH = "hash"
     """Mask with SHA-256 + salt: ``[ENTITY_TYPE:abcd1234]``."""
+    REDACT = "redact"
+    """Replace with a plain label: ``[ENTITY_TYPE]`` — no hash, no original value."""
+    MASK = "mask"
+    """Partially obscure: show first 2 and last 2 characters, replace the rest with ``*``.
+    E.g. ``4111111111111111`` → ``41************11``.  For values shorter than 4 characters
+    the entire value is replaced with ``*`` characters."""
 
 
 # Known entity types — for typo checking and IDE support.
@@ -24,7 +30,7 @@ KNOWN_ENTITY_TYPES: frozenset[str] = frozenset({
     "TC_ID", "IP_ADDRESS", "IPv6", "ADDRESS", "POSTAL_CODE", "CUSTOM_SECRET",
     "UUID", "SSN", "MAC_ADDRESS", "JWT", "NIN",
     "UK_POSTAL_CODE", "US_ZIP_CODE", "EU_NATIONAL_ID", "PASSPORT",
-    "CODICE_FISCALE", "DATE_OF_BIRTH",
+    "CODICE_FISCALE", "DATE_OF_BIRTH", "VEHICLE_PLATE",
 })
 
 
@@ -55,6 +61,18 @@ class Violation:
     """Action that was applied."""
     replacement: str | None = None
     """Placeholder produced by the hash action; ``None`` for warn."""
+    confidence: float = 1.0
+    """Detection confidence in [0.0, 1.0].
+
+    - Regex-based (structural patterns): ``1.0`` — deterministic, no false positives.
+    - Checksum-validated (IBAN, TC_ID): ``1.0`` — mathematically verified.
+    - NER (SpaCy): ``0.85`` — model-based, occasionally mis-labels entities.
+    - LLM: ``0.85`` — passed hallucination filter, but still model-based.
+
+    Use this field to apply confidence thresholds in post-processing::
+
+        high_confidence = [v for v in result.violations if v.confidence >= 1.0]
+    """
 
 
 @dataclass
@@ -109,6 +127,7 @@ class ScanResult:
                     "end":         v.end,
                     "action":      v.action.value,
                     "replacement": v.replacement,
+                    "confidence":  v.confidence,
                 }
                 for v in self.violations
             ],

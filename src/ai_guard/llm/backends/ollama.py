@@ -93,6 +93,34 @@ class OllamaBackend(BaseLLMBackend):
                 "Is the service running? Check: ollama serve"
             )
 
+    async def complete_async(self, prompt: str, *, timeout: int = 60) -> str:
+        """Native async variant using ``httpx.AsyncClient``."""
+        httpx = _httpx()
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.base_url}/api/generate",
+                    json={
+                        "model":  self.model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {"temperature": 0},
+                    },
+                    timeout=timeout,
+                )
+                response.raise_for_status()
+                data = response.json()
+                if "response" not in data:
+                    raise ConnectionError(
+                        f"Unexpected response format from Ollama (missing 'response' key): {data}"
+                    )
+                return data["response"]
+        except httpx.ConnectError:
+            raise ConnectionError(
+                f"Could not connect to Ollama service: {self.base_url}\n"
+                "Is the service running? Check: ollama serve"
+            )
+
     def list_models(self) -> list[str]:
         httpx = _httpx()
         try:

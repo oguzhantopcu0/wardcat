@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import re
 from typing import Dict, List, Set, Tuple
@@ -266,12 +267,50 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         r"\b[A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D]\b",
         re.IGNORECASE,
     ),
+    # ── Turkish Vehicle Plate ─────────────────────────────────────────
+    # Format: <city_code> <letters> <digits>
+    #   city_code: 01–81 (2 digits, Turkish province codes)
+    #   letters:   1–3 uppercase Latin letters (A-Z, no Turkish special chars)
+    #   digits:    2–4 digits
+    # Examples: "34 ABC 123", "06 AZ 1234", "81 T 4321", "34ABC123"
+    # Spaced and compact forms are both matched.
+    "VEHICLE_PLATE": (
+        r"(?<!\d)"
+        r"(?:0[1-9]|[1-7]\d|80|81)"   # city code 01–81
+        r"[\s]?"
+        r"[A-Z]{1,3}"                  # 1–3 Latin letters
+        r"[\s]?"
+        r"\d{2,4}"                     # 2–4 digits
+        r"(?!\d)",
+        0,
+    ),
 }
 
 _COMPILED: Dict[str, re.Pattern] = {
     entity: re.compile(pattern, flags)
     for entity, (pattern, flags) in _PATTERNS.items()
 }
+
+# Timeout for custom pattern execution (seconds). Built-in patterns are trusted.
+_CUSTOM_PATTERN_TIMEOUT = 2.0
+
+
+def _safe_finditer(pattern: re.Pattern, text: str) -> list:
+    """Execute a regex pattern with a timeout to prevent ReDoS at runtime.
+
+    Returns a list of match objects, or an empty list if the pattern times out.
+    Used only for user-supplied custom patterns; built-in patterns are trusted.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(list, pattern.finditer(text))
+        try:
+            return future.result(timeout=_CUSTOM_PATTERN_TIMEOUT)
+        except concurrent.futures.TimeoutError:
+            logger.warning(
+                "Custom pattern %r timed out after %.1fs on input of length %d — skipped.",
+                pattern.pattern, _CUSTOM_PATTERN_TIMEOUT, len(text),
+            )
+            return []
 
 
 # ISO 3166-1 alpha-2 country codes that have published IBAN formats (SWIFT/IBAN registry).
@@ -384,9 +423,9 @@ class RegexDetector(BaseDetector):
                         end=match.end(),
                     )
                 )
-        # Custom patterns — no checksum validation
+        # Custom patterns — no checksum validation; use timeout wrapper for ReDoS safety
         for entity_type, (pattern, _action) in self._custom_compiled.items():
-            for match in pattern.finditer(text):
+            for match in _safe_finditer(pattern, text):
                 value = match.group()
                 spans.append(
                     DetectedSpan(

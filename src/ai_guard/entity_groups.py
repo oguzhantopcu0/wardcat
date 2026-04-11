@@ -35,8 +35,8 @@ def financial_entities() -> frozenset[str]:
 
 
 def turkish_entities() -> frozenset[str]:
-    """Turkey-specific entities: TC_ID, POSTAL_CODE, plus core."""
-    return core_entities() | frozenset({"TC_ID", "POSTAL_CODE"})
+    """Turkey-specific entities: TC_ID, POSTAL_CODE, VEHICLE_PLATE, plus core."""
+    return core_entities() | frozenset({"TC_ID", "POSTAL_CODE", "VEHICLE_PLATE"})
 
 
 def european_entities() -> frozenset[str]:

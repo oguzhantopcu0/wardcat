@@ -246,3 +246,118 @@ class TestCustomPatternsInRegexDetector:
         det = RegexDetector(set(), custom_patterns=custom)
         spans = det.detect("test text")
         assert not any(s.entity_type == "BAD_PATTERN" for s in spans)
+
+    def test_safe_finditer_timeout_returns_empty(self, caplog):
+        """When a custom pattern times out, _safe_finditer returns [] and logs a warning."""
+        import concurrent.futures
+        import logging
+        import re
+        from unittest.mock import MagicMock, patch
+
+        from ai_guard.detectors.regex_detector import _safe_finditer
+
+        pattern = re.compile(r"\w+")
+        mock_future = MagicMock()
+        mock_future.result.side_effect = concurrent.futures.TimeoutError()
+        mock_executor = MagicMock()
+        mock_executor.submit.return_value = mock_future
+        mock_ctx = MagicMock()
+        mock_ctx.__enter__ = MagicMock(return_value=mock_executor)
+        mock_ctx.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch("ai_guard.detectors.regex_detector.concurrent.futures.ThreadPoolExecutor",
+                  return_value=mock_ctx),
+            caplog.at_level(logging.WARNING, logger="ai_guard.detectors.regex_detector"),
+        ):
+            result = _safe_finditer(pattern, "hello world")
+
+        assert result == []
+        assert any("timed out" in r.message.lower() for r in caplog.records)
+
+
+class TestChecksumEdgeCases:
+    """Tests that exercise internal validator edge cases for coverage."""
+
+    def test_tc_id_passes_first_check_fails_second(self, detector):
+        """Number passes the odd/even sum check but fails the total sum check → not detected."""
+        # "10000000079": first check 7==7 passes, second check 8≠9 fails
+        spans = detector.detect("10000000079")
+        assert not any(s.entity_type == "TC_ID" for s in spans)
+
+    def test_tc_id_invalid_checksum_not_detected(self, detector):
+        """Randomly wrong TC_ID checksum → not detected."""
+        # Modify last digit of a valid TC_ID
+        spans = detector.detect("12345678951")   # valid is 12345678950
+        assert not any(s.entity_type == "TC_ID" for s in spans)
+
+    def test_iban_invalid_country_code_not_detected(self, detector):
+        """IBAN regex matches but country code is not in SWIFT registry → not detected."""
+        # "XX" is not a valid IBAN country code
+        fake_iban = "XX330006100519786457841326"
+        spans = detector.detect(fake_iban)
+        assert not any(s.entity_type == "IBAN" for s in spans)
+
+    def test_iban_wrong_checksum_not_detected(self, detector):
+        """IBAN regex matches, valid country, but mod-97 check fails → not detected."""
+        # Valid TR IBAN but last digit changed
+        spans = detector.detect("TR330006100519786457841327")  # valid ends in 6
+        assert not any(s.entity_type == "IBAN" for s in spans)
+
+    def test_validate_iban_too_short(self):
+        from ai_guard.detectors.regex_detector import _validate_iban
+        assert _validate_iban("TR3") is False
+
+    def test_validate_tc_id_too_short(self):
+        from ai_guard.detectors.regex_detector import _validate_tc_id
+        assert _validate_tc_id("1234") is False
+
+    def test_validate_tc_id_starts_with_zero(self):
+        from ai_guard.detectors.regex_detector import _validate_tc_id
+        assert _validate_tc_id("01234567890") is False
+
+    def test_validate_tc_id_non_digit(self):
+        from ai_guard.detectors.regex_detector import _validate_tc_id
+        assert _validate_tc_id("1234567890a") is False
+
+
+# ── VEHICLE_PLATE ──────────────────────────────────────────────────────────
+
+class TestVehiclePlate:
+    @pytest.fixture
+    def detector(self):
+        from ai_guard.detectors.regex_detector import RegexDetector
+        return RegexDetector({"VEHICLE_PLATE"})
+
+    @pytest.mark.parametrize("plate", [
+        "34 ABC 123",
+        "06 AZ 1234",
+        "81 T 4321",
+        "34ABC123",
+        "06AZ1234",
+        "01 A 12",
+        "35 BCD 5678",
+    ])
+    def test_valid_plates_detected(self, detector, plate):
+        spans = detector.detect(f"plaka: {plate}")
+        assert any(s.entity_type == "VEHICLE_PLATE" for s in spans), f"not detected: {plate}"
+
+    @pytest.mark.parametrize("text", [
+        "00 ABC 123",    # city code 00 — invalid
+        "82 ABC 123",    # city code 82 — invalid (only 01–81)
+        "AB 123",        # no city code prefix
+    ])
+    def test_invalid_plates_not_detected(self, detector, text):
+        spans = detector.detect(text)
+        assert not any(s.entity_type == "VEHICLE_PLATE" for s in spans), f"falsely detected: {text}"
+
+    def test_vehicle_plate_in_guard(self):
+        from ai_guard import LLMGuard
+        guard = LLMGuard(use_ner=False)
+        guard.configure_entity("VEHICLE_PLATE", enabled=True, action="warn")
+        result = guard.scan("Araç plakası: 34 ABC 123")
+        assert any(v.entity_type == "VEHICLE_PLATE" for v in result.violations)
+
+    def test_vehicle_plate_in_turkish_entities(self):
+        from ai_guard.entity_groups import turkish_entities
+        assert "VEHICLE_PLATE" in turkish_entities()

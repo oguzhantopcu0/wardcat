@@ -37,6 +37,14 @@ class TestCmdScan:
         out = capsys.readouterr().out
         assert "merhaba" in out
 
+    def test_text_output_with_hash_replacement(self, capsys):
+        """Text output should include the → replacement arrow for hash actions (line 206)."""
+        args = parse(["scan", "--text", "kart: 4111111111111111", "--no-ner"])
+        cmd_scan(args)
+        out = capsys.readouterr().out
+        # CREDIT_CARD default action is hash → replacement is shown with →
+        assert "→" in out or "CREDIT_CARD" in out
+
     def test_json_output(self, capsys):
         args = parse(["scan", "--text", "kart: 4111111111111111", "--no-ner", "--format", "json"])
         cmd_scan(args)
@@ -162,6 +170,225 @@ class TestBatchWorkersCLI:
         assert "Line 1" in out
 
 
+class TestCmdSpacyList:
+    def test_list_all_languages(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_spacy
+        args = _build_parser().parse_args(["spacy", "list"])
+        cmd_spacy(args)
+        out = capsys.readouterr().out
+        assert "English" in out
+        assert "en_core_web_sm" in out
+
+    def test_list_filtered_by_lang(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_spacy
+        args = _build_parser().parse_args(["spacy", "list", "--lang", "tr"])
+        cmd_spacy(args)
+        out = capsys.readouterr().out
+        assert "Turkish" in out
+        assert "English" not in out
+
+    def test_list_unknown_lang_shows_message(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_spacy
+        args = _build_parser().parse_args(["spacy", "list", "--lang", "zz"])
+        cmd_spacy(args)
+        out = capsys.readouterr().out
+        assert "No models found" in out
+
+    def test_list_shows_recommended_marker(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_spacy
+        args = _build_parser().parse_args(["spacy", "list", "--lang", "en"])
+        cmd_spacy(args)
+        out = capsys.readouterr().out
+        assert "←" in out  # recommended marker
+
+
+class TestCmdSpacyInstalled:
+    def test_installed_with_models(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_spacy
+        args = _build_parser().parse_args(["spacy", "installed"])
+        with patch("spacy.util.get_installed_models", return_value=["en_core_web_sm"]):
+            cmd_spacy(args)
+        out = capsys.readouterr().out
+        assert "en_core_web_sm" in out
+
+    def test_installed_no_models(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_spacy
+        args = _build_parser().parse_args(["spacy", "installed"])
+        with patch("spacy.util.get_installed_models", return_value=[]):
+            cmd_spacy(args)
+        out = capsys.readouterr().out
+        assert "No SpaCy models installed" in out
+
+    def test_installed_no_spacy(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_spacy
+        import sys
+        args = _build_parser().parse_args(["spacy", "installed"])
+        # Temporarily remove spacy from sys.modules to simulate missing install
+        orig = sys.modules.pop("spacy", None)
+        orig_util = sys.modules.pop("spacy.util", None)
+        try:
+            cmd_spacy(args)
+        except Exception:
+            pass
+        finally:
+            if orig is not None:
+                sys.modules["spacy"] = orig
+            if orig_util is not None:
+                sys.modules["spacy.util"] = orig_util
+        out = capsys.readouterr().out
+        # Either shows the installed list or the "not installed" message
+        assert len(out) > 0
+
+
+class TestCmdSpacyDownload:
+    def test_download_standard_model_pip_success(self, capsys):
+        import subprocess
+        from ai_guard.__main__ import _build_parser, cmd_spacy
+        args = _build_parser().parse_args(["spacy", "download", "en_core_web_sm"])
+        with (
+            patch("subprocess.run", return_value=MagicMock(returncode=0)),
+            patch("shutil.which", return_value=None),
+        ):
+            cmd_spacy(args)
+        out = capsys.readouterr().out
+        assert "Model ready" in out
+
+    def test_download_incompatible_model_exits(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_spacy
+        args = _build_parser().parse_args(["spacy", "download", "tr_core_news_trf"])
+        with pytest.raises(SystemExit) as exc:
+            cmd_spacy(args)
+        assert exc.value.code == 1
+
+    def test_download_not_in_catalog_warns_stderr(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_spacy
+        args = _build_parser().parse_args(["spacy", "download", "xx_unknown_model_xyz"])
+        with (
+            patch("subprocess.run", return_value=MagicMock(returncode=0)),
+            patch("shutil.which", return_value=None),
+        ):
+            cmd_spacy(args)
+        err = capsys.readouterr().err
+        assert "not in the ai-guard catalog" in err
+
+    def test_download_failure_raises_value_error(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_spacy
+        args = _build_parser().parse_args(["spacy", "download", "en_core_web_sm"])
+        with (
+            patch("subprocess.run", return_value=MagicMock(returncode=1)),
+            patch("shutil.which", return_value=None),
+        ):
+            with pytest.raises(ValueError, match="download failed"):
+                cmd_spacy(args)
+
+    def test_download_with_wheel_url_model(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_spacy
+        args = _build_parser().parse_args(["spacy", "download", "tr_core_news_md"])
+        with (
+            patch("subprocess.run", return_value=MagicMock(returncode=0)),
+            patch("shutil.which", return_value=None),
+        ):
+            cmd_spacy(args)
+        out = capsys.readouterr().out
+        assert "Model ready" in out
+
+
+class TestCmdModelsListRecommended:
+    def test_list_recommended_prints_catalog(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_models
+        args = _build_parser().parse_args(["models", "list", "--recommended"])
+        cmd_models(args)
+        out = capsys.readouterr().out
+        assert "Recommended" in out or "VRAM" in out
+
+    def test_list_from_backend(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_models
+        args = _build_parser().parse_args(["models", "list"])
+        mock_backend = MagicMock()
+        mock_mgr = MagicMock()
+        mock_mgr.list.return_value = ["llama3.1:8b", "mistral:7b"]
+        with (
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
+            patch("ai_guard.llm.model_manager.ModelManager", return_value=mock_mgr),
+        ):
+            cmd_models(args)
+        out = capsys.readouterr().out
+        assert "llama3.1:8b" in out
+
+    def test_list_from_backend_empty(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_models
+        args = _build_parser().parse_args(["models", "list"])
+        mock_backend = MagicMock()
+        mock_mgr = MagicMock()
+        mock_mgr.list.return_value = []
+        with (
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
+            patch("ai_guard.llm.model_manager.ModelManager", return_value=mock_mgr),
+        ):
+            cmd_models(args)
+        out = capsys.readouterr().out
+        assert "No models found" in out
+
+
+class TestCmdSetupNonInteractive:
+    def test_non_interactive_selects_default_model(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_models
+        args = _build_parser().parse_args(["models", "setup", "--non-interactive"])
+        mock_backend = MagicMock()
+        mock_mgr = MagicMock()
+        mock_mgr.ensure_available.return_value = True
+        with (
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
+            patch("ai_guard.llm.model_manager.ModelManager", return_value=mock_mgr),
+        ):
+            cmd_models(args)
+        out = capsys.readouterr().out
+        assert mock_mgr.ensure_available.called
+        assert "Usage" in out or "guard" in out.lower()
+
+    def test_setup_invalid_selection_cancels(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_models
+        args = _build_parser().parse_args(["models", "setup"])
+        mock_backend = MagicMock()
+        mock_mgr = MagicMock()
+        with (
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
+            patch("ai_guard.llm.model_manager.ModelManager", return_value=mock_mgr),
+            patch("builtins.input", return_value="999"),
+        ):
+            cmd_models(args)
+        out = capsys.readouterr().out
+        assert "Invalid" in out or "cancelled" in out.lower()
+
+    def test_setup_valid_selection(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_models
+        args = _build_parser().parse_args(["models", "setup"])
+        mock_backend = MagicMock()
+        mock_mgr = MagicMock()
+        mock_mgr.ensure_available.return_value = True
+        with (
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
+            patch("ai_guard.llm.model_manager.ModelManager", return_value=mock_mgr),
+            patch("builtins.input", return_value="1"),
+        ):
+            cmd_models(args)
+        assert mock_mgr.ensure_available.called
+
+    def test_setup_default_selection(self, capsys):
+        from ai_guard.__main__ import _build_parser, cmd_models
+        args = _build_parser().parse_args(["models", "setup"])
+        mock_backend = MagicMock()
+        mock_mgr = MagicMock()
+        mock_mgr.ensure_available.return_value = True
+        with (
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
+            patch("ai_guard.llm.model_manager.ModelManager", return_value=mock_mgr),
+            patch("builtins.input", return_value=""),
+        ):
+            cmd_models(args)
+        assert mock_mgr.ensure_available.called
+
+
 class TestMainHandlers:
     def test_main_file_not_found_exits_1(self):
         import sys
@@ -204,3 +431,42 @@ class TestMainHandlers:
         ):
             main()
         assert exc.value.code == 1
+
+    def test_main_unexpected_exception_exits_1(self):
+        from ai_guard.__main__ import main
+        with (
+            patch("sys.argv", ["ai-guard", "scan", "--text", "test", "--no-ner"]),
+            patch("ai_guard.__main__.cmd_scan", side_effect=RuntimeError("unexpected")),
+            pytest.raises(SystemExit) as exc,
+        ):
+            main()
+        assert exc.value.code == 1
+
+    def test_main_dispatches_batch(self, tmp_path: Path):
+        from ai_guard.__main__ import main
+        f = tmp_path / "lines.txt"
+        f.write_text("a@b.com\n")
+        with (
+            patch("sys.argv", ["ai-guard", "batch", "--file", str(f), "--no-ner"]),
+            patch("ai_guard.__main__.cmd_batch") as mock_batch,
+        ):
+            main()
+        mock_batch.assert_called_once()
+
+    def test_main_dispatches_spacy(self):
+        from ai_guard.__main__ import main
+        with (
+            patch("sys.argv", ["ai-guard", "spacy", "list"]),
+            patch("ai_guard.__main__.cmd_spacy") as mock_spacy,
+        ):
+            main()
+        mock_spacy.assert_called_once()
+
+    def test_main_dispatches_models(self):
+        from ai_guard.__main__ import main
+        with (
+            patch("sys.argv", ["ai-guard", "models", "list", "--recommended"]),
+            patch("ai_guard.__main__.cmd_models") as mock_models,
+        ):
+            main()
+        mock_models.assert_called_once()

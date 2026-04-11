@@ -180,6 +180,30 @@ class TestPersonFilter:
         assert _is_valid_person("John Smith")   is True
         assert _is_valid_person("Emily")        is True
 
+    def test_person_filter_continue_in_detect(self):
+        """NERDetector.detect() should skip PERSON entities that fail _is_valid_person."""
+        from unittest.mock import MagicMock, patch
+
+        with patch("ai_guard.detectors.ner_detector._load_model") as mock_load:
+            mock_nlp = MagicMock()
+            mock_load.return_value = mock_nlp
+
+            # Fake entity: labeled PERSON but all-lowercase (fails filter → line 107 continue)
+            mock_ent = MagicMock()
+            mock_ent.label_ = "PERSON"
+            mock_ent.text = "adresine veya"
+            mock_ent.start_char = 0
+            mock_ent.end_char = 13
+
+            mock_doc = MagicMock()
+            mock_doc.ents = [mock_ent]
+            mock_nlp.return_value = mock_doc
+
+            det = NERDetector({"PERSON"}, model="mock_model")
+            spans = det.detect("adresine veya")
+
+        assert len(spans) == 0  # filtered by _is_valid_person
+
 
 # ── Turkish NER tests ─────────────────────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Callable, Iterator
@@ -43,6 +44,15 @@ class BaseLLMBackend(ABC):
         """Download a model. The on_progress callback is called for progress updates."""
         ...
 
+    async def complete_async(self, prompt: str, *, timeout: int = 60) -> str:
+        """Async variant of :meth:`complete`.
+
+        The default implementation wraps the synchronous :meth:`complete` in a
+        thread pool so it does not block the event loop.  Backends that support
+        native async I/O (e.g. via ``httpx.AsyncClient``) should override this.
+        """
+        return await asyncio.to_thread(self.complete, prompt, timeout=timeout)
+
     def complete_messages(self, messages: list[dict], *, timeout: int = 60) -> str:
         """Send a chat-formatted message list and return the assistant's reply.
 
@@ -58,6 +68,20 @@ class BaseLLMBackend(ABC):
             f"{m['role'].upper()}: {m['content']}" for m in messages
         )
         return self.complete(combined, timeout=timeout)
+
+    async def complete_messages_async(
+        self, messages: list[dict], *, timeout: int = 60
+    ) -> str:
+        """Async variant of :meth:`complete_messages`.
+
+        The default implementation concatenates messages into a plain-text prompt
+        and delegates to :meth:`complete_async`.  Backends with native async chat
+        support should override this.
+        """
+        combined = "\n\n".join(
+            f"{m['role'].upper()}: {m['content']}" for m in messages
+        )
+        return await self.complete_async(combined, timeout=timeout)
 
     def is_model_available(self, model: str) -> bool:
         """Return whether the model is ready in the service."""

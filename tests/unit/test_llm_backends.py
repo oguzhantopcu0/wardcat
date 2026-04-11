@@ -313,3 +313,127 @@ class TestOpenAICompatConnectErrors:
         with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
             with pytest.raises(ConnectionError, match="LLM service"):
                 OpenAICompatBackend(base_url="http://localhost", model="m").list_models()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Async backends (complete_async)
+# ═══════════════════════════════════════════════════════════════════════════
+
+import asyncio
+from unittest.mock import AsyncMock
+
+
+class TestOllamaBackendAsync:
+    def _mock_client(self, response_data: dict):
+        mock_response = MagicMock()
+        mock_response.json.return_value = response_data
+        mock_response.raise_for_status = MagicMock()
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        return mock_client
+
+    def test_complete_async_returns_response(self):
+        client = self._mock_client({"response": "async result"})
+        with patch("httpx.AsyncClient", return_value=client):
+            result = asyncio.run(OllamaBackend().complete_async("hello"))
+        assert result == "async result"
+
+    def test_complete_async_sends_correct_payload(self):
+        client = self._mock_client({"response": "ok"})
+        with patch("httpx.AsyncClient", return_value=client):
+            asyncio.run(OllamaBackend(model="llama3.1:8b").complete_async("test", timeout=30))
+        payload = client.post.call_args[1]["json"]
+        assert payload["model"] == "llama3.1:8b"
+        assert payload["prompt"] == "test"
+        assert payload["stream"] is False
+
+    def test_complete_async_connect_error_raises(self):
+        import httpx
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            with pytest.raises(ConnectionError, match="Ollama"):
+                asyncio.run(OllamaBackend().complete_async("test"))
+
+    def test_complete_async_missing_response_key_raises(self):
+        client = self._mock_client({"unexpected": "data"})
+        with patch("httpx.AsyncClient", return_value=client):
+            with pytest.raises(ConnectionError, match="missing 'response' key"):
+                asyncio.run(OllamaBackend().complete_async("test"))
+
+
+class TestOpenAICompatBackendAsync:
+    def _mock_client(self, response_data: dict, api_key: str = ""):
+        mock_response = MagicMock()
+        mock_response.json.return_value = response_data
+        mock_response.raise_for_status = MagicMock()
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        return mock_client
+
+    def test_complete_async_returns_content(self):
+        client = self._mock_client({"choices": [{"message": {"content": "async ok"}}]})
+        with patch("httpx.AsyncClient", return_value=client):
+            result = asyncio.run(
+                OpenAICompatBackend(base_url="http://localhost", model="m").complete_async("q")
+            )
+        assert result == "async ok"
+
+    def test_complete_async_sends_chat_format(self):
+        client = self._mock_client({"choices": [{"message": {"content": ""}}]})
+        with patch("httpx.AsyncClient", return_value=client):
+            asyncio.run(
+                OpenAICompatBackend(base_url="http://localhost", model="gpt4").complete_async("hi")
+            )
+        payload = client.post.call_args[1]["json"]
+        assert payload["model"] == "gpt4"
+        assert payload["messages"][0]["role"] == "user"
+        assert payload["messages"][0]["content"] == "hi"
+
+    def test_complete_async_connect_error_raises(self):
+        import httpx
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            with pytest.raises(ConnectionError, match="LLM service"):
+                asyncio.run(
+                    OpenAICompatBackend(base_url="http://localhost", model="m").complete_async("t")
+                )
+
+    def test_complete_async_bad_response_format_raises(self):
+        client = self._mock_client({"unexpected": "data"})
+        with patch("httpx.AsyncClient", return_value=client):
+            with pytest.raises(ConnectionError, match="Unexpected response"):
+                asyncio.run(
+                    OpenAICompatBackend(base_url="http://localhost", model="m").complete_async("t")
+                )
+
+
+class TestBaseLLMBackendAsyncDefault:
+    """Base class complete_async default falls back to sync complete via thread."""
+
+    def test_base_complete_async_calls_sync_complete(self):
+        from unittest.mock import MagicMock
+        # Create a minimal concrete subclass
+        mock_backend = MagicMock(spec=["complete"])
+        mock_backend.complete.return_value = "sync result"
+
+        # Patch asyncio.to_thread to just call the function
+        import asyncio
+        from ai_guard.llm.backends.base import BaseLLMBackend
+
+        class _Concrete(BaseLLMBackend):
+            def complete(self, prompt, *, timeout=60): return "sync result"
+            def list_models(self): return []
+            def pull_model(self, model, *, on_progress=None): pass
+
+        result = asyncio.run(_Concrete().complete_async("hi"))
+        assert result == "sync result"

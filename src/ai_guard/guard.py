@@ -66,7 +66,7 @@ _REGEX_ENTITIES = {
     "TC_ID", "ADDRESS", "POSTAL_CODE",
     "UUID", "SSN", "MAC_ADDRESS", "JWT", "NIN", "CUSTOM_SECRET",
     "UK_POSTAL_CODE", "US_ZIP_CODE", "EU_NATIONAL_ID",
-    "PASSPORT", "CODICE_FISCALE", "DATE_OF_BIRTH",
+    "PASSPORT", "CODICE_FISCALE", "DATE_OF_BIRTH", "VEHICLE_PLATE",
 }
 _NER_ENTITIES   = {"PERSON", "ORG", "ADDRESS"}
 
@@ -186,9 +186,13 @@ class LLMGuard:
         return self._engine.scan(text)
 
     async def scan_async(self, text: str) -> ScanResult:
-        """Async wrapper for :meth:`scan` — runs in a thread pool executor."""
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.scan, text)
+        """Async scan — uses native async I/O for the LLM backend when available.
+
+        CPU-bound detectors (regex, SpaCy NER) run in a thread pool;
+        the LLM detector (if enabled) uses ``httpx.AsyncClient`` natively,
+        so multiple concurrent calls do not block each other.
+        """
+        return await self._engine.scan_async(text)
 
     def scan_batch(
         self, texts: List[str], *, max_workers: Optional[int] = None
@@ -241,11 +245,35 @@ class LLMGuard:
     async def scan_batch_async(
         self, texts: List[str], *, max_workers: Optional[int] = None
     ) -> List[ScanResult]:
-        """Async wrapper for :meth:`scan_batch` — runs in a thread pool executor."""
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.scan_batch(texts, max_workers=max_workers)
-        )
+        """Scan multiple texts concurrently using native async.
+
+        Each text is scanned independently via :meth:`scan_async`; all are
+        run concurrently with ``asyncio.gather``.  Errors in individual items
+        are caught — the original text is returned with ``scan_error`` set.
+        """
+        if not texts:
+            return []
+
+        async def _one(idx: int, text: str) -> tuple[int, ScanResult]:
+            try:
+                return idx, await self.scan_async(text)
+            except Exception as exc:
+                logger.error(
+                    "scan_batch_async item %d failed (%s: %s), returning original text.",
+                    idx, type(exc).__name__, exc,
+                )
+                return idx, ScanResult(
+                    original_text=text,
+                    sanitized_text=text,
+                    violations=[],
+                    scan_error=f"{type(exc).__name__}: {exc}",
+                )
+
+        pairs = await asyncio.gather(*(_one(i, t) for i, t in enumerate(texts)))
+        results: List[ScanResult | None] = [None] * len(texts)
+        for idx, result in pairs:
+            results[idx] = result
+        return results  # type: ignore[return-value]
 
     # ------------------------------------------------------------------
     # Programmatic API
@@ -267,9 +295,9 @@ class LLMGuard:
         custom_patterns = self._config.get("custom_patterns", {})
         if entity_type not in custom_patterns:
             warn_unknown_entity(entity_type)
-        if action not in ("warn", "hash"):
+        if action not in ("warn", "hash", "mask", "redact"):
             raise ValueError(
-                f"Invalid action {action!r}. Valid values: 'warn', 'hash'"
+                f"Invalid action {action!r}. Valid values: 'warn', 'hash', 'mask', 'redact'"
             )
         self._config.setdefault("entities", {})[entity_type] = {
             "enabled": enabled,
@@ -281,6 +309,50 @@ class LLMGuard:
     def set_salt(self, salt: str) -> "LLMGuard":
         """Update the hash salt."""
         self._config["salt"] = salt
+        self._rebuild()
+        return self
+
+    def add_allowlist(self, values: List[str]) -> "LLMGuard":
+        """Add exact values that should never be flagged as PII.
+
+        Supports method chaining::
+
+            guard.add_allowlist(["no-reply@company.com", "192.168.1.1"])
+
+        :param values: List of exact string values to exempt from detection.
+        """
+        existing: List[str] = self._config.setdefault("allowlist", [])
+        for v in values:
+            if v not in existing:
+                existing.append(v)
+        self._rebuild()
+        return self
+
+    def add_denylist(self, entries: List[Dict[str, str]]) -> "LLMGuard":
+        """Add values that should always be flagged as PII.
+
+        Each entry must have a ``value`` key and an ``entity_type`` key.
+        The action applied is taken from the entity's config (same as
+        regular detections).  Supports method chaining::
+
+            guard.add_denylist([
+                {"value": "John Smith",    "entity_type": "PERSON"},
+                {"value": "ProjectSecret", "entity_type": "CUSTOM_SECRET"},
+            ])
+
+        :param entries: List of dicts with ``value`` and ``entity_type`` keys.
+        """
+        existing: List[Dict[str, str]] = self._config.setdefault("denylist", [])
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise ValueError(
+                    f"Each denylist entry must be a dict with a 'value' or 'pattern' key: {entry!r}"
+                )
+            if "value" not in entry and "pattern" not in entry:
+                raise ValueError(
+                    f"Each denylist entry must have either a 'value' or a 'pattern' key: {entry!r}"
+                )
+            existing.append(entry)
         self._rebuild()
         return self
 
@@ -374,4 +446,5 @@ class LLMGuard:
         for entity, cfg in entity_cfg.items():
             self._config["entities"].setdefault(entity, cfg)
 
-        return LLMDetector(backend=backend, enabled_entities=enabled, timeout=timeout)
+        cache_ttl = llm_cfg.get("cache_ttl", 0)
+        return LLMDetector(backend=backend, enabled_entities=enabled, timeout=timeout, cache_ttl=cache_ttl)

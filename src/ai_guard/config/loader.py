@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import os
 import re
@@ -20,6 +21,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "scan_batch_workers": 4,   # thread pool size for scan_batch()
     "max_text_bytes": 500_000,  # maximum input size in bytes
     "custom_patterns": {},      # user-defined regex patterns
+    "allowlist": [],            # exact values to never flag (e.g. ["no-reply@company.com"])
+    "denylist":  [],            # always-flag entries: [{value, entity_type}]
     # ── LLM detector configuration ────────────────────────────────────────
     "llm_detector": {
         "enabled":  False,
@@ -27,7 +30,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "model":    "llama3.2",
         "base_url": "http://localhost:11434",   # Ollama default; add /v1 for openai_compat
         "api_key":  "",                         # for openai_compat; empty for most on-prem
-        "timeout":  60,
+        "timeout":   60,
+        "cache_ttl": 0,                          # LLM response cache TTL in seconds; 0 = disabled
         "entities": {                           # which types to query the LLM for
             "CREDIT_CARD":  {"enabled": True,  "action": "hash"},
             "EMAIL":        {"enabled": True,  "action": "warn"},
@@ -76,6 +80,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "ORG":          {"enabled": False, "action": "warn"},
         # Date detection
         "DATE_OF_BIRTH": {"enabled": True, "action": "hash"},
+        # Turkish vehicle plate
+        "VEHICLE_PLATE": {"enabled": True, "action": "warn"},
     },
 }
 
@@ -90,7 +96,7 @@ _ENV_VARS = {
 }
 
 # Valid action values
-_VALID_ACTIONS = {"warn", "hash"}
+_VALID_ACTIONS = {"warn", "hash", "mask", "redact"}
 # Valid backend values
 _VALID_BACKENDS = {"ollama", "openai_compatible", "transformers"}
 # Valid top-level config keys — used to catch typos in YAML files
@@ -98,7 +104,31 @@ _KNOWN_CONFIG_KEYS = frozenset({
     "salt", "spacy_model", "use_ner", "scan_batch_workers",
     "max_text_bytes", "custom_patterns",
     "llm_detector", "entities",
+    "allowlist", "denylist",
 })
+
+
+def _check_redos(pattern: re.Pattern, timeout: float = 0.5) -> bool:
+    """Return True if the pattern appears safe, False if it times out (potential ReDoS).
+
+    Tests the compiled regex against a known pathological input (repeated 'a's followed
+    by a non-matching character) to detect catastrophic backtracking at config load time.
+    This prevents user-supplied custom patterns from locking up the server at runtime.
+
+    Note: uses a thread with timeout; the thread may continue running briefly after
+    the timeout, but the main thread is not blocked beyond the timeout window.
+    """
+    test_input = "a" * 50 + "b"
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(pattern.search, test_input)
+        try:
+            future.result(timeout=timeout)
+            return True
+        except concurrent.futures.TimeoutError:
+            logger.warning(
+                "Pattern %r timed out during ReDoS check — rejecting.", pattern.pattern
+            )
+            return False
 
 
 def load_config(path: Optional[str | Path] = None) -> Dict[str, Any]:
@@ -183,11 +213,61 @@ def validate_config(config: Dict[str, Any]) -> None:
                 f"Valid values: {sorted(_VALID_ACTIONS)}"
             )
         try:
-            re.compile(pattern_cfg["pattern"])
+            compiled = re.compile(pattern_cfg["pattern"])
         except re.error as exc:
             raise ValueError(
                 f"Custom pattern '{pattern_name}' has invalid regex: {exc}"
             )
+        if not _check_redos(compiled):
+            raise ValueError(
+                f"Custom pattern '{pattern_name}' may cause catastrophic backtracking "
+                "(ReDoS). Simplify the pattern or remove nested quantifiers."
+            )
+
+    allowlist = config.get("allowlist", [])
+    if not isinstance(allowlist, list):
+        raise ValueError(
+            f"'allowlist' must be a list of strings, got {type(allowlist).__name__}."
+        )
+    for item in allowlist:
+        if not isinstance(item, str):
+            raise ValueError(
+                f"Each 'allowlist' entry must be a string, got {type(item).__name__}: {item!r}"
+            )
+
+    denylist = config.get("denylist", [])
+    if not isinstance(denylist, list):
+        raise ValueError(
+            f"'denylist' must be a list of dicts, got {type(denylist).__name__}."
+        )
+    for entry in denylist:
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"Each 'denylist' entry must be a dict with 'value' or 'pattern', "
+                f"got {type(entry).__name__}: {entry!r}"
+            )
+        has_value   = "value"   in entry
+        has_pattern = "pattern" in entry
+        if not has_value and not has_pattern:
+            raise ValueError(
+                f"Denylist entry must have either a 'value' or a 'pattern' key: {entry!r}"
+            )
+        if has_value and not isinstance(entry["value"], str):
+            raise ValueError(
+                f"Denylist entry 'value' must be a string, got {type(entry['value']).__name__}"
+            )
+        if has_pattern:
+            if not isinstance(entry["pattern"], str):
+                raise ValueError(
+                    f"Denylist entry 'pattern' must be a string, "
+                    f"got {type(entry['pattern']).__name__}"
+                )
+            try:
+                re.compile(entry["pattern"])
+            except re.error as exc:
+                raise ValueError(
+                    f"Denylist entry 'pattern' {entry['pattern']!r} is not valid regex: {exc}"
+                )
 
     llm_cfg = config.get("llm_detector", {})
     backend = llm_cfg.get("backend", "ollama")
