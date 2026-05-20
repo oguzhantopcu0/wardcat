@@ -184,16 +184,30 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
     #    e.g.  "doğum tarihi: 15.03.1988"  "date of birth: 1988-03-15"
     #          "born: 01/05/1992"          "dob: 1990-07-22"
     "DATE_OF_BIRTH": (
-        # Strategy 1: DD <MonthName> YYYY — no keyword required
+        # Strategy 1: DD <MonthName> YYYY — only plausible birth years (1900–2015),
+        # no keyword required. Years 2016+ require a keyword to avoid false positives
+        # on future/effective calendar dates (e.g. "15 Haziran 2025 itibarıyla").
         r"\b\d{1,2}\s+"
         r"(?:Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık"
         r"|January|February|March|April|May|June|July|August|September|October|November|December"
         r"|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
-        r"\s+(?:19|20)\d{2}\b"
+        r"\s+(?:19\d{2}|20(?:0\d|1[0-5]))\b"
         r"|"
-        # Strategy 2: numeric/ISO formats — keyword required
+        # Strategy 2: numeric/ISO formats — keyword required (any year)
         r"(?:doğum(?:\s+tarihi)?|d\.?t\.?|born(?:\s+on)?|date\s+of\s+birth|d\.?o\.?b\.?|birthday)\s*:?\s*"
         r"(?:\d{1,2}[./]\d{1,2}[./](?:19|20)\d{2}|(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))",
+        re.IGNORECASE,
+    ),
+    # ── Financial Amount ─────────────────────────────────────────────────
+    # Monetary amounts with explicit currency symbol or unit.
+    # Matches: ₺47.3 milyon, $2.1 milyon, 85.000 TL, €500.000
+    # Requires a currency marker to avoid false positives on bare numbers.
+    "FINANCIAL_AMOUNT": (
+        # Currency symbol first: ₺47.3 milyon / $2.1 / €500.000
+        r"(?:₺|\$|€|£)\s*\d+(?:[.,]\d+)*(?:\s*(?:milyon|milyar|bin|million|billion|trillion|thousand))?"
+        r"|"
+        # Amount then TL/lira: 85.000 TL / 47.3 milyon TL
+        r"\b\d+(?:[.,]\d+)*(?:\s*(?:milyon|milyar|bin))?\s*(?:TL|lira)\b",
         re.IGNORECASE,
     ),
     # ── Custom Secret ─────────────────────────────────────────────────

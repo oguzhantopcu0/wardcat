@@ -54,6 +54,14 @@ _ENTITY_DESCRIPTIONS: dict[str, str] = {
         "'sk-prod-xK92mNzL8qW3', 'ALPHA-BRAVO-42' after 'erişim kodu'). "
         "Extract ONLY the secret value, not the keyword."
     ),
+    "FINANCIAL_AMOUNT": (
+        "monetary amount with an explicit currency symbol or unit — "
+        "Turkish lira (e.g. '₺47.3 milyon', '85.000 TL', '₺120.000'), "
+        "US dollar (e.g. '$2.1 milyon', 'USD 500'), "
+        "euro (e.g. '€500.000'), pound (e.g. '£1,200'). "
+        "Extract ONLY when a currency symbol or code is present. "
+        "Do NOT extract bare numbers, percentages, or quantities without a currency marker."
+    ),
 }
 
 _SYSTEM_TEMPLATE = """\
@@ -84,6 +92,9 @@ DO NOT extract:
   (e.g. "Müdür", "Temsilci", "Kullanıcı" without a first+last name next to them)
 - PERSON must be a proper human name (first name + last name or clearly a personal name).
   Single common words are NEVER a person name.
+- DATE_OF_BIRTH must be an actual stated birth date. General calendar dates, event dates,
+  deadlines, or effective dates (e.g. "15 Haziran 2025 itibarıyla", "as of March 1") are NOT birth dates.
+- IBAN numbers (TR... / GB... / DE... format) are always type IBAN — never ADDRESS, even if near address text.
 
 EXAMPLES
 ========
@@ -92,6 +103,9 @@ Output: [{{"type":"PERSON","text":"Ali Veli"}},{{"type":"EMAIL","text":"ali.veli
 
 Input: "Dear John Smith, your IBAN TR33 0006 1005 1978 6457 8413 26 is confirmed. Contact: john@acme.com"
 Output: [{{"type":"PERSON","text":"John Smith"}},{{"type":"IBAN","text":"TR33 0006 1005 1978 6457 8413 26"}},{{"type":"EMAIL","text":"john@acme.com"}}]
+
+Input: "Şirketin ana bankacılık hesabı Garanti BBVA IBAN: TR94 0006 2001 4030 0006 3712 87 numaralı hesap üzerinden yönetilmektedir."
+Output: [{{"type":"IBAN","text":"TR94 0006 2001 4030 0006 3712 87"}}]
 
 Input: "Veritabanı şifresi db_pass=S3cr3t!42 — kimseyle paylaşmayın."
 Output: [{{"type":"CUSTOM_SECRET","text":"S3cr3t!42"}}]
@@ -122,6 +136,21 @@ Output: [{{"type":"PASSPORT","text":"P9876543"}}]
 
 Input: "Şifremi unuttum: qwerty123"
 Output: [{{"type":"CUSTOM_SECRET","text":"qwerty123"}}]
+
+Input: "İnsan kaynakları departmanından Mert Özdemir (TC Kimlik: 34782910456, e-posta: m.ozdemir@nexora.com.tr)"
+Output: [{{"type":"PERSON","text":"Mert Özdemir"}},{{"type":"TC_ID","text":"34782910456"}},{{"type":"EMAIL","text":"m.ozdemir@nexora.com.tr"}}]
+
+Input: "Proje yöneticisi Dr. Hasan Ergün +90 532 741 88 23 numarasından ulaşılabilir."
+Output: [{{"type":"PERSON","text":"Dr. Hasan Ergün"}},{{"type":"PHONE","text":"+90 532 741 88 23"}}]
+
+Input: "Finans Direktörü Ayşe Kılınç tarafından hazırlanan rapor kamuoyuyla paylaşılmamıştır."
+Output: [{{"type":"PERSON","text":"Ayşe Kılınç"}}]
+
+Input: "Konsolide gelir ₺47.3 milyon, maaş bandı ₺85.000 — ₺120.000, proje bütçesi $2.1 milyon."
+Output: [{{"type":"FINANCIAL_AMOUNT","text":"₺47.3 milyon"}},{{"type":"FINANCIAL_AMOUNT","text":"₺85.000"}},{{"type":"FINANCIAL_AMOUNT","text":"₺120.000"}},{{"type":"FINANCIAL_AMOUNT","text":"$2.1 milyon"}}]
+
+Input: "15 Haziran 2025 itibarıyla yeni ücret skalası yürürlüğe girecek."
+Output: []
 
 Input: "Toplantı saat 14:00'te 3. katta."
 Output: []

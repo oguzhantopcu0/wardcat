@@ -12,6 +12,7 @@ than 100+ transitive dependencies.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -29,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 # For extracting the JSON array from the LLM response
 _JSON_RE = re.compile(r"\[.*?\]", re.DOTALL)
+
+# Paragraph boundary: one or more newlines
+_PARA_RE = re.compile(r"\n+")
 
 
 @dataclass
@@ -90,11 +94,13 @@ class LLMDetector(BaseDetector):
         *,
         timeout: int = 60,
         cache_ttl: int = 0,
+        chunk_chars: int = 800,
     ) -> None:
         self.backend          = backend
         self.enabled_entities = enabled_entities
         self.timeout          = timeout
-        self._cache_ttl       = cache_ttl   # seconds; 0 = disabled
+        self._cache_ttl       = cache_ttl    # seconds; 0 = disabled
+        self._chunk_chars     = chunk_chars  # max chars per LLM call; 0 = disabled
         self._cache: dict[str, _CacheEntry] = {}
         self._cache_lock      = threading.Lock()
 
@@ -109,21 +115,31 @@ class LLMDetector(BaseDetector):
                 if entry is not None and time.monotonic() < entry.expires_at:
                     logger.debug("LLM detector: cache hit for text of length %d", len(text))
                     return entry.spans
+        else:
+            key = None
 
-        messages = build_messages(text, self.enabled_entities)
-        try:
-            raw = self.backend.complete_messages(messages, timeout=self.timeout)
-            entities = self._parse_llm_response(raw)
-            spans = self._locate_spans(text, entities)
-            logger.debug("LLM detector: %d entity/entities returned, %d span(s) located", len(entities), len(spans))
-        except ConnectionError as exc:
-            logger.warning("LLM detector connection error: %s", exc)
-            return []
-        except (TimeoutError, ValueError, OSError) as exc:
-            logger.warning("LLM detector failed: %s", exc)
-            return []
+        chunks = self._to_chunks(text)
+        spans: List[DetectedSpan] = []
 
-        if self._cache_ttl > 0:
+        for chunk_text, offset in chunks:
+            if not chunk_text.strip():
+                continue
+            messages = build_messages(chunk_text, self.enabled_entities)
+            try:
+                raw = self.backend.complete_messages(messages, timeout=self.timeout)
+                entities = self._parse_llm_response(raw)
+                chunk_spans = self._locate_spans(chunk_text, entities)
+                spans.extend(self._offset_spans(chunk_spans, offset))
+                logger.debug(
+                    "LLM detector: chunk offset=%d len=%d → %d span(s)",
+                    offset, len(chunk_text), len(chunk_spans),
+                )
+            except ConnectionError as exc:
+                logger.warning("LLM detector connection error (offset=%d): %s", offset, exc)
+            except (TimeoutError, ValueError, OSError) as exc:
+                logger.warning("LLM detector failed (offset=%d): %s", offset, exc)
+
+        if self._cache_ttl > 0 and key is not None:
             with self._cache_lock:
                 self._cache[key] = _CacheEntry(
                     spans=spans,
@@ -133,7 +149,7 @@ class LLMDetector(BaseDetector):
         return spans
 
     async def detect_async(self, text: str) -> List[DetectedSpan]:
-        """Async variant — uses the backend's native async HTTP client."""
+        """Async variant — chunks are scanned concurrently via asyncio.gather."""
         if not text.strip():
             return []
 
@@ -147,17 +163,25 @@ class LLMDetector(BaseDetector):
         else:
             key = None
 
-        messages = build_messages(text, self.enabled_entities)
-        try:
-            raw = await self.backend.complete_messages_async(messages, timeout=self.timeout)
-            entities = self._parse_llm_response(raw)
-            spans = self._locate_spans(text, entities)
-        except ConnectionError as exc:
-            logger.warning("LLM detector connection error: %s", exc)
-            return []
-        except (TimeoutError, ValueError, OSError) as exc:
-            logger.warning("LLM detector failed: %s", exc)
-            return []
+        chunks = self._to_chunks(text)
+
+        async def _scan_chunk(chunk_text: str, offset: int) -> List[DetectedSpan]:
+            if not chunk_text.strip():
+                return []
+            messages = build_messages(chunk_text, self.enabled_entities)
+            try:
+                raw = await self.backend.complete_messages_async(messages, timeout=self.timeout)
+                entities = self._parse_llm_response(raw)
+                return self._offset_spans(self._locate_spans(chunk_text, entities), offset)
+            except ConnectionError as exc:
+                logger.warning("LLM detector connection error (offset=%d): %s", offset, exc)
+                return []
+            except (TimeoutError, ValueError, OSError) as exc:
+                logger.warning("LLM detector failed (offset=%d): %s", offset, exc)
+                return []
+
+        results = await asyncio.gather(*[_scan_chunk(ct, off) for ct, off in chunks])
+        spans: List[DetectedSpan] = [s for chunk_spans in results for s in chunk_spans]
 
         if self._cache_ttl > 0 and key is not None:
             with self._cache_lock:
@@ -169,6 +193,60 @@ class LLMDetector(BaseDetector):
         return spans
 
     # ------------------------------------------------------------------
+
+    def _to_chunks(self, text: str) -> list[tuple[str, int]]:
+        """Split text into (chunk_text, start_offset) pairs at paragraph boundaries.
+
+        Small LLMs lose focus on entity names when given very long texts — chunking
+        keeps each LLM call within an attention-friendly size.  Returns a single
+        chunk for short texts or when chunking is disabled (chunk_chars=0).
+        """
+        if self._chunk_chars <= 0 or len(text) <= self._chunk_chars:
+            return [(text, 0)]
+
+        # Find paragraph boundaries (positions after each newline sequence)
+        segs: list[tuple[int, int]] = []  # (seg_start, seg_end) in original text
+        pos = 0
+        for m in _PARA_RE.finditer(text):
+            if m.start() > pos:
+                segs.append((pos, m.start()))
+            pos = m.end()
+        if pos < len(text):
+            segs.append((pos, len(text)))
+
+        if not segs:
+            return [(text, 0)]
+
+        # Greedily group segments into chunks ≤ chunk_chars
+        result: list[tuple[str, int]] = []
+        chunk_start = segs[0][0]
+        chunk_end   = segs[0][1]
+
+        for i in range(1, len(segs)):
+            seg_start, seg_end = segs[i]
+            if seg_end - chunk_start > self._chunk_chars:
+                result.append((text[chunk_start:chunk_end], chunk_start))
+                chunk_start = seg_start
+            chunk_end = seg_end
+
+        result.append((text[chunk_start:chunk_end], chunk_start))
+        return result
+
+    @staticmethod
+    def _offset_spans(spans: List[DetectedSpan], offset: int) -> List[DetectedSpan]:
+        """Shift span positions by offset to map chunk positions back to full text."""
+        if offset == 0:
+            return spans
+        return [
+            DetectedSpan(
+                entity_type=s.entity_type,
+                text=s.text,
+                start=s.start + offset,
+                end=s.end + offset,
+                confidence=s.confidence,
+            )
+            for s in spans
+        ]
 
     def _parse_llm_response(self, raw: str) -> list[dict]:
         """

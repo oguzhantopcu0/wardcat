@@ -82,6 +82,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "DATE_OF_BIRTH": {"enabled": True, "action": "hash"},
         # Turkish vehicle plate
         "VEHICLE_PLATE": {"enabled": True, "action": "warn"},
+        # Financial amounts — disabled by default; enable for confidential document scanning
+        "FINANCIAL_AMOUNT": {"enabled": False, "action": "redact"},
     },
 }
 
