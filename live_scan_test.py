@@ -49,7 +49,7 @@ def make_guard(entities: set[str] | None = None, use_ner: bool = False) -> LLMGu
     guard._config["entities"]["IBAN"]          = {"enabled": True, "action": "hash"}
 
     llm = LLMDetector(
-        backend=OllamaBackend(model="llama3.1:8b"),
+        backend=OllamaBackend(model="gemma3:12b"),
         enabled_entities=enabled,
     )
     guard._detectors.append(llm)
@@ -224,7 +224,7 @@ section("8 · Batch Tarama")
 batch_guard = LLMGuard(
     use_ner=False,
     use_llm=True,
-    llm_model="llama3.1:8b",
+    llm_model="gemma3:12b",
 )
 lines = [
     "Sipariş veren: Zeynep Arslan, kart: 5500 0000 0000 0004",
@@ -387,8 +387,11 @@ types = {v.entity_type for v in r.violations}
 check("En az 3 CUSTOM_SECRET tespit",  types.count("CUSTOM_SECRET") >= 3 if False
       else len([v for v in r.violations if v.entity_type == "CUSTOM_SECRET"]) >= 3)
 secrets_found = [v.original for v in r.violations if v.entity_type == "CUSTOM_SECRET"]
-check("DB şifresi tespit",      any("Sup3rS3cr3t" in s or "Sup3rS3cr3t" == s for s in secrets_found)
-      or "CUSTOM_SECRET" in types)
+# Connection-string password (postgresql://admin:Sup3rS3cr3t@...) must be
+# caught as a secret, not swallowed by the email regex as "password@host".
+check("DB şifresi (connection string) tespit",
+      any("Sup3rS3cr3t" in s for s in secrets_found))
+check("DB şifresi sanitize edildi",  "Sup3rS3cr3t" not in r.sanitized_text)
 check("Redis şifresi tespit",   any("r3d1sP" in s for s in secrets_found) or "CUSTOM_SECRET" in types)
 check("Stripe key tespit",      any("sk_live" in s for s in secrets_found) or "CUSTOM_SECRET" in types)
 check("Hiçbir secret düz kalmadı", all(

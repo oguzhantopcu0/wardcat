@@ -193,6 +193,60 @@ class TestCreditCardSeparatorFixes:
         assert any(s.entity_type == "CREDIT_CARD" for s in spans)
 
 
+class TestConnectionStringCredentials:
+    """Passwords embedded in URI userinfo (scheme://user:password@host)."""
+
+    @pytest.fixture
+    def detector(self):
+        return RegexDetector({"EMAIL", "CUSTOM_SECRET"})
+
+    def test_password_detected_as_secret(self, detector):
+        spans = detector.detect(
+            "DATABASE_URL=postgresql://admin:Sup3rS3cr3t@db.prod.internal:5432/appdb"
+        )
+        secret = next(s for s in spans if s.entity_type == "CUSTOM_SECRET")
+        assert secret.text == "Sup3rS3cr3t"
+
+    def test_no_spurious_email_for_password_host(self, detector):
+        spans = detector.detect("postgresql://admin:Sup3rS3cr3t@db.prod.internal")
+        # The "password@host" must NOT be reported as an email.
+        assert not any(s.entity_type == "EMAIL" for s in spans)
+
+    def test_empty_user_credential(self, detector):
+        spans = detector.detect("redis://:r3d1sP_ss@cache:6379")
+        assert any(
+            s.entity_type == "CUSTOM_SECRET" and s.text == "r3d1sP_ss" for s in spans
+        )
+
+    def test_url_encoded_password(self, detector):
+        spans = detector.detect("mongodb+srv://user:p%40ss123@cluster0.mongodb.net")
+        assert any(
+            s.entity_type == "CUSTOM_SECRET" and s.text == "p%40ss123" for s in spans
+        )
+
+    def test_real_email_unaffected(self, detector):
+        spans = detector.detect("Contact john@acme.com for details.")
+        assert any(s.entity_type == "EMAIL" and s.text == "john@acme.com" for s in spans)
+
+    def test_plain_url_no_credential(self, detector):
+        spans = detector.detect("See https://example.com/path for docs.")
+        assert not any(s.entity_type == "CUSTOM_SECRET" for s in spans)
+
+    def test_password_offset_correct(self, detector):
+        text = "postgresql://admin:Sup3rS3cr3t@db.prod.internal"
+        secret = next(
+            s for s in detector.detect(text) if s.entity_type == "CUSTOM_SECRET"
+        )
+        assert text[secret.start:secret.end] == "Sup3rS3cr3t"
+
+    def test_secret_disabled_still_suppresses_email(self):
+        # When CUSTOM_SECRET is off, the password is not reported — but the
+        # spurious "password@host" email must still be suppressed.
+        det = RegexDetector({"EMAIL"})
+        spans = det.detect("postgresql://admin:Sup3rS3cr3t@db.prod.internal")
+        assert not any(s.entity_type == "EMAIL" for s in spans)
+
+
 class TestEmailCyrillicHomoglyph:
     """G1b: Cyrillic lookalike characters in email local-part."""
 

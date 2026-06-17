@@ -305,6 +305,18 @@ _COMPILED: Dict[str, re.Pattern] = {
     for entity, (pattern, flags) in _PATTERNS.items()
 }
 
+# ── Connection-string credentials ────────────────────────────────────────────
+# URI userinfo with a password: scheme://user:password@host
+# e.g. postgresql://admin:Sup3rS3cr3t@db.prod.internal:5432/appdb
+# The password is a CUSTOM_SECRET. Without this, the EMAIL pattern greedily
+# matches "password@host" as an email and, being the longer span, wins overlap
+# resolution — leaving the real secret undetected. We capture the password and
+# suppress the spurious EMAIL match that starts at the same offset.
+_URI_CREDENTIAL: re.Pattern = re.compile(
+    r"[a-z][a-z0-9+.\-]*://[^\s:/@]*:(?P<pwd>[^\s@/]+)@",
+    re.IGNORECASE,
+)
+
 # Timeout for custom pattern execution (seconds). Built-in patterns are trusted.
 _CUSTOM_PATTERN_TIMEOUT = 2.0
 
@@ -409,11 +421,31 @@ class RegexDetector(BaseDetector):
     def detect(self, text: str) -> List[DetectedSpan]:
         """Return all regex matches for enabled entity types."""
         spans: List[DetectedSpan] = []
+
+        # Connection-string credentials: capture the password as a secret and
+        # mark its offset so the spurious EMAIL match (password@host) is dropped.
+        cred_pwd_starts: Set[int] = set()
+        for match in _URI_CREDENTIAL.finditer(text):
+            cred_pwd_starts.add(match.start("pwd"))
+            if "CUSTOM_SECRET" in self.enabled_entities:
+                spans.append(
+                    DetectedSpan(
+                        entity_type="CUSTOM_SECRET",
+                        text=match.group("pwd"),
+                        start=match.start("pwd"),
+                        end=match.end("pwd"),
+                    )
+                )
+
         for entity_type, pattern in _COMPILED.items():
             if entity_type not in self.enabled_entities:
                 continue
             for match in pattern.finditer(text):
                 value = match.group()
+                # Drop EMAIL matches that are actually a URI credential's
+                # "password@host" (the password is captured as CUSTOM_SECRET).
+                if entity_type == "EMAIL" and match.start() in cred_pwd_starts:
+                    continue
                 # Checksum validations — suppress false positives
                 if entity_type == "TC_ID" and not _validate_tc_id(value):
                     logger.debug(
