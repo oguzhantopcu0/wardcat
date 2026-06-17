@@ -133,7 +133,10 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
     "US_ZIP_CODE": (
         r"\b\d{5}-\d{4}\b"
         r"|"
-        r"\b[Zz][Ii][Pp](?:\s*[Cc][Oo][Dd][Ee])?\s*:?\s*\d{5}\b",
+        # Labeled bare ZIP: "ZIP: 90210". The negative lookahead prevents this
+        # branch from grabbing only the first 5 digits of a ZIP+4 (90210-1234),
+        # which would otherwise leak the "-1234" suffix.
+        r"\b[Zz][Ii][Pp](?:\s*[Cc][Oo][Dd][Ee])?\s*:?\s*\d{5}(?!-\d{4})\b",
         0,
     ),
     # ── EU National Identity Number ────────────────────────────────────

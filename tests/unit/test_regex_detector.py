@@ -412,6 +412,61 @@ class TestVehiclePlate:
         result = guard.scan("Araç plakası: 34 ABC 123")
         assert any(v.entity_type == "VEHICLE_PLATE" for v in result.violations)
 
+
+# ── US_ZIP_CODE ────────────────────────────────────────────────────────────
+
+class TestUSZipCode:
+    @pytest.fixture
+    def detector(self):
+        from ai_guard.detectors.regex_detector import RegexDetector
+        return RegexDetector({"US_ZIP_CODE"})
+
+    def test_zip_plus_four(self, detector):
+        spans = detector.detect("address ZIP code 90210-1234 here")
+        # The full ZIP+4 must be captured — not just the leading 5 digits.
+        assert any(
+            s.entity_type == "US_ZIP_CODE" and s.text == "90210-1234" for s in spans
+        )
+
+    def test_labeled_bare_zip(self, detector):
+        spans = detector.detect("ZIP: 90210")
+        assert any(s.entity_type == "US_ZIP_CODE" for s in spans)
+
+    def test_plain_five_digits_not_matched(self, detector):
+        # Bare 5 digits without label or +4 are too ambiguous to flag.
+        spans = detector.detect("order number 90210 shipped")
+        assert not any(s.entity_type == "US_ZIP_CODE" for s in spans)
+
+
+# ── FINANCIAL_AMOUNT ───────────────────────────────────────────────────────
+
+class TestFinancialAmount:
+    @pytest.fixture
+    def detector(self):
+        from ai_guard.detectors.regex_detector import RegexDetector
+        return RegexDetector({"FINANCIAL_AMOUNT"})
+
+    @pytest.mark.parametrize("amount", [
+        "45.000 TL",
+        "350.000 TL",
+        "2.1 milyon TL",
+        "$85,000",
+        "€12.500",
+        "₺47.3 milyon",
+    ])
+    def test_amounts_detected(self, detector, amount):
+        spans = detector.detect(f"tutar {amount} olarak")
+        assert any(s.entity_type == "FINANCIAL_AMOUNT" for s in spans), amount
+
+    def test_financial_amount_wired_into_guard(self):
+        # Regression: the pattern existed but was missing from the guard's
+        # _REGEX_ENTITIES set, so enabling it had no effect.
+        from ai_guard import LLMGuard
+        guard = LLMGuard(use_ner=False)
+        guard.configure_entity("FINANCIAL_AMOUNT", enabled=True, action="redact")
+        result = guard.scan("Sözleşme bedeli 2.1 milyon TL olarak belirlendi.")
+        assert any(v.entity_type == "FINANCIAL_AMOUNT" for v in result.violations)
+
     def test_vehicle_plate_in_turkish_entities(self):
         from ai_guard.entity_groups import turkish_entities
         assert "VEHICLE_PLATE" in turkish_entities()

@@ -55,6 +55,10 @@ entities:
     enabled: true
     action: warn
 
+  FINANCIAL_AMOUNT:  # Para tutarları: 45.000 TL, $85,000, €12.500, 2.1 milyon TL
+    enabled: false   # Gürültülü olabilir; gizli belge taramasında açın
+    action: redact
+
   # ── Global identity / technical ────────────────────────────
   UUID:              # RFC 4122 UUID: 550e8400-e29b-41d4-a716-446655440000
     enabled: true
