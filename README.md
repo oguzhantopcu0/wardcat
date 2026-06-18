@@ -30,6 +30,7 @@ print(result.sanitized_text)
 ## Features
 
 - **Hybrid detection** — Regex + SpaCy NER + on-prem LLM (Ollama, OpenAI-compatible, HuggingFace Transformers)
+- **Ensemble adjudication** (optional) — the LLM verifies/relabels/drops regex & NER candidates and adds what they missed, in one call; deterministic regex results are always protected
 - **Four actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking)
 - **Checksum validation** — TC_ID (Nüfus İdaresi algorithm), IBAN (mod-97), and CREDIT_CARD (Luhn mod-10) validated before flagging — eliminates false positives
 - **Rainbow table protection** — user-defined salt for all hashes
@@ -205,6 +206,22 @@ guard = LLMGuard(
 ```
 
 > **Note:** HTTP connections to LLM backends (including localhost) log a warning. Use HTTPS in production via a reverse proxy (nginx, Caddy).
+
+#### Ensemble adjudication
+
+By default the three layers run independently and their findings are merged (union). With `llm_adjudicate=True`, the engine instead sends the regex/NER candidates to the LLM, which — in a **single call** — verifies each one (keep / relabel / drop) and adds any PII the other layers missed. Deterministic, checksum-validated regex spans are always kept regardless of the LLM verdict. This sharply reduces NER noise (e.g. job titles mislabeled as names, or a model run on the wrong language):
+
+```python
+guard = LLMGuard(
+    use_ner=True,
+    spacy_model="de_core_news_sm",
+    use_llm=True,
+    llm_model="gemma3:12b",
+    llm_adjudicate=True,   # LLM acts as detector + arbiter in one call
+)
+```
+
+> Adjudication has no effect in LLM-only deployments (no regex/NER candidates to judge) — the LLM simply runs as a pure detector.
 
 ---
 

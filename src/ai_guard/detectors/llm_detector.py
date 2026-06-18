@@ -85,7 +85,15 @@ class LLMDetector(BaseDetector):
 
     On error (connection loss, malformed JSON, etc.) logs a WARNING
     and returns an empty list — other detectors are not blocked.
+
+    Adjudication: when the engine passes ``candidates`` (spans found by the
+    regex/NER detectors), the LLM both verifies those candidates and detects
+    new PII in a single call. When no candidates are passed the behaviour is
+    identical to pure detection, so LLM-only deployments are unaffected.
     """
+
+    # Marks this detector as the one the engine can route candidates to.
+    can_adjudicate = True
 
     def __init__(
         self,
@@ -104,12 +112,16 @@ class LLMDetector(BaseDetector):
         self._cache: dict[str, _CacheEntry] = {}
         self._cache_lock      = threading.Lock()
 
-    def detect(self, text: str) -> List[DetectedSpan]:
+    def detect(
+        self,
+        text: str,
+        candidates: List[DetectedSpan] | None = None,
+    ) -> List[DetectedSpan]:
         if not text.strip():
             return []
 
         if self._cache_ttl > 0:
-            key = hashlib.md5(text.encode("utf-8", errors="replace")).hexdigest()
+            key = self._cache_key(text, candidates)
             with self._cache_lock:
                 entry = self._cache.get(key)
                 if entry is not None and time.monotonic() < entry.expires_at:
@@ -124,7 +136,8 @@ class LLMDetector(BaseDetector):
         for chunk_text, offset in chunks:
             if not chunk_text.strip():
                 continue
-            messages = build_messages(chunk_text, self.enabled_entities)
+            chunk_cands = self._candidates_for_chunk(candidates, offset, len(chunk_text))
+            messages = build_messages(chunk_text, self.enabled_entities, chunk_cands)
             try:
                 raw = self.backend.complete_messages(messages, timeout=self.timeout)
                 entities = self._parse_llm_response(raw)
@@ -148,13 +161,17 @@ class LLMDetector(BaseDetector):
 
         return spans
 
-    async def detect_async(self, text: str) -> List[DetectedSpan]:
+    async def detect_async(
+        self,
+        text: str,
+        candidates: List[DetectedSpan] | None = None,
+    ) -> List[DetectedSpan]:
         """Async variant — chunks are scanned concurrently via asyncio.gather."""
         if not text.strip():
             return []
 
         if self._cache_ttl > 0:
-            key = hashlib.md5(text.encode("utf-8", errors="replace")).hexdigest()
+            key = self._cache_key(text, candidates)
             with self._cache_lock:
                 entry = self._cache.get(key)
                 if entry is not None and time.monotonic() < entry.expires_at:
@@ -168,7 +185,8 @@ class LLMDetector(BaseDetector):
         async def _scan_chunk(chunk_text: str, offset: int) -> List[DetectedSpan]:
             if not chunk_text.strip():
                 return []
-            messages = build_messages(chunk_text, self.enabled_entities)
+            chunk_cands = self._candidates_for_chunk(candidates, offset, len(chunk_text))
+            messages = build_messages(chunk_text, self.enabled_entities, chunk_cands)
             try:
                 raw = await self.backend.complete_messages_async(messages, timeout=self.timeout)
                 entities = self._parse_llm_response(raw)
@@ -193,6 +211,34 @@ class LLMDetector(BaseDetector):
         return spans
 
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _candidates_for_chunk(
+        candidates: List[DetectedSpan] | None,
+        offset: int,
+        chunk_len: int,
+    ) -> list[tuple[str, str]] | None:
+        """Select candidates that fall within a chunk → ``(type, text)`` pairs.
+
+        Positions are not needed by the prompt, only the type and surface text,
+        so chunk-local offsets are irrelevant here — we just filter by range.
+        """
+        if not candidates:
+            return None
+        end = offset + chunk_len
+        return [
+            (s.entity_type, s.text)
+            for s in candidates
+            if s.start >= offset and s.end <= end
+        ]
+
+    def _cache_key(self, text: str, candidates: List[DetectedSpan] | None) -> str:
+        """Cache key over text + candidate set (different candidates → different verdict)."""
+        h = hashlib.md5(text.encode("utf-8", errors="replace"))
+        if candidates:
+            for s in sorted(candidates, key=lambda c: (c.start, c.end, c.entity_type)):
+                h.update(f"|{s.entity_type}:{s.start}:{s.end}".encode("utf-8", errors="replace"))
+        return h.hexdigest()
 
     def _to_chunks(self, text: str) -> list[tuple[str, int]]:
         """Split text into (chunk_text, start_offset) pairs at paragraph boundaries.

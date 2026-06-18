@@ -122,6 +122,7 @@ class LLMGuard:
         llm_base_url: str = "http://localhost:11434",
         llm_api_key: str = "",
         llm_timeout: int = 60,
+        llm_adjudicate: bool = False,     # ensemble: LLM verifies regex/NER candidates
         auto_pull: bool = False,          # Ollama: automatically download if model is missing
         llm_device_map: str = "auto",     # Transformers: GPU distribution
         llm_load_in_8bit: bool = False,   # Transformers: 8-bit quantization
@@ -152,6 +153,8 @@ class LLMGuard:
             llm_cfg["api_key"] = llm_api_key
         if llm_timeout != 60:
             llm_cfg["timeout"] = llm_timeout
+        if llm_adjudicate:
+            llm_cfg["adjudicate"] = True
         if auto_pull:
             llm_cfg["auto_pull"] = True
         if llm_device_map != "auto":

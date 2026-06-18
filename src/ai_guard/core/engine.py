@@ -94,6 +94,16 @@ class DetectionEngine:
     def __init__(self, config: Dict[str, Any], detectors: List[BaseDetector]) -> None:
         self.config = config
         self.detectors = detectors
+        # Ensemble adjudication: when enabled and an LLM detector is present,
+        # regex/NER spans are passed to the LLM as candidates to verify/relabel/
+        # drop (one combined detection + adjudication call). Deterministic
+        # (confidence >= 1.0) regex spans are always kept regardless of the LLM.
+        self._llm_detectors = [d for d in detectors if getattr(d, "can_adjudicate", False)]
+        self._other_detectors = [d for d in detectors if not getattr(d, "can_adjudicate", False)]
+        self._use_adjudication = (
+            bool(config.get("llm_detector", {}).get("adjudicate", False))
+            and bool(self._llm_detectors)
+        )
         self.salt: str = config.get("salt", "")
         self.entity_config: Dict[str, Any] = config.get("entities", {})
         self._max_text_bytes: int = config.get("max_text_bytes", _MAX_TEXT_BYTES)
@@ -115,16 +125,24 @@ class DetectionEngine:
         t_start = time.perf_counter()
         self._check_size(text)
 
-        raw_spans: List[DetectedSpan] = []
-        for detector in self.detectors:
-            t_det = time.perf_counter()
-            spans = detector.detect(text)
-            logger.debug(
-                "%s: %d span(s) detected (%.1f ms)",
-                type(detector).__name__, len(spans),
-                (time.perf_counter() - t_det) * 1000,
-            )
-            raw_spans.extend(spans)
+        if self._use_adjudication:
+            candidate_spans: List[DetectedSpan] = []
+            for detector in self._other_detectors:
+                candidate_spans.extend(detector.detect(text))
+            raw_spans = [s for s in candidate_spans if s.confidence >= 1.0]
+            for llm in self._llm_detectors:
+                raw_spans.extend(llm.detect(text, candidates=candidate_spans))
+        else:
+            raw_spans = []
+            for detector in self.detectors:
+                t_det = time.perf_counter()
+                spans = detector.detect(text)
+                logger.debug(
+                    "%s: %d span(s) detected (%.1f ms)",
+                    type(detector).__name__, len(spans),
+                    (time.perf_counter() - t_det) * 1000,
+                )
+                raw_spans.extend(spans)
 
         raw_spans.extend(self._collect_denylist_spans(text))
         spans = self._filter_spans(raw_spans)
@@ -152,8 +170,18 @@ class DetectionEngine:
                 return await detector.detect_async(text)
             return await asyncio.to_thread(detector.detect, text)
 
-        results = await asyncio.gather(*(_run(d) for d in self.detectors))
-        raw_spans: List[DetectedSpan] = [s for batch in results for s in batch]
+        if self._use_adjudication:
+            cand_results = await asyncio.gather(*(_run(d) for d in self._other_detectors))
+            candidate_spans: List[DetectedSpan] = [s for batch in cand_results for s in batch]
+            raw_spans = [s for s in candidate_spans if s.confidence >= 1.0]
+            llm_results = await asyncio.gather(
+                *(llm.detect_async(text, candidates=candidate_spans) for llm in self._llm_detectors)
+            )
+            for batch in llm_results:
+                raw_spans.extend(batch)
+        else:
+            results = await asyncio.gather(*(_run(d) for d in self.detectors))
+            raw_spans = [s for batch in results for s in batch]
         raw_spans.extend(self._collect_denylist_spans(text))
         spans = self._filter_spans(raw_spans)
         sanitized, violations = self._apply_actions(text, spans)

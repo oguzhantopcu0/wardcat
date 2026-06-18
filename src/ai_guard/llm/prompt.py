@@ -84,7 +84,7 @@ Find every piece of sensitive information in the text below.
 Requested entity types and their definitions:
 
 {entity_definitions}
-
+{adjudication}
 OUTPUT RULES
 ============
 - Return ONLY a valid JSON array — no markdown, no explanation, nothing else.
@@ -180,12 +180,55 @@ Text:
 JSON:"""
 
 
-def build_messages(text: str, entity_types: set[str]) -> list[dict]:
+_ADJUDICATION_TEMPLATE = """
+CANDIDATE FINDINGS
+==================
+Other detection tools flagged the spans below. For EACH candidate decide:
+- KEEP it (include in your output) if it is real PII of the stated type
+- DROP it (omit it) if it is a false positive — e.g. a job title, a role,
+  a common word, a generic number, or text in the wrong language mislabeled
+  as a name
+- RELABEL it (include with the corrected "type") if the type is wrong
+Then ALSO add any PII these tools missed. Your JSON output is the FINAL,
+authoritative list — it replaces the candidates.
+
+Candidates:
+{candidate_lines}
+"""
+
+
+def _format_candidates(candidates: list[tuple[str, str]] | None) -> str:
+    """Render the candidate adjudication block, or '' when there are none."""
+    if not candidates:
+        return ""
+    seen: set[tuple[str, str]] = set()
+    lines: list[str] = []
+    for etype, ctext in candidates:
+        key = (etype, ctext)
+        if key in seen:
+            continue
+        seen.add(key)
+        lines.append(f'  - {etype}: "{ctext}"')
+    if not lines:
+        return ""
+    return _ADJUDICATION_TEMPLATE.format(candidate_lines="\n".join(lines))
+
+
+def build_messages(
+    text: str,
+    entity_types: set[str],
+    candidates: list[tuple[str, str]] | None = None,
+) -> list[dict]:
     """Build system + user messages for chat-capable backends (Transformers, OpenAI chat).
 
     Args:
         text: The input text to scan for PII.
         entity_types: Set of entity type names to detect.
+        candidates: Optional ``(entity_type, text)`` pairs from other detectors
+            (regex/NER) to adjudicate. When provided, the model is asked to
+            verify/relabel/drop each candidate and add anything missed. When
+            ``None`` or empty, the prompt is identical to pure-detection mode —
+            so LLM-only deployments are unaffected.
 
     Returns:
         A list of ``{"role": ..., "content": ...}`` dicts suitable for
@@ -213,7 +256,10 @@ def build_messages(text: str, entity_types: set[str]) -> list[dict]:
         lines.append(f"  {etype}: {desc}")
     entity_definitions = "\n".join(lines)
 
-    system = _SYSTEM_TEMPLATE.format(entity_definitions=entity_definitions)
+    system = _SYSTEM_TEMPLATE.format(
+        entity_definitions=entity_definitions,
+        adjudication=_format_candidates(candidates),
+    )
     user   = _USER_TEMPLATE.format(text=text)
     return [
         {"role": "system", "content": system},
@@ -221,7 +267,11 @@ def build_messages(text: str, entity_types: set[str]) -> list[dict]:
     ]
 
 
-def build_prompt(text: str, entity_types: set[str]) -> str:
+def build_prompt(
+    text: str,
+    entity_types: set[str],
+    candidates: list[tuple[str, str]] | None = None,
+) -> str:
     """Build the full system+user prompt for LLM PII detection.
 
     Args:
@@ -238,6 +288,9 @@ def build_prompt(text: str, entity_types: set[str]) -> str:
         lines.append(f"  {etype}: {desc}")
     entity_definitions = "\n".join(lines)
 
-    system = _SYSTEM_TEMPLATE.format(entity_definitions=entity_definitions)
+    system = _SYSTEM_TEMPLATE.format(
+        entity_definitions=entity_definitions,
+        adjudication=_format_candidates(candidates),
+    )
     user   = _USER_TEMPLATE.format(text=text)
     return f"{system}\n\n{user}"

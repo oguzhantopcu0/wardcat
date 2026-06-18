@@ -32,6 +32,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "api_key":  "",                         # for openai_compat; empty for most on-prem
         "timeout":   60,
         "cache_ttl": 0,                          # LLM response cache TTL in seconds; 0 = disabled
+        "adjudicate": False,                      # ensemble mode: LLM verifies regex/NER candidates
         "entities": {                           # which types to query the LLM for
             "CREDIT_CARD":  {"enabled": True,  "action": "hash"},
             "EMAIL":        {"enabled": True,  "action": "warn"},

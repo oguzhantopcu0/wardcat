@@ -25,6 +25,10 @@ class DetectedSpan:
 class BaseDetector(ABC):
     """Interface that all detectors must implement."""
 
+    # True only for the LLM detector, which can adjudicate other detectors'
+    # candidates. The engine routes candidates to detectors with this flag.
+    can_adjudicate: bool = False
+
     @abstractmethod
     def detect(self, text: str) -> List[DetectedSpan]:
         """Scan text and return the list of found spans."""

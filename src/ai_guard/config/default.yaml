@@ -118,6 +118,12 @@ llm_detector:
   api_key: ""    # OpenAI-compat için; çoğu on-prem boş bırakır
   timeout: 60    # Saniye cinsinden LLM yanıt bekleme süresi
 
+  # Ensemble adjudication: açıkken regex/NER'ın bulduğu adaylar LLM'e
+  # "doğrula / yeniden etiketle / ele" diye gönderilir ve LLM aynı çağrıda
+  # yeni PII de ekler. Deterministik (checksum'lı) regex sonuçları her zaman
+  # korunur. LLM tek başına kullanılıyorsa (regex/NER yok) etkisizdir.
+  adjudicate: false
+
   # LLM'e hangi entity tipleri için bakması istensin
   # Regex/NER'ın yakalayamadığı bağlamsal verileri buraya ekleyin
   entities:
