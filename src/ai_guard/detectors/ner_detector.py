@@ -30,15 +30,57 @@ _SPACY_LABEL_MAP: dict[str, str] = {
 # Span contains digits or characters typical of addresses/codes (No:, /, :)
 _NON_PERSON_CHARS = re.compile(r"[0-9/:]")
 
-# Span contains address-type keywords (Turkish + English)
+# Span contains address-type keywords (Turkish + English + German + French)
 _ADDRESS_KW = re.compile(
     r"\b(?:"
     r"Caddesi|Cad\.|Sokağı|Sokak|Sok\.|Mahallesi|Mah\.|Bulvarı|Blv\."
     r"|Apartmanı|Apt\.|Sitesi|No\b"
     r"|Street|St\.|Avenue|Ave\.|Road|Rd\.|Boulevard|Lane|Drive|Court"
+    r"|Stra(?:ss|ß)e|Gasse|Weg|Platz|Allee"               # German
+    r"|Rue|Avenue|Boulevard|Impasse|Allée|Place"           # French
     r")\b",
     re.IGNORECASE,
 )
+
+# ── Multilingual gazetteer: tokens that are never PII on their own ─────────────
+# NER models often mis-label job titles, HR terms, and abbreviations as
+# PERSON/ORG/ADDRESS (e.g. "Senior Backend Engineer", "New hire", "T.C.").
+# A span composed ENTIRELY of these tokens is rejected.
+_NER_STOPWORDS: frozenset[str] = frozenset({
+    # Job-title / seniority words — EN
+    "senior", "junior", "lead", "principal", "staff", "chief", "head",
+    "manager", "director", "engineer", "developer", "analyst", "officer",
+    "consultant", "specialist", "coordinator", "administrator", "assistant",
+    "backend", "frontend", "fullstack", "software", "hardware", "data",
+    "product", "project", "team", "platform", "new", "hire", "candidate",
+    "employee", "employer", "intern", "contractor", "applicant", "onboarding",
+    # German
+    "ingenieur", "entwickler", "leiter", "geschäftsführer", "mitarbeiter",
+    "berater", "manager", "abteilung", "neuer", "neue", "kandidat",
+    # French
+    "ingénieur", "ingenieur", "développeur", "developpeur", "directeur",
+    "responsable", "chef", "consultant", "employé", "employe", "stagiaire",
+    "candidat", "nouveau", "nouvel",
+    # Turkish
+    "müdür", "mudur", "yönetici", "yonetici", "uzman", "danışman", "danisman",
+    "mühendis", "muhendis", "geliştirici", "gelistirici", "temsilci",
+    "müşteri", "musteri", "çalışan", "calisan", "aday", "yeni", "personel",
+    # Abbreviations / non-name tokens
+    "tc", "t.c", "t.c.", "vkn", "mr", "mrs", "ms", "dr", "herr", "frau",
+})
+
+
+def _is_all_stopwords(text: str) -> bool:
+    """Return True if every token in the span is a known non-PII stopword.
+
+    Tokenizes on whitespace, strips surrounding punctuation, lowercases.
+    An empty result (only punctuation) counts as stopwords too.
+    """
+    tokens = [t.strip(".,;:/-()").lower() for t in text.split()]
+    tokens = [t for t in tokens if t]
+    if not tokens:
+        return True
+    return all(t in _NER_STOPWORDS for t in tokens)
 
 
 def _is_valid_person(text: str) -> bool:
@@ -101,6 +143,11 @@ class NERDetector(BaseDetector):
         for ent in doc.ents:
             mapped = _SPACY_LABEL_MAP.get(ent.label_)
             if not mapped or mapped not in self.enabled_entities:
+                continue
+            # Multilingual gazetteer filter: drop spans that are entirely
+            # job titles, HR terms, or abbreviations (never PII on their own).
+            if _is_all_stopwords(ent.text):
+                logger.debug("NER %s filtered (all stopwords): %r", mapped, ent.text)
                 continue
             # Apply false-positive filter for PERSON entities.
             if mapped == "PERSON" and not _is_valid_person(ent.text):

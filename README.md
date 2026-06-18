@@ -8,7 +8,7 @@
 
 **PII detection and anonymization for LLM inputs** — hybrid regex + NER + on-prem LLM engine.
 
-`ai-guard` scans text for personally identifiable information (PII) before it reaches an LLM, and either warns about or replaces the sensitive data with salted SHA-256 hashes. It supports Turkish and English out of the box.
+`ai-guard` scans text for personally identifiable information (PII) before it reaches an LLM, and either warns about or replaces the sensitive data with salted SHA-256 hashes. It supports Turkish, English, German, and French out of the box.
 
 ```python
 from ai_guard import LLMGuard
@@ -30,13 +30,14 @@ print(result.sanitized_text)
 ## Features
 
 - **Hybrid detection** — Regex + SpaCy NER + on-prem LLM (Ollama, OpenAI-compatible, HuggingFace Transformers)
-- **Two actions** — `warn` (keep text, report violation) and `hash` (replace with `[TYPE:16hex]` using SHA-256 + salt)
-- **Checksum validation** — TC_ID (Nüfus İdaresi algorithm) and IBAN (mod-97) validated before flagging — eliminates false positives
+- **Four actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking)
+- **Checksum validation** — TC_ID (Nüfus İdaresi algorithm), IBAN (mod-97), and CREDIT_CARD (Luhn mod-10) validated before flagging — eliminates false positives
 - **Rainbow table protection** — user-defined salt for all hashes
 - **Two APIs** — method chaining (programmatic) and YAML (declarative)
 - **CLI** — `ai-guard scan`, `ai-guard batch`, `ai-guard models`
-- **Multilingual support** — Turkish, English, French, Spanish, Italian, Dutch, German address patterns; TC_ID, IBAN, SSN, NIN, DNI/NIE, UK postcodes, US ZIP+4 and more
-- **Passport detection** — LLM-based contextual passport number detection for any country
+- **Multilingual support** — Turkish, English, German, and French for names, addresses, birth dates, and phone numbers; plus Spanish, Italian, Dutch address patterns; TC_ID, IBAN, SSN, NIN, DNI/NIE, UK postcodes, US ZIP+4, EU VAT numbers and more
+- **Secret detection** — API keys and tokens (OpenAI, Anthropic, Stripe, AWS, Google, GitHub, GitLab, Slack, Twilio, SendGrid, npm) and PEM private keys
+- **Passport detection** — contextual passport number detection (regex keyword-based + LLM) for any country
 - **DoS protection** — inputs exceeding 500 KB are rejected
 - **Safe logging API** — `result.redacted()` returns a PII-free dict for logs and APIs
 
@@ -286,19 +287,25 @@ ai-guard models pull llama3.1:8b
 
 | Entity | Default Action | Description |
 |---|---|---|
-| `CREDIT_CARD` | `hash` | Visa, MC, Amex, Discover — with or without separators |
+| `CREDIT_CARD` | `hash` | Visa, MC, Amex, Discover — with or without separators; Luhn (mod-10) validated |
 | `IBAN` | `hash` | International IBAN — mod-97 checksum validated |
 | `SSN` | `hash` | US Social Security Number (123-45-6789) |
 | `NIN` | `hash` | UK National Insurance Number (AB123456C) |
 | `TC_ID` | `hash` | Turkish national ID — 11 digits, Nüfus İdaresi checksum validated |
-| `EU_NATIONAL_ID` | `hash` | Spanish DNI (12345678Z) and NIE (X1234567L) |
+| `EU_NATIONAL_ID` | `hash` | Spanish DNI (12345678Z) / NIE (X1234567L), French INSEE (15 digits) |
+| `CODICE_FISCALE` | `hash` | Italian tax code (RSSMRA85T10A562S) |
+| `VAT_NUMBER` | `warn` | EU VAT (DE/FR/GB/IT/ES/AT/NL prefixed) + Turkish Vergi No (keyword-based) |
+| `PASSPORT` | `hash` | Passport numbers — keyword-based (`passport no:`, `pasaport`, `Reisepass`, `passeport`) |
+| `DATE_OF_BIRTH` | `hash` | Birth dates — month names (TR/EN/DE/FR) or keyword + numeric/ISO date |
+| `VEHICLE_PLATE` | `warn` | Turkish vehicle plates (34 ABC 123) |
+| `FINANCIAL_AMOUNT` | `redact` | Monetary amounts (₺/$/€/£, `45.000 TL`, `2.1 milyon TL`) — **off by default** |
 
 #### Contact & Location
 
 | Entity | Default Action | Description |
 |---|---|---|
 | `EMAIL` | `warn` | RFC-compliant email addresses |
-| `PHONE` | `warn` | Turkish (`0`, `+90`) and international E.164 (`+1`, `+44`, …) |
+| `PHONE` | `warn` | Turkish (`0`, `+90`), French national (`01 23 45 67 89`), German mobile (`0151 …`), and international E.164 (`+1`, `+44`, …) |
 | `ADDRESS` | `warn` | Turkish (Cad., Sok., Mah.), English (Street, Avenue, Road…), French (Rue, Allée…), Spanish (Calle, Avenida…), Italian (Piazza, Corso…), Dutch (straat, gracht…), German (Straße, Weg, Platz…) |
 | `POSTAL_CODE` | `warn` | Turkish postal codes (01000–81999) |
 | `UK_POSTAL_CODE` | `warn` | British postcodes (SW1A 1AA, GU21 6TH, M1 1AE) |
@@ -313,7 +320,7 @@ ai-guard models pull llama3.1:8b
 | `MAC_ADDRESS` | `warn` | Network hardware address (00:1A:2B:3C:4D:5E) |
 | `UUID` | `warn` | RFC 4122 UUID / GUID |
 | `JWT` | `hash` | JSON Web Token (starts with `eyJ`) |
-| `CUSTOM_SECRET` | `hash` | Known token prefixes: `sk-`, `ghp_`, `AKIA`, `ya29.`, `xoxb-`, `xoxp-` |
+| `CUSTOM_SECRET` | `hash` | API keys & tokens: OpenAI/Anthropic (`sk-`, `sk-ant-`), Stripe (`sk_live_`), AWS (`AKIA`), Google (`AIza`, `ya29.`), GitHub (`ghp_`), GitLab (`glpat-`), Slack (`xoxb-`, webhook URLs), Twilio (`SK`/`AC`), SendGrid (`SG.`), npm (`npm_`), and PEM private-key blocks |
 
 ### SpaCy NER (requires `spacy` + language model)
 
@@ -322,6 +329,8 @@ ai-guard models pull llama3.1:8b
 | `PERSON` | `hash` | Person names (first + last) — cross-language |
 | `ORG` | `warn` | Organization / company names |
 | `ADDRESS` | `warn` | Location entities (complements regex) |
+
+> **Language & NER models:** the regex and LLM layers are multilingual by design. The SpaCy layer detects names with the model you load — set `spacy_model` to match your text (`en_core_web_sm`, `de_core_news_sm`, `fr_core_news_sm`, `tr_core_news_md`, …). Running, say, the Turkish model on German text produces noisy results, so pick the model per language (or rely on the LLM layer for cross-language names). A multilingual gazetteer filters out job titles, HR terms, and abbreviations (EN/DE/FR/TR) that NER models commonly mislabel.
 
 ### LLM (requires on-prem LLM backend)
 
@@ -357,8 +366,9 @@ class Violation:
     original:    str          # raw value from input — contains PII
     start:       int          # start index in original text
     end:         int          # end index in original text
-    action:      Action       # Action.WARN | Action.HASH
-    replacement: str | None   # "[TYPE:16hex]" for hash, None for warn
+    action:      Action       # WARN | HASH | REDACT | MASK
+    replacement: str | None   # "[TYPE:16hex]" for hash, "[TYPE]" for redact, masked value for mask, None for warn
+    confidence:  float        # 1.0 regex/checksum · 0.85 NER/LLM
 ```
 
 ---
@@ -430,8 +440,8 @@ ai-guard/
 │   │   └── models.py         # Action, Violation, ScanResult
 │   ├── detectors/
 │   │   ├── base.py           # BaseDetector ABC
-│   │   ├── regex_detector.py # 15 regex patterns with checksum validation
-│   │   ├── ner_detector.py   # SpaCy NER (English + Turkish)
+│   │   ├── regex_detector.py # 25+ regex patterns with checksum/Luhn validation
+│   │   ├── ner_detector.py   # SpaCy NER (multilingual) + gazetteer FP filter
 │   │   └── llm_detector.py   # LLM-based detection with hallucination filter
 │   ├── llm/
 │   │   ├── backends/         # ollama, openai_compat, transformers
@@ -478,9 +488,11 @@ uv run pytest --cov=src/ai_guard --cov-report=term-missing
 | Adjacent IBANs | Two IBANs without separator cannot be parsed separately |
 | Cyrillic homoglyphs | `аli@test.com` (Cyrillic `а`) bypasses ASCII regex |
 | Transformers backend | Not tested with a real model — mock-only unit tests |
-| `US_ZIP_CODE` | Only ZIP+4 format (`12345-6789`) — plain 5-digit ZIPs skipped to avoid false positives |
-| `EU_NATIONAL_ID` | Only Spanish DNI/NIE via regex; French INSEE and German IDs require LLM layer |
-| `PASSPORT` | No regex — contextual LLM detection only; requires `use_llm=True` |
+| `US_ZIP_CODE` | Plain 5-digit ZIPs only matched with a `ZIP:` keyword; otherwise ZIP+4 (`12345-6789`) required to avoid false positives |
+| `EU_NATIONAL_ID` | Spanish DNI/NIE and French INSEE via regex; German IDs need the LLM layer |
+| `PASSPORT` | Regex requires a passport keyword (`passport no:`, `pasaport`, `Reisepass`, `passeport`); the LLM layer catches unlabeled cases |
+| `FINANCIAL_AMOUNT` / `VAT_NUMBER` | `FINANCIAL_AMOUNT` is off by default (enable for confidential docs); bare Turkish Vergi No needs a keyword |
+| Multilingual NER | One SpaCy model loads per instance — set `spacy_model` to match the text language; auto language detection is not yet built in |
 | European addresses | Regex requires a recognizable street-type keyword (Straße, Rue, Calle…); unnumbered informal addresses may be missed |
 | Turkish NER (`tr_core_news_trf`) | Transformer model incompatible with SpaCy 3.5+ — use `tr_core_news_md` or `tr_core_news_lg` |
 | Turkish NER quality | `tr_core_news_md/lg` trained on news text; may miss names in non-standard contexts. For best results combine with `use_llm=True` |

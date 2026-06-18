@@ -283,6 +283,33 @@ class TestModelFallback:
         )
 
 
+# ── Gazetteer stopword filter (no model required) ──────────────────────────────
+
+class TestNERStopwordFilter:
+    """_is_all_stopwords runs before any model output is accepted."""
+
+    @pytest.mark.parametrize("text", [
+        "Senior Backend Engineer",   # job title mislabeled as PERSON
+        "New hire",                  # HR term mislabeled as ADDRESS
+        "T.C.",                      # abbreviation
+        "Müdür",                     # Turkish job title
+        "Ingénieur",                 # French job title
+        "Geschäftsführer",           # German job title
+    ])
+    def test_all_stopwords_rejected(self, text):
+        from ai_guard.detectors.ner_detector import _is_all_stopwords
+        assert _is_all_stopwords(text) is True
+
+    @pytest.mark.parametrize("text", [
+        "John Anderson",
+        "Senior Klaus Müller",       # contains a real name → not all stopwords
+        "Ayşe Yılmaz",
+    ])
+    def test_real_names_pass(self, text):
+        from ai_guard.detectors.ner_detector import _is_all_stopwords
+        assert _is_all_stopwords(text) is False
+
+
 # ── Error handling ────────────────────────────────────────────────────────────
 
 class TestNERErrorHandling:

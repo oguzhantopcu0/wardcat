@@ -246,6 +246,71 @@ talep sahibinin beyan ettiği hesaba aktarılacaktır.
 ))
 
 
+# ── 7. DE — Almanca müşteri / fatura belgesi ───────────────────────────────────
+CASES.append((
+    "DE · Almanca Müşteri / Fatura",
+    """\
+RECHNUNG UND KUNDENDATEN — Vorgang Nr. RG-2024-4471
+
+Sehr geehrter Herr Klaus Müller,
+
+vielen Dank für Ihre Bestellung. Ihre Kundendaten wurden wie folgt
+aktualisiert. Geburtsdatum: 15. März 1988. Ihre E-Mail-Adresse
+klaus.mueller@beispiel.de und Ihre Mobilnummer 0151 23456789 sind nun
+hinterlegt.
+
+Die Zahlung erfolgt per Lastschrift von IBAN DE89 3704 0044 0532 0130 00.
+Unsere Umsatzsteuer-Identifikationsnummer lautet USt-IdNr DE123456789.
+Der Rechnungsbetrag beläuft sich auf €12.500.
+
+Ihre Kreditkarte 4111 1111 1111 1111 wurde für zukünftige Zahlungen
+vorgemerkt. Bei Rückfragen steht Ihnen unser Mitarbeiter zur Verfügung.
+""",
+    [
+        ("PERSON", "Klaus Müller"),
+        ("DATE_OF_BIRTH", "15. März 1988"),
+        ("EMAIL", "klaus.mueller@beispiel.de"),
+        ("PHONE", "0151 23456789"),
+        ("IBAN", "DE89 3704 0044 0532 0130 00"),
+        ("VAT_NUMBER", "DE123456789"),
+        ("FINANCIAL_AMOUNT", "€12.500"),
+        ("CREDIT_CARD", "4111 1111 1111 1111"),
+    ],
+))
+
+# ── 8. FR — Fransızca sözleşme / sağlık belgesi ───────────────────────────────
+CASES.append((
+    "FR · Fransızca Sözleşme",
+    """\
+CONTRAT DE SERVICE ET DONNÉES PERSONNELLES — Dossier FR-2024-9981
+
+Cliente : Madame Sophie Laurent
+Née le 3 février 1990.
+
+Nous confirmons les coordonnées de Madame Sophie Laurent. Son adresse
+e-mail sophie.laurent@exemple.fr et son numéro de téléphone
+01 23 45 67 89 ont été enregistrés. Son numéro de sécurité sociale
+180057001012345 figure également au dossier.
+
+Les paiements seront prélevés sur le compte IBAN
+FR14 2004 1010 0505 0001 3M02 606. Le numéro de TVA de la société est
+FRAB123456789. Le montant total du contrat s'élève à €45.000.
+
+Merci de confirmer dans un délai d'un mois.
+""",
+    [
+        ("PERSON", "Sophie Laurent"),
+        ("DATE_OF_BIRTH", "3 février 1990"),
+        ("EMAIL", "sophie.laurent@exemple.fr"),
+        ("PHONE", "01 23 45 67 89"),
+        ("EU_NATIONAL_ID", "180057001012345"),
+        ("IBAN", "FR14 2004 1010 0505 0001 3M02 606"),
+        ("VAT_NUMBER", "FRAB123456789"),
+        ("FINANCIAL_AMOUNT", "€45.000"),
+    ],
+))
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # YARDIMCILAR
 # ═══════════════════════════════════════════════════════════════════════════════

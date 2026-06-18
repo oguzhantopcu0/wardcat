@@ -59,6 +59,10 @@ entities:
     enabled: false   # Gürültülü olabilir; gizli belge taramasında açın
     action: redact
 
+  VAT_NUMBER:        # Vergi no: DE123456789, FRXX999999999, GB999999999, TR Vergi No
+    enabled: true
+    action: warn
+
   # ── Global identity / technical ────────────────────────────
   UUID:              # RFC 4122 UUID: 550e8400-e29b-41d4-a716-446655440000
     enabled: true

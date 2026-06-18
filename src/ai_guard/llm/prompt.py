@@ -62,10 +62,21 @@ _ENTITY_DESCRIPTIONS: dict[str, str] = {
         "Extract ONLY when a currency symbol or code is present. "
         "Do NOT extract bare numbers, percentages, or quantities without a currency marker."
     ),
+    "VAT_NUMBER": (
+        "VAT / tax identification number — EU country-prefixed VAT "
+        "(e.g. German 'DE123456789', French 'FRAB123456789', British 'GB123456789', "
+        "Italian 'IT12345678901') or Turkish tax number labeled 'Vergi No' / 'VKN' "
+        "(10 digits). Often introduced by 'VAT', 'USt-IdNr', 'TVA', 'Vergi No'."
+    ),
 }
 
 _SYSTEM_TEMPLATE = """\
 You are a PII (Personally Identifiable Information) detection engine.
+
+The input text may be written in Turkish, English, German, or French — or a
+mix of these. Detect PII in ALL of these languages equally well. Person names,
+addresses, and birth dates follow each language's local conventions
+(e.g. German 'geboren am 15. März 1988', French 'né le 3 février 1990').
 
 TASK
 ====
@@ -154,6 +165,12 @@ Output: []
 
 Input: "Toplantı saat 14:00'te 3. katta."
 Output: []
+
+Input: "Sehr geehrter Herr Klaus Müller, geboren am 15. März 1988, Ihre USt-IdNr DE123456789 wurde bestätigt. Kontakt: k.mueller@firma.de"
+Output: [{{"type":"PERSON","text":"Klaus Müller"}},{{"type":"DATE_OF_BIRTH","text":"15. März 1988"}},{{"type":"VAT_NUMBER","text":"DE123456789"}},{{"type":"EMAIL","text":"k.mueller@firma.de"}}]
+
+Input: "Madame Sophie Laurent, née le 3 février 1990, téléphone 01 23 45 67 89, IBAN FR14 2004 1010 0505 0001 3M02 606."
+Output: [{{"type":"PERSON","text":"Sophie Laurent"}},{{"type":"DATE_OF_BIRTH","text":"3 février 1990"}},{{"type":"PHONE","text":"01 23 45 67 89"}},{{"type":"IBAN","text":"FR14 2004 1010 0505 0001 3M02 606"}}]
 """
 
 _USER_TEMPLATE = """\

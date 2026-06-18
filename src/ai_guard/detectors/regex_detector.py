@@ -42,6 +42,12 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         # Turkish: 0 / +90 / 90 prefix
         r"(?:\+90|90|0)[\s\-]?(?:\(?\d{3}\)?)[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}"
         r"|"
+        # French national: 0X followed by 4 pairs, e.g. 01 23 45 67 89 / 01.23.45.67.89
+        r"0[1-9](?:[\s.]\d{2}){4}"
+        r"|"
+        # German mobile: 015x/016x/017x + 6-8 digits, e.g. 0151 23456789
+        r"01[5-7]\d[\s/\-]?\d{6,8}"
+        r"|"
         # International E.164 (non-Turkish): +1..., +44..., +49..., etc.
         r"\+(?!90)[1-9]\d{1,3}[\s\-]?\d{2,4}[\s\-]?\d{2,4}[\s\-]?\d{0,4}"
         r")"
@@ -190,14 +196,25 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         # Strategy 1: DD <MonthName> YYYY — only plausible birth years (1900–2015),
         # no keyword required. Years 2016+ require a keyword to avoid false positives
         # on future/effective calendar dates (e.g. "15 Haziran 2025 itibarıyla").
-        r"\b\d{1,2}\s+"
+        r"\b\d{1,2}\.?\s+"
+        # Turkish
         r"(?:Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık"
+        # English
         r"|January|February|March|April|May|June|July|August|September|October|November|December"
-        r"|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+        r"|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec"
+        # German
+        r"|Januar|Februar|März|Mai|Juni|Juli|Oktober|Dezember|Mär|Okt|Dez"
+        # French
+        r"|janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre"
+        r"|févr|avr|juil|sept|déc)"
         r"\s+(?:19\d{2}|20(?:0\d|1[0-5]))\b"
         r"|"
         # Strategy 2: numeric/ISO formats — keyword required (any year)
-        r"(?:doğum(?:\s+tarihi)?|d\.?t\.?|born(?:\s+on)?|date\s+of\s+birth|d\.?o\.?b\.?|birthday)\s*:?\s*"
+        # Keywords: TR, EN, German (Geburtsdatum/geboren am/geb.),
+        # French (date de naissance / né(e) le)
+        r"(?:doğum(?:\s+tarihi)?|d\.?t\.?|born(?:\s+on)?|date\s+of\s+birth|d\.?o\.?b\.?|birthday"
+        r"|geburtsdatum|geboren\s+am|geb\.?"
+        r"|date\s+de\s+naissance|n[ée]e?\s+le)\s*:?\s*"
         r"(?:\d{1,2}[./]\d{1,2}[./](?:19|20)\d{2}|(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))",
         re.IGNORECASE,
     ),
@@ -213,25 +230,62 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
         r"\b\d+(?:[.,]\d+)*(?:\s*(?:milyon|milyar|bin))?\s*(?:TL|lira)\b",
         re.IGNORECASE,
     ),
+    # ── VAT / Tax Number ──────────────────────────────────────────────
+    # Country-prefixed EU VAT numbers (distinctive) + context-required
+    # Turkish tax number (Vergi No / VKN — 10 digits, ambiguous without a keyword).
+    # DE: DE123456789 · FR: FRXX999999999 · GB: GB999999999(999) ·
+    # IT: IT12345678901 · ES: ESX9999999X · AT: ATU99999999 · NL: NL999999999B99
+    "VAT_NUMBER": (
+        r"\b(?:"
+        r"DE\d{9}"
+        r"|FR[A-Z0-9]{2}\d{9}"
+        r"|GB\d{9}(?:\d{3})?"
+        r"|IT\d{11}"
+        r"|ES[A-Z0-9]\d{7}[A-Z0-9]"
+        r"|ATU\d{8}"
+        r"|NL\d{9}B\d{2}"
+        r")\b"
+        r"|(?i:vergi\s*(?:kimlik\s*)?no|vkn)\s*:?\s*\d{10}\b",
+        0,
+    ),
     # ── Custom Secret ─────────────────────────────────────────────────
     # Known token/credential prefix patterns — services with well-defined formats.
     # Contextual detection (password=VALUE) is delegated to the LLM detector.
     # Supported:
-    #   sk-...       — OpenAI / Anthropic API key
-    #   ghp_/ghs_/gho_ — GitHub Personal/Server/OAuth token
-    #   AKIA...      — AWS Access Key ID
-    #   ya29.        — Google OAuth2 access token
-    #   xoxb-/xoxp-  — Slack Bot/User token
+    #   sk-... / sk-ant-...   — OpenAI / Anthropic API key
+    #   sk_live_/sk_test_/rk_live_ — Stripe secret/restricted key
+    #   ghp_/ghs_/gho_        — GitHub Personal/Server/OAuth token
+    #   glpat-                — GitLab personal access token
+    #   AKIA...               — AWS Access Key ID
+    #   AIza...               — Google API key
+    #   ya29.                 — Google OAuth2 access token
+    #   xoxb-/xoxp-           — Slack Bot/User token
+    #   SG....                — SendGrid API key
+    #   SK<32hex>/AC<32hex>   — Twilio API key / Account SID
+    #   npm_...               — npm access token
+    #   hooks.slack.com/...   — Slack incoming webhook URL
+    #   -----BEGIN ... PRIVATE KEY----- — PEM private key block
     "CUSTOM_SECRET": (
-        r"\b(?:"
-        r"sk-[A-Za-z0-9_\-]{8,}"
+        r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----"
+        r"[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----"
+        r"|https://hooks\.slack\.com/services/[A-Za-z0-9/_\-]{20,}"
+        r"|\b(?:"
+        r"sk-ant-[A-Za-z0-9_\-]{16,}"
+        r"|sk-[A-Za-z0-9_\-]{8,}"
+        r"|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{10,}"
         r"|ghp_[A-Za-z0-9]{20,}"
         r"|ghs_[A-Za-z0-9]{20,}"
         r"|gho_[A-Za-z0-9]{20,}"
+        r"|glpat-[A-Za-z0-9_\-]{20,}"
         r"|AKIA[A-Z0-9]{16}"
+        r"|AIza[A-Za-z0-9_\-]{35}"
         r"|ya29\.[A-Za-z0-9_\-]{20,}"
         r"|xoxb-[A-Za-z0-9\-]{20,}"
         r"|xoxp-[A-Za-z0-9\-]{30,}"
+        r"|SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}"
+        r"|SK[0-9a-fA-F]{32}"
+        r"|AC[0-9a-fA-F]{32}"
+        r"|npm_[A-Za-z0-9]{36}"
         r")",
         0,
     ),
@@ -384,6 +438,26 @@ def _validate_iban(value: str) -> bool:
         return False
 
 
+def _validate_luhn(value: str) -> bool:
+    """Luhn (mod-10) checksum validation for credit/debit card numbers.
+
+    Strips non-digits, then applies the standard Luhn algorithm. Rejects
+    format-valid but mathematically impossible card numbers, eliminating a
+    large class of false positives (random 16-digit sequences).
+    """
+    digits = [int(c) for c in value if c.isdigit()]
+    if len(digits) < 12:
+        return False
+    checksum = 0
+    for i, d in enumerate(reversed(digits)):
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        checksum += d
+    return checksum % 10 == 0
+
+
 def _validate_tc_id(value: str) -> bool:
     """TC National ID checksum validation (Turkish Civil Registration algorithm).
 
@@ -402,6 +476,16 @@ def _validate_tc_id(value: str) -> bool:
     if sum(d[:10]) % 10 != d[10]:
         return False
     return True
+
+
+# Entity-type → checksum/structural validator. A regex match is only accepted
+# as a violation when its validator (if any) returns True. Adding a new
+# validated entity is a one-line registry entry — no changes to detect().
+_VALIDATORS: Dict[str, "callable[[str], bool]"] = {
+    "TC_ID":       _validate_tc_id,
+    "IBAN":        _validate_iban,
+    "CREDIT_CARD": _validate_luhn,
+}
 
 
 class RegexDetector(BaseDetector):
@@ -449,19 +533,13 @@ class RegexDetector(BaseDetector):
                 # "password@host" (the password is captured as CUSTOM_SECRET).
                 if entity_type == "EMAIL" and match.start() in cred_pwd_starts:
                     continue
-                # Checksum validations — suppress false positives
-                if entity_type == "TC_ID" and not _validate_tc_id(value):
+                # Checksum/structural validation — suppress false positives.
+                validator = _VALIDATORS.get(entity_type)
+                if validator is not None and not validator(value):
                     logger.debug(
-                        "TC_ID format match rejected (invalid checksum): %r — "
-                        "if this is real PII, the number may be incorrectly formatted.",
-                        value,
-                    )
-                    continue
-                if entity_type == "IBAN" and not _validate_iban(value):
-                    logger.debug(
-                        "IBAN format match rejected (invalid checksum): %r — "
-                        "if this is real PII, the number may be incorrectly formatted.",
-                        value,
+                        "%s format match rejected (failed validation): %r — "
+                        "if this is real PII, the value may be incorrectly formatted.",
+                        entity_type, value,
                     )
                     continue
                 spans.append(
