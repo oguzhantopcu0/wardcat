@@ -57,6 +57,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "US_ZIP_CODE":    {"enabled": True,  "action": "warn"},
             "CODICE_FISCALE": {"enabled": True,  "action": "hash"},
             "VAT_NUMBER":     {"enabled": True,  "action": "warn"},
+            # GDPR Art.9 special-category data — LLM-only, off by default
+            "SPECIAL_CATEGORY": {"enabled": False, "action": "redact"},
         },
     },
     "entities": {
@@ -88,6 +90,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "FINANCIAL_AMOUNT": {"enabled": False, "action": "redact"},
         # VAT / tax numbers (EU country-prefixed + Turkish Vergi No)
         "VAT_NUMBER": {"enabled": True, "action": "warn"},
+        # GDPR Art.9 special-category data (health, religion, ethnicity, etc.)
+        # LLM-only, semantic — no regex/NER; enable via llm_detector.entities
+        "SPECIAL_CATEGORY": {"enabled": False, "action": "redact"},
     },
 }
 

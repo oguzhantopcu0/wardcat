@@ -144,3 +144,7 @@ llm_detector:
     POSTAL_CODE:   { enabled: true,  action: warn }
     NIN:           { enabled: true,  action: hash }
     CUSTOM_SECRET: { enabled: false, action: hash }  # context-specific secrets
+    # GDPR Madde 9 özel nitelikli veri (sağlık, din, etnik köken, siyasi görüş,
+    # cinsel yönelim, sendika, genetik/biyometrik). Anlamsal — sadece LLM yakalar.
+    # Öznel ve yanlış-pozitif riski yüksek olduğu için varsayılan kapalı.
+    SPECIAL_CATEGORY: { enabled: false, action: redact }

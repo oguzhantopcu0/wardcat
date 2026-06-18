@@ -68,6 +68,17 @@ _ENTITY_DESCRIPTIONS: dict[str, str] = {
         "Italian 'IT12345678901') or Turkish tax number labeled 'Vergi No' / 'VKN' "
         "(10 digits). Often introduced by 'VAT', 'USt-IdNr', 'TVA', 'Vergi No'."
     ),
+    "SPECIAL_CATEGORY": (
+        "GDPR Article 9 special-category personal data — an EXPLICIT statement "
+        "revealing a specific person's: health/medical condition, racial or ethnic "
+        "origin, political opinion, religious or philosophical belief, trade-union "
+        "membership, sex life or sexual orientation, or genetic/biometric data "
+        "(also criminal history). Extract the minimal phrase that reveals it "
+        "(e.g. 'HIV positive', 'depresyon tedavisi görüyor', 'member of the Green Party', "
+        "'pratik eden Müslüman', 'eşcinsel'). Only extract EXPLICIT facts about an "
+        "identifiable person — do NOT extract general medical discussion, hypotheticals, "
+        "feelings ('bugün yorgunum'), or ambiguous wording."
+    ),
 }
 
 _SYSTEM_TEMPLATE = """\
@@ -171,6 +182,15 @@ Output: [{{"type":"PERSON","text":"Klaus Müller"}},{{"type":"DATE_OF_BIRTH","te
 
 Input: "Madame Sophie Laurent, née le 3 février 1990, téléphone 01 23 45 67 89, IBAN FR14 2004 1010 0505 0001 3M02 606."
 Output: [{{"type":"PERSON","text":"Sophie Laurent"}},{{"type":"DATE_OF_BIRTH","text":"3 février 1990"}},{{"type":"PHONE","text":"01 23 45 67 89"}},{{"type":"IBAN","text":"FR14 2004 1010 0505 0001 3M02 606"}}]
+
+Input: "Hasta Mehmet Yılmaz HIV pozitif olup düzenli tedavi görmektedir."
+Output: [{{"type":"PERSON","text":"Mehmet Yılmaz"}},{{"type":"SPECIAL_CATEGORY","text":"HIV pozitif"}}]
+
+Input: "The applicant noted she is an active member of the Green Party and a practising Catholic."
+Output: [{{"type":"SPECIAL_CATEGORY","text":"member of the Green Party"}},{{"type":"SPECIAL_CATEGORY","text":"practising Catholic"}}]
+
+Input: "Bugün biraz yorgunum, erken çıkacağım."
+Output: []
 """
 
 _USER_TEMPLATE = """\
