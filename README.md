@@ -493,6 +493,13 @@ uv run pytest tests/unit/
 # NER tests (requires SpaCy model)
 uv run pytest -m ner
 
+# Live LLM tests against a real Ollama model (auto-skipped if unavailable)
+uv run pytest -m slow tests/integration/test_llm_live.py
+# Pick the model: AIGUARD_TEST_LLM_MODEL=llama3.2:1b uv run pytest -m slow ...
+
+# Skip slow tests (fast run)
+uv run pytest -m "not slow"
+
 # Coverage report
 uv run pytest --cov=src/ai_guard --cov-report=term-missing
 ```
