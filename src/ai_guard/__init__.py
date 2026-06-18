@@ -21,16 +21,29 @@ except PackageNotFoundError:
     __version__ = "0.2.0b1"  # development environment fallback
 
 __all__ = [
-    "LLMGuard", "ScanResult", "Violation", "Action", "__version__", "redacted",
+    "LLMGuard",
+    "ScanResult",
+    "Violation",
+    "Action",
+    "__version__",
+    "redacted",
     # Entity group helpers
-    "core_entities", "financial_entities", "turkish_entities", "european_entities",
-    "uk_entities", "us_entities", "network_entities", "identity_entities", "all_entities",
+    "core_entities",
+    "financial_entities",
+    "turkish_entities",
+    "european_entities",
+    "uk_entities",
+    "us_entities",
+    "network_entities",
+    "identity_entities",
+    "all_entities",
 ]
 
 
 def redacted(result: "ScanResult") -> dict:  # noqa: F821
     """Convenience wrapper — equivalent to ``result.redacted()``."""
     return result.redacted()
+
 
 # Library logging best practice: NullHandler is added; the application configures the handler.
 logging.getLogger(__name__).addHandler(logging.NullHandler())

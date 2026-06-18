@@ -4,6 +4,7 @@ Async scan API tests.
 Covers scan_async() and scan_batch_async() — both run in a thread pool
 so they are safe to call from async code without blocking the event loop.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,6 +40,7 @@ class TestScanAsync:
 
     def test_scan_async_concurrent(self, guard):
         """Multiple concurrent scan_async calls should all succeed."""
+
         async def _run():
             tasks = [
                 guard.scan_async("email: a@b.com"),
@@ -116,10 +118,10 @@ class TestScanAsyncActions:
         assert any(v.entity_type == "PERSON" for v in result.violations)
 
     def test_scan_async_oversized_input_raises(self):
-        import pytest
         import tempfile
+
+        import pytest
         import yaml
-        from pathlib import Path
 
         with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
             yaml.dump({"max_text_bytes": 10}, f)

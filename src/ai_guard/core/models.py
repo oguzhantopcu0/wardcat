@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -25,22 +24,44 @@ class Action(str, Enum):
 
 # Known entity types — for typo checking and IDE support.
 # A warning is issued if a type not in this list is configured.
-KNOWN_ENTITY_TYPES: frozenset[str] = frozenset({
-    "PERSON", "ORG", "EMAIL", "PHONE", "CREDIT_CARD", "IBAN",
-    "TC_ID", "IP_ADDRESS", "IPv6", "ADDRESS", "POSTAL_CODE", "CUSTOM_SECRET",
-    "UUID", "SSN", "MAC_ADDRESS", "JWT", "NIN",
-    "UK_POSTAL_CODE", "US_ZIP_CODE", "EU_NATIONAL_ID", "PASSPORT",
-    "CODICE_FISCALE", "DATE_OF_BIRTH", "VEHICLE_PLATE", "FINANCIAL_AMOUNT",
-    "VAT_NUMBER", "SPECIAL_CATEGORY",
-})
+KNOWN_ENTITY_TYPES: frozenset[str] = frozenset(
+    {
+        "PERSON",
+        "ORG",
+        "EMAIL",
+        "PHONE",
+        "CREDIT_CARD",
+        "IBAN",
+        "TC_ID",
+        "IP_ADDRESS",
+        "IPv6",
+        "ADDRESS",
+        "POSTAL_CODE",
+        "CUSTOM_SECRET",
+        "UUID",
+        "SSN",
+        "MAC_ADDRESS",
+        "JWT",
+        "NIN",
+        "UK_POSTAL_CODE",
+        "US_ZIP_CODE",
+        "EU_NATIONAL_ID",
+        "PASSPORT",
+        "CODICE_FISCALE",
+        "DATE_OF_BIRTH",
+        "VEHICLE_PLATE",
+        "FINANCIAL_AMOUNT",
+        "VAT_NUMBER",
+        "SPECIAL_CATEGORY",
+    }
+)
 
 
 def warn_unknown_entity(entity_type: str) -> None:
     """Warn when an unknown entity type is used."""
     if entity_type not in KNOWN_ENTITY_TYPES:
         logger.warning(
-            "Unknown entity type: %r — this type is not recognized. "
-            "Typo? Valid types: %s",
+            "Unknown entity type: %r — this type is not recognized. Typo? Valid types: %s",
             entity_type,
             sorted(KNOWN_ENTITY_TYPES),
         )
@@ -91,7 +112,7 @@ class ScanResult:
     """Unmodified original input. **Contains raw PII — do not expose externally.**"""
     sanitized_text: str
     """Output text with PII masked/reported."""
-    violations: List[Violation] = field(default_factory=list)
+    violations: list[Violation] = field(default_factory=list)
     """List of all detected violations. The ``original`` fields contain raw PII."""
     scan_error: str | None = None
     """Set when this item failed during :meth:`~ai_guard.LLMGuard.scan_batch`.
@@ -118,24 +139,21 @@ class ScanResult:
             Raw PII values are not included.
         """
         return {
-            "is_clean":       self.is_clean,
+            "is_clean": self.is_clean,
             "sanitized_text": self.sanitized_text,
-            "scan_error":     self.scan_error,
+            "scan_error": self.scan_error,
             "violations": [
                 {
                     "entity_type": v.entity_type,
-                    "start":       v.start,
-                    "end":         v.end,
-                    "action":      v.action.value,
+                    "start": v.start,
+                    "end": v.end,
+                    "action": v.action.value,
                     "replacement": v.replacement,
-                    "confidence":  v.confidence,
+                    "confidence": v.confidence,
                 }
                 for v in self.violations
             ],
         }
 
     def __repr__(self) -> str:
-        return (
-            f"ScanResult(is_clean={self.is_clean}, "
-            f"violations={len(self.violations)})"
-        )
+        return f"ScanResult(is_clean={self.is_clean}, violations={len(self.violations)})"

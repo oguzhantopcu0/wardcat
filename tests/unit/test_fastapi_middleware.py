@@ -4,6 +4,7 @@ Tests for ai_guard.integrations.fastapi.AIGuardMiddleware.
 Uses httpx.AsyncClient with a minimal ASGI app to simulate real requests.
 No FastAPI dependency required — middleware is ASGI-compatible.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -14,10 +15,10 @@ import pytest
 from ai_guard import LLMGuard
 from ai_guard.integrations.fastapi import AIGuardMiddleware
 
-
 # ---------------------------------------------------------------------------
 # Minimal ASGI app for testing
 # ---------------------------------------------------------------------------
+
 
 async def _echo_app(scope, receive, send):
     """ASGI app that reads the request body and echoes it back."""
@@ -29,19 +30,23 @@ async def _echo_app(scope, receive, send):
         more_body = message.get("more_body", False)
     body = b"".join(body_chunks)
 
-    response_body = json.dumps({
-        "echo": body.decode("utf-8", errors="replace"),
-        "ai_guard": scope.get("state", {}).get("ai_guard_result") is not None,
-    }).encode("utf-8")
+    response_body = json.dumps(
+        {
+            "echo": body.decode("utf-8", errors="replace"),
+            "ai_guard": scope.get("state", {}).get("ai_guard_result") is not None,
+        }
+    ).encode("utf-8")
 
-    await send({
-        "type": "http.response.start",
-        "status": 200,
-        "headers": [
-            (b"content-type", b"application/json"),
-            (b"content-length", str(len(response_body)).encode()),
-        ],
-    })
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(response_body)).encode()),
+            ],
+        }
+    )
     await send({"type": "http.response.body", "body": response_body, "more_body": False})
 
 
@@ -106,6 +111,7 @@ def guard():
 # Constructor
 # ---------------------------------------------------------------------------
 
+
 class TestMiddlewareConstructor:
     def test_invalid_mode_raises(self, guard):
         with pytest.raises(ValueError, match="on_pii_detected"):
@@ -121,9 +127,9 @@ class TestMiddlewareConstructor:
 # Non-HTTP scope passthrough
 # ---------------------------------------------------------------------------
 
+
 class TestNonHttpScope:
     def test_websocket_scope_passed_through(self, guard):
-        mw = AIGuardMiddleware(_echo_app, guard=guard)
         calls = []
 
         async def fake_app(scope, receive, send):
@@ -142,6 +148,7 @@ class TestNonHttpScope:
 # ---------------------------------------------------------------------------
 # Path prefix filtering
 # ---------------------------------------------------------------------------
+
 
 class TestPathPrefixFilter:
     def test_non_matching_path_not_scanned(self, guard):
@@ -177,6 +184,7 @@ class TestPathPrefixFilter:
 # Content-type filtering
 # ---------------------------------------------------------------------------
 
+
 class TestContentTypeFilter:
     def test_binary_content_type_skipped(self, guard):
         mw = AIGuardMiddleware(_echo_app, guard=guard)
@@ -209,6 +217,7 @@ class TestContentTypeFilter:
 # Mode: warn
 # ---------------------------------------------------------------------------
 
+
 class TestWarnMode:
     def test_warn_mode_passes_through_original_body(self, guard):
         mw = AIGuardMiddleware(_echo_app, guard=guard, on_pii_detected="warn")
@@ -239,6 +248,7 @@ class TestWarnMode:
 # ---------------------------------------------------------------------------
 # Mode: block
 # ---------------------------------------------------------------------------
+
 
 class TestBlockMode:
     def test_block_mode_returns_422_on_pii(self, guard):
@@ -274,6 +284,7 @@ class TestBlockMode:
 # ---------------------------------------------------------------------------
 # Mode: sanitize
 # ---------------------------------------------------------------------------
+
 
 class TestSanitizeMode:
     def test_sanitize_replaces_pii_in_forwarded_body(self):
@@ -311,10 +322,10 @@ class TestSanitizeMode:
 # Body size limit
 # ---------------------------------------------------------------------------
 
+
 class TestBodySizeLimit:
     def test_oversized_body_passed_through_unscanned(self, guard):
-        mw = AIGuardMiddleware(_echo_app, guard=guard, on_pii_detected="block",
-                               max_body_bytes=10)
+        mw = AIGuardMiddleware(_echo_app, guard=guard, on_pii_detected="block", max_body_bytes=10)
         send = _MockSend()
         body = b"user@example.com and more text"
         scope = _make_request_scope(content_type="text/plain")

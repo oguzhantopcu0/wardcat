@@ -4,9 +4,8 @@ False positive benchmark suite.
 Verifies that legitimate text does NOT trigger PII detection for each entity type.
 These tests catch regex patterns that are too broad and produce noise in production.
 """
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from ai_guard import LLMGuard
 from ai_guard.detectors.regex_detector import RegexDetector
@@ -98,13 +97,13 @@ class TestSSNFalsePositives:
 
 class TestEUNationalIDFalsePositives:
     NOT_EU_ID = [
-        "12345678",           # DNI: 8 digits, no check letter
-        "12345678I",          # DNI: I is not a valid check letter
-        "1234567890",         # 10 digits, not matching any pattern
-        "X1234567",           # NIE: missing check letter
-        "012011234567890",    # INSEE: first digit must be 1 or 2
-        "113001234567890",    # INSEE: month 00 invalid
-        "113131234567890",    # INSEE: month 13 invalid
+        "12345678",  # DNI: 8 digits, no check letter
+        "12345678I",  # DNI: I is not a valid check letter
+        "1234567890",  # 10 digits, not matching any pattern
+        "X1234567",  # NIE: missing check letter
+        "012011234567890",  # INSEE: first digit must be 1 or 2
+        "113001234567890",  # INSEE: month 00 invalid
+        "113131234567890",  # INSEE: month 13 invalid
     ]
 
     def test_no_false_positives(self):
@@ -171,11 +170,13 @@ class TestFullPipelineFalsePositives:
 
 # ── ADDRESS False Positives ───────────────────────────────────────────────────
 
+
 class TestAddressFalsePositives:
     """
     Address regex is the broadest pattern — most likely to produce false positives.
     These texts should NOT trigger ADDRESS detection.
     """
+
     NOT_ADDRESSES = [
         "Please review section 3 of the document.",
         "The team completed 5 tasks this sprint.",
@@ -192,17 +193,18 @@ class TestAddressFalsePositives:
         for text in self.NOT_ADDRESSES:
             spans = det.detect(text)
             assert not spans, (
-                f"False positive ADDRESS in: {text!r}\n"
-                f"Matched: {[s.text for s in spans]}"
+                f"False positive ADDRESS in: {text!r}\nMatched: {[s.text for s in spans]}"
             )
 
 
 # ── scan_batch_workers config ─────────────────────────────────────────────────
 
+
 class TestScanBatchWorkersConfig:
     def test_default_workers_from_config(self):
         """scan_batch should use config value when max_workers not specified."""
         from ai_guard.config.loader import load_config
+
         cfg = load_config()
         assert cfg["scan_batch_workers"] == 4
 

@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ai_guard.config.loader import load_config
 from ai_guard.core.engine import DetectionEngine
@@ -14,6 +13,7 @@ from ai_guard.detectors.base import BaseDetector
 from ai_guard.detectors.regex_detector import RegexDetector
 
 logger = logging.getLogger(__name__)
+
 
 def _resolve_spacy_model(model: str) -> str:
     """Suggests an alternative if the requested SpaCy model is not installed.
@@ -29,6 +29,7 @@ def _resolve_spacy_model(model: str) -> str:
     """
     try:
         import spacy.util
+
         installed = list(spacy.util.get_installed_models())
     except Exception:
         installed = []
@@ -42,7 +43,9 @@ def _resolve_spacy_model(model: str) -> str:
             "SpaCy model %r is not installed and no models are available. "
             "Install with: python -m spacy download %s  "
             "or: python -m ai_guard spacy download %s",
-            model, model, model,
+            model,
+            model,
+            model,
         )
         return model
 
@@ -55,21 +58,42 @@ def _resolve_spacy_model(model: str) -> str:
         "SpaCy model %r is not installed — falling back to %r.\n"
         "  Installed models: %s\n"
         "  To install the correct model: python -m ai_guard spacy download %s",
-        model, fallback, installed, model,
+        model,
+        fallback,
+        installed,
+        model,
     )
     return fallback
 
 
 # Central table mapping each entity to its detector
 _REGEX_ENTITIES = {
-    "CREDIT_CARD", "EMAIL", "PHONE", "IBAN", "IP_ADDRESS", "IPv6",
-    "TC_ID", "ADDRESS", "POSTAL_CODE",
-    "UUID", "SSN", "MAC_ADDRESS", "JWT", "NIN", "CUSTOM_SECRET",
-    "UK_POSTAL_CODE", "US_ZIP_CODE", "EU_NATIONAL_ID",
-    "PASSPORT", "CODICE_FISCALE", "DATE_OF_BIRTH", "VEHICLE_PLATE",
-    "FINANCIAL_AMOUNT", "VAT_NUMBER",
+    "CREDIT_CARD",
+    "EMAIL",
+    "PHONE",
+    "IBAN",
+    "IP_ADDRESS",
+    "IPv6",
+    "TC_ID",
+    "ADDRESS",
+    "POSTAL_CODE",
+    "UUID",
+    "SSN",
+    "MAC_ADDRESS",
+    "JWT",
+    "NIN",
+    "CUSTOM_SECRET",
+    "UK_POSTAL_CODE",
+    "US_ZIP_CODE",
+    "EU_NATIONAL_ID",
+    "PASSPORT",
+    "CODICE_FISCALE",
+    "DATE_OF_BIRTH",
+    "VEHICLE_PLATE",
+    "FINANCIAL_AMOUNT",
+    "VAT_NUMBER",
 }
-_NER_ENTITIES   = {"PERSON", "ORG", "ADDRESS"}
+_NER_ENTITIES = {"PERSON", "ORG", "ADDRESS"}
 
 
 class LLMGuard:
@@ -112,21 +136,21 @@ class LLMGuard:
 
     def __init__(
         self,
-        config_path: Optional[str | Path] = None,
+        config_path: str | Path | None = None,
         salt: str = "",
         use_ner: bool = True,
         spacy_model: str = "en_core_web_sm",
         use_llm: bool = False,
-        llm_backend: str = "ollama",               # "ollama" | "openai_compatible" | "transformers"
+        llm_backend: str = "ollama",  # "ollama" | "openai_compatible" | "transformers"
         llm_model: str = "llama3.2",
         llm_base_url: str = "http://localhost:11434",
         llm_api_key: str = "",
         llm_timeout: int = 60,
-        llm_adjudicate: bool = False,     # ensemble: LLM verifies regex/NER candidates
-        auto_pull: bool = False,          # Ollama: automatically download if model is missing
-        llm_device_map: str = "auto",     # Transformers: GPU distribution
-        llm_load_in_8bit: bool = False,   # Transformers: 8-bit quantization
-        llm_load_in_4bit: bool = False,   # Transformers: 4-bit quantization
+        llm_adjudicate: bool = False,  # ensemble: LLM verifies regex/NER candidates
+        auto_pull: bool = False,  # Ollama: automatically download if model is missing
+        llm_device_map: str = "auto",  # Transformers: GPU distribution
+        llm_load_in_8bit: bool = False,  # Transformers: 8-bit quantization
+        llm_load_in_4bit: bool = False,  # Transformers: 4-bit quantization
     ) -> None:
         self._config = load_config(config_path)
 
@@ -169,9 +193,7 @@ class LLMGuard:
         if not effective_salt:
             entity_cfg = self._config.get("entities", {})
             has_hash = any(
-                cfg.get("action") == "hash"
-                for cfg in entity_cfg.values()
-                if isinstance(cfg, dict)
+                cfg.get("action") == "hash" for cfg in entity_cfg.values() if isinstance(cfg, dict)
             )
             if has_hash:
                 logger.warning(
@@ -198,9 +220,7 @@ class LLMGuard:
         """
         return await self._engine.scan_async(text)
 
-    def scan_batch(
-        self, texts: List[str], *, max_workers: Optional[int] = None
-    ) -> List[ScanResult]:
+    def scan_batch(self, texts: list[str], *, max_workers: int | None = None) -> list[ScanResult]:
         """
         Scan multiple texts in parallel using a thread pool.
 
@@ -218,7 +238,7 @@ class LLMGuard:
 
         workers = max_workers or self._config.get("scan_batch_workers", 4)
 
-        results: List[ScanResult | None] = [None] * len(texts)
+        results: list[ScanResult | None] = [None] * len(texts)
 
         def _scan_one(idx: int, text: str) -> tuple[int, ScanResult]:
             try:
@@ -226,7 +246,9 @@ class LLMGuard:
             except Exception as exc:
                 logger.error(
                     "scan_batch item %d failed (%s: %s), returning original text.",
-                    idx, type(exc).__name__, exc,
+                    idx,
+                    type(exc).__name__,
+                    exc,
                 )
                 return idx, ScanResult(
                     original_text=text,
@@ -236,10 +258,7 @@ class LLMGuard:
                 )
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {
-                executor.submit(_scan_one, i, text): i
-                for i, text in enumerate(texts)
-            }
+            futures = {executor.submit(_scan_one, i, text): i for i, text in enumerate(texts)}
             for future in as_completed(futures):
                 idx, result = future.result()
                 results[idx] = result
@@ -247,8 +266,8 @@ class LLMGuard:
         return results  # type: ignore[return-value]
 
     async def scan_batch_async(
-        self, texts: List[str], *, max_workers: Optional[int] = None
-    ) -> List[ScanResult]:
+        self, texts: list[str], *, max_workers: int | None = None
+    ) -> list[ScanResult]:
         """Scan multiple texts concurrently using native async.
 
         Each text is scanned independently via :meth:`scan_async`; all are
@@ -264,7 +283,9 @@ class LLMGuard:
             except Exception as exc:
                 logger.error(
                     "scan_batch_async item %d failed (%s: %s), returning original text.",
-                    idx, type(exc).__name__, exc,
+                    idx,
+                    type(exc).__name__,
+                    exc,
                 )
                 return idx, ScanResult(
                     original_text=text,
@@ -274,7 +295,7 @@ class LLMGuard:
                 )
 
         pairs = await asyncio.gather(*(_one(i, t) for i, t in enumerate(texts)))
-        results: List[ScanResult | None] = [None] * len(texts)
+        results: list[ScanResult | None] = [None] * len(texts)
         for idx, result in pairs:
             results[idx] = result
         return results  # type: ignore[return-value]
@@ -288,7 +309,7 @@ class LLMGuard:
         entity_type: str,
         enabled: bool = True,
         action: str = "warn",
-    ) -> "LLMGuard":
+    ) -> LLMGuard:
         """
         Configure a single entity type. Supports method chaining.
 
@@ -310,13 +331,13 @@ class LLMGuard:
         self._rebuild()
         return self
 
-    def set_salt(self, salt: str) -> "LLMGuard":
+    def set_salt(self, salt: str) -> LLMGuard:
         """Update the hash salt."""
         self._config["salt"] = salt
         self._rebuild()
         return self
 
-    def add_allowlist(self, values: List[str]) -> "LLMGuard":
+    def add_allowlist(self, values: list[str]) -> LLMGuard:
         """Add exact values that should never be flagged as PII.
 
         Supports method chaining::
@@ -325,14 +346,14 @@ class LLMGuard:
 
         :param values: List of exact string values to exempt from detection.
         """
-        existing: List[str] = self._config.setdefault("allowlist", [])
+        existing: list[str] = self._config.setdefault("allowlist", [])
         for v in values:
             if v not in existing:
                 existing.append(v)
         self._rebuild()
         return self
 
-    def add_denylist(self, entries: List[Dict[str, str]]) -> "LLMGuard":
+    def add_denylist(self, entries: list[dict[str, str]]) -> LLMGuard:
         """Add values that should always be flagged as PII.
 
         Each entry must have a ``value`` key and an ``entity_type`` key.
@@ -346,7 +367,7 @@ class LLMGuard:
 
         :param entries: List of dicts with ``value`` and ``entity_type`` keys.
         """
-        existing: List[Dict[str, str]] = self._config.setdefault("denylist", [])
+        existing: list[dict[str, str]] = self._config.setdefault("denylist", [])
         for entry in entries:
             if not isinstance(entry, dict):
                 raise ValueError(
@@ -366,30 +387,27 @@ class LLMGuard:
 
     def _rebuild(self) -> None:
         """Rebuild detectors and engine when configuration changes."""
-        self._detectors: List[BaseDetector] = []
+        self._detectors: list[BaseDetector] = []
         entity_cfg = self._config.get("entities", {})
 
         # Regex detector
         custom_patterns = self._config.get("custom_patterns", {})
         # Register custom pattern actions in entities config so the engine can look them up
         for cp_name, cp_cfg in custom_patterns.items():
-            entity_cfg.setdefault(cp_name, {"enabled": True, "action": cp_cfg.get("action", "warn")})
-        enabled_regex = {
-            e for e in _REGEX_ENTITIES
-            if entity_cfg.get(e, {}).get("enabled", True)
-        }
+            entity_cfg.setdefault(
+                cp_name, {"enabled": True, "action": cp_cfg.get("action", "warn")}
+            )
+        enabled_regex = {e for e in _REGEX_ENTITIES if entity_cfg.get(e, {}).get("enabled", True)}
         if enabled_regex or custom_patterns:
             self._detectors.append(RegexDetector(enabled_regex, custom_patterns=custom_patterns))
 
         # SpaCy NER detector (optional)
         if self._config.get("use_ner", True):
-            enabled_ner = {
-                e for e in _NER_ENTITIES
-                if entity_cfg.get(e, {}).get("enabled", True)
-            }
+            enabled_ner = {e for e in _NER_ENTITIES if entity_cfg.get(e, {}).get("enabled", True)}
             if enabled_ner:
                 try:
                     from ai_guard.detectors.ner_detector import NERDetector
+
                     model = self._config.get("spacy_model", "en_core_web_sm")
                     model = _resolve_spacy_model(model)
                     self._detectors.append(NERDetector(enabled_ner, model))
@@ -405,19 +423,22 @@ class LLMGuard:
 
         self._engine = DetectionEngine(self._config, self._detectors)
 
-    def _build_llm_detector(self, llm_cfg: Dict[str, Any]) -> BaseDetector:
+    def _build_llm_detector(self, llm_cfg: dict[str, Any]) -> BaseDetector:
         """Build the LLM detector according to configuration."""
         from ai_guard.detectors.llm_detector import LLMDetector
+        from ai_guard.llm.backends.base import BaseLLMBackend
 
+        backend: BaseLLMBackend
         backend_name = llm_cfg.get("backend", "ollama")
-        model        = llm_cfg.get("model",    "llama3.2")
-        base_url     = llm_cfg.get("base_url", "http://localhost:11434")
-        api_key      = llm_cfg.get("api_key",  "")
-        timeout      = llm_cfg.get("timeout",  60)
+        model = llm_cfg.get("model", "llama3.2")
+        base_url = llm_cfg.get("base_url", "http://localhost:11434")
+        api_key = llm_cfg.get("api_key", "")
+        timeout = llm_cfg.get("timeout", 60)
 
         if backend_name == "ollama":
             from ai_guard.llm.backends.ollama import OllamaBackend
             from ai_guard.llm.model_manager import ModelManager
+
             ollama_backend = OllamaBackend(base_url=base_url, model=model)
             if llm_cfg.get("auto_pull", False):
                 mgr = ModelManager(ollama_backend)
@@ -425,9 +446,11 @@ class LLMGuard:
             backend = ollama_backend
         elif backend_name == "openai_compatible":
             from ai_guard.llm.backends.openai_compat import OpenAICompatBackend
+
             backend = OpenAICompatBackend(base_url=base_url, model=model, api_key=api_key)
         elif backend_name == "transformers":
             from ai_guard.llm.backends.transformers_backend import TransformersBackend
+
             backend = TransformersBackend(
                 model=model,
                 device_map=llm_cfg.get("device_map", "auto"),
@@ -441,14 +464,13 @@ class LLMGuard:
             )
 
         entity_cfg = llm_cfg.get("entities", {})
-        enabled = {
-            e for e, cfg in entity_cfg.items()
-            if cfg.get("enabled", True)
-        }
+        enabled = {e for e, cfg in entity_cfg.items() if cfg.get("enabled", True)}
 
         # Add LLM entity actions to global engine config (without overriding)
         for entity, cfg in entity_cfg.items():
             self._config["entities"].setdefault(entity, cfg)
 
         cache_ttl = llm_cfg.get("cache_ttl", 0)
-        return LLMDetector(backend=backend, enabled_entities=enabled, timeout=timeout, cache_ttl=cache_ttl)
+        return LLMDetector(
+            backend=backend, enabled_entities=enabled, timeout=timeout, cache_ttl=cache_ttl
+        )

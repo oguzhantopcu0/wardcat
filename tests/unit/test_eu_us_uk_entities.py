@@ -7,6 +7,7 @@ Scope:
 - EU_NATIONAL_ID: Spanish DNI/NIE, French INSEE
 - ADDRESS: French, Spanish, Italian, Dutch, German street patterns
 """
+
 from __future__ import annotations
 
 import pytest
@@ -24,6 +25,7 @@ def detector():
 # ─────────────────────────────────────────────────────────────────────────────
 # UK_POSTAL_CODE
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestUKPostalCode:
     def test_central_london(self, detector):
@@ -63,6 +65,7 @@ class TestUKPostalCode:
 # US_ZIP_CODE
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestUSZipCode:
     def test_zip_plus_four(self, detector):
         spans = detector.detect("ZIP+4: 10001-1234")
@@ -98,8 +101,8 @@ class TestUSZipCode:
 # EU_NATIONAL_ID
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestEUNationalID:
 
+class TestEUNationalID:
     class TestSpanishDNI:
         def test_valid_dni(self, detector):
             spans = detector.detect("DNI: 12345678Z")
@@ -156,8 +159,8 @@ class TestEUNationalID:
 # ADDRESS — European street patterns
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestEuropeanAddressPatterns:
 
+class TestEuropeanAddressPatterns:
     class TestFrench:
         def test_rue(self, detector):
             spans = detector.detect("Adresse: Rue de Rivoli 25, Paris")
@@ -248,6 +251,7 @@ class TestEuropeanAddressPatterns:
 # PASSPORT
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestPassport:
     @pytest.fixture
     def det(self):
@@ -286,6 +290,7 @@ class TestPassport:
 # ─────────────────────────────────────────────────────────────────────────────
 # CODICE_FISCALE (Italian personal tax code)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestCodiceFiscale:
     @pytest.fixture

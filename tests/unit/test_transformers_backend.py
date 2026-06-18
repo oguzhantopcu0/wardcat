@@ -4,17 +4,18 @@ TransformersBackend unit tests.
 All tests use unittest.mock.patch and MagicMock to test the backend
 without importing torch and transformers libraries.
 """
+
 from __future__ import annotations
 
 import sys
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ai_guard.llm.backends.transformers_backend import TransformersBackend
 
-
 # ── complete_messages() ──────────────────────────────────────────────────────
+
 
 class TestCompleteMessages:
     def _make_backend(self) -> TransformersBackend:
@@ -26,9 +27,7 @@ class TestCompleteMessages:
         mock_pipe.return_value = [{"generated_text": "test response"}]
 
         with patch.object(backend, "_get_pipeline", return_value=mock_pipe):
-            result = backend.complete_messages(
-                [{"role": "user", "content": "hello"}]
-            )
+            result = backend.complete_messages([{"role": "user", "content": "hello"}])
 
         mock_pipe.assert_called_once_with(
             [{"role": "user", "content": "hello"}],
@@ -45,16 +44,14 @@ class TestCompleteMessages:
         mock_pipe.return_value = [
             {
                 "generated_text": [
-                    {"role": "user",      "content": "hello"},
+                    {"role": "user", "content": "hello"},
                     {"role": "assistant", "content": "world"},
                 ]
             }
         ]
 
         with patch.object(backend, "_get_pipeline", return_value=mock_pipe):
-            result = backend.complete_messages(
-                [{"role": "user", "content": "hello"}]
-            )
+            result = backend.complete_messages([{"role": "user", "content": "hello"}])
 
         assert result == "world"
 
@@ -75,6 +72,7 @@ class TestCompleteMessages:
 
 # ── complete() ───────────────────────────────────────────────────────────────
 
+
 class TestComplete:
     def test_delegates_to_complete_messages(self):
         """complete() should wrap the prompt in a user message and call complete_messages."""
@@ -92,6 +90,7 @@ class TestComplete:
 
 # ── list_models() ────────────────────────────────────────────────────────────
 
+
 class TestListModels:
     def test_returns_model_name(self):
         model_id = "meta-llama/Llama-3.1-8B-Instruct"
@@ -106,6 +105,7 @@ class TestListModels:
 
 
 # ── Lazy loading ─────────────────────────────────────────────────────────────
+
 
 class TestLazyLoading:
     def test_pipeline_not_loaded_on_init(self):
@@ -138,6 +138,7 @@ class TestLazyLoading:
 
 
 # ── pull_model() ─────────────────────────────────────────────────────────────
+
 
 class TestPullModel:
     def test_calls_snapshot_download(self):
@@ -200,10 +201,11 @@ class TestPullModel:
             backend.pull_model("some-model", on_progress=on_progress)
 
         assert "downloading" in progress_calls
-        assert "success"     in progress_calls
+        assert "success" in progress_calls
 
 
 # ── ImportError when transformers not installed ──────────────────────────────
+
 
 class TestImportError:
     def test_import_error_raised_when_transformers_missing(self):
@@ -217,6 +219,7 @@ class TestImportError:
 
 
 # ── Edge cases: empty / malformed pipeline output ────────────────────────────
+
 
 class TestOutputEdgeCases:
     def _make_backend(self) -> TransformersBackend:
@@ -243,9 +246,11 @@ class TestOutputEdgeCases:
     def test_missing_content_key_returns_empty_string(self):
         """Chat format: if the last message has no 'content', an empty string is returned."""
         backend = self._make_backend()
-        mock_pipe = MagicMock(return_value=[
-            {"generated_text": [{"role": "assistant"}]}  # no content
-        ])
+        mock_pipe = MagicMock(
+            return_value=[
+                {"generated_text": [{"role": "assistant"}]}  # no content
+            ]
+        )
 
         with patch.object(backend, "_get_pipeline", return_value=mock_pipe):
             result = backend.complete_messages([{"role": "user", "content": "hi"}])
@@ -274,10 +279,12 @@ class TestOutputEdgeCases:
 
 # ── Chat template validation ──────────────────────────────────────────────────
 
+
 class TestChatTemplateValidation:
     def test_warns_when_no_chat_template(self, caplog):
         """A warning should be logged if the tokenizer has no chat_template."""
         import logging
+
         backend = TransformersBackend(model="meta-llama/Llama-3.2-1B-Instruct")
 
         mock_tokenizer = MagicMock()
@@ -295,6 +302,7 @@ class TestChatTemplateValidation:
     def test_no_warning_when_chat_template_present(self, caplog):
         """No warning should be logged if the tokenizer has chat_template."""
         import logging
+
         backend = TransformersBackend(model="meta-llama/Llama-3.2-1B-Instruct")
 
         mock_tokenizer = MagicMock()

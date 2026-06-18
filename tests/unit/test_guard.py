@@ -52,15 +52,15 @@ def test_salt_changes_hash(guard):
 def test_method_chaining():
     guard = (
         LLMGuard(use_ner=False, salt="x")
-        .configure_entity("EMAIL",       enabled=True, action="hash")
+        .configure_entity("EMAIL", enabled=True, action="hash")
         .configure_entity("CREDIT_CARD", enabled=True, action="hash")
-        .configure_entity("PHONE",       enabled=False)
+        .configure_entity("PHONE", enabled=False)
     )
     result = guard.scan("email: a@b.com kart: 4111111111111111 tel: 0532 123 45 67")
     types = {v.entity_type for v in result.violations}
-    assert "EMAIL"       in types
+    assert "EMAIL" in types
     assert "CREDIT_CARD" in types
-    assert "PHONE"       not in types
+    assert "PHONE" not in types
 
 
 def test_scan_result_structure(guard):
@@ -105,6 +105,7 @@ def test_confidence_is_1_for_regex_detections(guard):
 def test_redacted_convenience_wrapper(guard):
     """ai_guard.redacted(result) is equivalent to result.redacted()."""
     import ai_guard
+
     result = guard.scan("a@b.com")
     d = ai_guard.redacted(result)
     assert "violations" in d
@@ -113,6 +114,7 @@ def test_redacted_convenience_wrapper(guard):
 
 
 # ── Redact action ──────────────────────────────────────────────────────────
+
 
 class TestRedactAction:
     def test_redact_replaces_with_label(self):
@@ -150,6 +152,7 @@ class TestRedactAction:
 
 # ── Mask action ────────────────────────────────────────────────────────────
 
+
 class TestMaskAction:
     def test_mask_hides_middle_chars(self):
         guard = LLMGuard(use_ner=False)
@@ -169,7 +172,6 @@ class TestMaskAction:
 
     def test_mask_short_value_all_stars(self):
         """Values shorter than 4 chars → all stars."""
-        from ai_guard.core.models import Action
         from ai_guard.core.engine import DetectionEngine
         from ai_guard.detectors.base import DetectedSpan
 
@@ -202,6 +204,7 @@ class TestMaskAction:
 
 
 # ── Allowlist ──────────────────────────────────────────────────────────────
+
 
 class TestAllowlist:
     def test_allowlisted_email_not_flagged(self):
@@ -242,6 +245,7 @@ class TestAllowlist:
 
 
 # ── Denylist ───────────────────────────────────────────────────────────────
+
 
 class TestDenylist:
     def test_denylist_value_always_flagged(self):
@@ -284,6 +288,7 @@ class TestDenylist:
 
 # ── Denylist regex ─────────────────────────────────────────────────────────
 
+
 class TestDenylistRegex:
     def test_pattern_denylist_matches(self):
         guard = LLMGuard(use_ner=False)
@@ -311,13 +316,14 @@ class TestDenylistRegex:
 
     def test_pattern_denylist_invalid_regex_raises_in_config(self):
         import tempfile
+
         import yaml
+
         with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
-            yaml.dump({
-                "denylist": [{"pattern": "[invalid", "entity_type": "X"}]
-            }, f)
+            yaml.dump({"denylist": [{"pattern": "[invalid", "entity_type": "X"}]}, f)
             cfg_path = f.name
         from ai_guard.config.loader import load_config
+
         with pytest.raises(ValueError, match="not valid regex"):
             load_config(cfg_path)
 
@@ -335,6 +341,7 @@ class TestDenylistRegex:
 
 
 # ── Entity-aware mask ──────────────────────────────────────────────────────
+
 
 class TestEntityAwareMask:
     def test_email_mask_preserves_domain(self):
@@ -356,11 +363,13 @@ class TestEntityAwareMask:
 
     def test_ssn_mask_format(self):
         from ai_guard.core.engine import _mask_value
+
         result = _mask_value("SSN", "123-45-6789")
         assert result == "***-**-6789"
 
     def test_iban_mask_shows_country_and_last4(self):
         from ai_guard.core.engine import _mask_value
+
         iban = "TR330006100519786457841326"
         result = _mask_value("IBAN", iban)
         assert result.startswith("TR")
@@ -369,12 +378,14 @@ class TestEntityAwareMask:
 
     def test_tc_id_mask_shows_last3(self):
         from ai_guard.core.engine import _mask_value
+
         result = _mask_value("TC_ID", "12345678950")
         assert result.endswith("950")
         assert result.startswith("*")
 
     def test_default_mask_first2_last2(self):
         from ai_guard.core.engine import _mask_value
+
         result = _mask_value("UUID", "abcdefgh")
         assert result[:2] == "ab"
         assert result[-2:] == "gh"
@@ -382,6 +393,7 @@ class TestEntityAwareMask:
 
     def test_mask_very_short_value_all_stars(self):
         from ai_guard.core.engine import _mask_value
+
         result = _mask_value("EMAIL", "ab")
         # shorter than 4 chars → all stars
         assert set(result) == {"*"}
@@ -389,30 +401,39 @@ class TestEntityAwareMask:
 
 # ── FastAPI middleware JSON field scan ─────────────────────────────────────
 
+
 class TestMiddlewareJsonFieldScan:
     """JSON field-level scan preserves keys, sanitizes only string values."""
 
     def test_json_keys_preserved_after_sanitize(self):
-        import asyncio, json
+        import asyncio
+        import json
+
         from ai_guard.integrations.fastapi import AIGuardMiddleware
 
         async def _echo(scope, receive, send):
             body = b""
             m = await receive()
             body = m.get("body", b"")
-            await send({"type": "http.response.start", "status": 200, "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(body)).encode()),
-            ]})
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(body)).encode()),
+                    ],
+                }
+            )
             await send({"type": "http.response.body", "body": body, "more_body": False})
 
         guard = LLMGuard(use_ner=False)
         guard.configure_entity("EMAIL", enabled=True, action="redact")
-        mw = AIGuardMiddleware(_echo, guard=guard, on_pii_detected="sanitize",
-                               json_field_scan=True)
+        mw = AIGuardMiddleware(_echo, guard=guard, on_pii_detected="sanitize", json_field_scan=True)
 
         scope = {
-            "type": "http", "path": "/api",
+            "type": "http",
+            "path": "/api",
             "headers": [(b"content-type", b"application/json")],
             "state": {},
         }
@@ -420,11 +441,13 @@ class TestMiddlewareJsonFieldScan:
         body = json.dumps(original).encode()
 
         sent_body = []
+
         async def send_fn(msg):
             if msg.get("type") == "http.response.body":
                 sent_body.append(msg["body"])
 
         body_sent = False
+
         async def receive_fn():
             nonlocal body_sent
             if not body_sent:

@@ -4,36 +4,34 @@ Model setup flow integration tests.
 Tests LLMGuard auto_pull + CLI models setup + models list --recommended
 flows with a mock Ollama backend.
 """
+
 from __future__ import annotations
 
-import sys
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from ai_guard.llm.backends.base import BaseLLMBackend
-from ai_guard.llm.model_catalog import CATALOG, recommended
-from ai_guard.llm.model_manager import ModelManager
-
+from ai_guard.llm.model_catalog import CATALOG
 
 # ── Helper ───────────────────────────────────────────────────────────────────
+
 
 def _mock_ollama(available: list[str]):
     """Mock OllamaBackend; no real HTTP calls are made."""
     from ai_guard.llm.backends.ollama import OllamaBackend
+
     backend = MagicMock(spec=OllamaBackend)
     backend.base_url = "http://localhost:11434"
-    backend.model    = available[0] if available else "llama3.1:8b"
-    backend.list_models.return_value       = available
+    backend.model = available[0] if available else "llama3.1:8b"
+    backend.list_models.return_value = available
     backend.is_model_available.side_effect = lambda m: m in available
-    backend.pull_model.return_value        = None
-    backend.complete.return_value          = "[]"
+    backend.pull_model.return_value = None
+    backend.complete.return_value = "[]"
     backend.complete_messages.return_value = "[]"
     return backend
 
 
 # ── LLMGuard auto_pull ───────────────────────────────────────────────────────
+
 
 class TestLLMGuardAutoPull:
     def test_auto_pull_true_model_missing_user_confirms(self):
@@ -43,12 +41,12 @@ class TestLLMGuardAutoPull:
         mock_backend = _mock_ollama([])
 
         with (
-            patch("ai_guard.llm.backends.ollama.OllamaBackend",
-                  return_value=mock_backend),
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
             patch("builtins.input", return_value="y"),
         ):
             from ai_guard import LLMGuard
-            guard = LLMGuard(
+
+            LLMGuard(
                 use_ner=False,
                 use_llm=True,
                 llm_model="llama3.1:8b",
@@ -67,12 +65,12 @@ class TestLLMGuardAutoPull:
         mock_backend = _mock_ollama([])
 
         with (
-            patch("ai_guard.llm.backends.ollama.OllamaBackend",
-                  return_value=mock_backend),
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
             patch("builtins.input", return_value="n"),
         ):
             from ai_guard import LLMGuard
-            guard = LLMGuard(
+
+            LLMGuard(
                 use_ner=False,
                 use_llm=True,
                 llm_model="llama3.1:8b",
@@ -87,10 +85,10 @@ class TestLLMGuardAutoPull:
         """
         mock_backend = _mock_ollama(["llama3.1:8b"])
 
-        with patch("ai_guard.llm.backends.ollama.OllamaBackend",
-                   return_value=mock_backend):
+        with patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend):
             from ai_guard import LLMGuard
-            guard = LLMGuard(
+
+            LLMGuard(
                 use_ner=False,
                 use_llm=True,
                 llm_model="llama3.1:8b",
@@ -103,10 +101,10 @@ class TestLLMGuardAutoPull:
         """Model already present → pull not called."""
         mock_backend = _mock_ollama(["llama3.1:8b"])
 
-        with patch("ai_guard.llm.backends.ollama.OllamaBackend",
-                   return_value=mock_backend):
+        with patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend):
             from ai_guard import LLMGuard
-            guard = LLMGuard(
+
+            LLMGuard(
                 use_ner=False,
                 use_llm=True,
                 llm_model="llama3.1:8b",
@@ -118,10 +116,12 @@ class TestLLMGuardAutoPull:
 
 # ── CLI models list --recommended ────────────────────────────────────────────
 
+
 class TestCLIModelsList:
     def _run_cli(self, *args):
         """Run CLI directly instead of subprocess; capture stdout."""
         from ai_guard.__main__ import _build_parser, cmd_models
+
         parser = _build_parser()
         parsed = parser.parse_args(["models", "list", *args])
         buf = StringIO()
@@ -146,18 +146,19 @@ class TestCLIModelsList:
     def test_without_recommended_hits_ollama(self):
         """Without --recommended, a real Ollama backend call is made."""
         mock_backend = _mock_ollama(["llama3.1:8b", "mistral:7b"])
-        with patch("ai_guard.llm.backends.ollama.OllamaBackend",
-                   return_value=mock_backend):
+        with patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend):
             output = self._run_cli()
         assert "llama3.1:8b" in output
-        assert "mistral:7b"  in output
+        assert "mistral:7b" in output
 
 
 # ── CLI models setup ──────────────────────────────────────────────────────────
 
+
 class TestCLIModelsSetup:
     def _run_setup(self, user_input: str, available: list[str] | None = None):
         from ai_guard.__main__ import _build_parser, cmd_models
+
         parser = _build_parser()
         parsed = parser.parse_args(["models", "setup"])
 
@@ -165,8 +166,7 @@ class TestCLIModelsSetup:
         buf = StringIO()
 
         with (
-            patch("ai_guard.llm.backends.ollama.OllamaBackend",
-                  return_value=mock_backend),
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
             patch("builtins.input", return_value=user_input),
             patch("sys.stdout", buf),
         ):
@@ -186,12 +186,12 @@ class TestCLIModelsSetup:
         inputs = iter(["", "y"])  # model selection: empty, download: yes
 
         from ai_guard.__main__ import _build_parser, cmd_models
+
         parser = _build_parser()
         parsed = parser.parse_args(["models", "setup"])
 
         with (
-            patch("ai_guard.llm.backends.ollama.OllamaBackend",
-                  return_value=mock_backend),
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
             patch("builtins.input", side_effect=inputs),
             patch("sys.stdout", StringIO()),
         ):
@@ -208,12 +208,12 @@ class TestCLIModelsSetup:
         mock_backend = _mock_ollama([])
 
         from ai_guard.__main__ import _build_parser, cmd_models
+
         parser = _build_parser()
         parsed = parser.parse_args(["models", "setup"])
 
         with (
-            patch("ai_guard.llm.backends.ollama.OllamaBackend",
-                  return_value=mock_backend),
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
             patch("builtins.input", side_effect=inputs),
             patch("sys.stdout", StringIO()),
         ):
@@ -231,6 +231,7 @@ class TestCLIModelsSetup:
     def test_setup_non_interactive_uses_default(self):
         """--non-interactive → select default model without prompting the user."""
         from ai_guard.__main__ import _build_parser, cmd_models
+
         parser = _build_parser()
         parsed = parser.parse_args(["models", "setup", "--non-interactive"])
 
@@ -238,8 +239,7 @@ class TestCLIModelsSetup:
         buf = StringIO()
 
         with (
-            patch("ai_guard.llm.backends.ollama.OllamaBackend",
-                  return_value=mock_backend),
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
             patch("builtins.input", side_effect=RuntimeError("input called!")),
             patch("sys.stdout", buf),
         ):
@@ -256,12 +256,12 @@ class TestCLIModelsSetup:
         # Model already present → only model no input needed, no download confirmation asked
         mock_backend = _mock_ollama(["llama3.1:8b"])
         from ai_guard.__main__ import _build_parser, cmd_models
+
         parser = _build_parser()
         parsed = parser.parse_args(["models", "setup"])
         buf = StringIO()
         with (
-            patch("ai_guard.llm.backends.ollama.OllamaBackend",
-                  return_value=mock_backend),
+            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
             patch("builtins.input", return_value=""),  # empty → 1st model
             patch("sys.stdout", buf),
         ):
@@ -273,19 +273,29 @@ class TestCLIModelsSetup:
 
 # ── CLI scan --auto-pull flag ─────────────────────────────────────────────────
 
+
 class TestCLIScanAutoPull:
     def test_auto_pull_flag_passed_to_guard(self):
         """--auto-pull flag should result in LLMGuard(auto_pull=True) being called."""
         from ai_guard.__main__ import _build_parser
+
         parser = _build_parser()
-        args   = parser.parse_args([
-            "scan", "--text", "test",
-            "--llm", "--llm-model", "llama3.1:8b", "--auto-pull",
-        ])
+        args = parser.parse_args(
+            [
+                "scan",
+                "--text",
+                "test",
+                "--llm",
+                "--llm-model",
+                "llama3.1:8b",
+                "--auto-pull",
+            ]
+        )
         assert args.auto_pull is True
 
     def test_no_auto_pull_flag_default_false(self):
         from ai_guard.__main__ import _build_parser
+
         parser = _build_parser()
-        args   = parser.parse_args(["scan", "--text", "test"])
+        args = parser.parse_args(["scan", "--text", "test"])
         assert args.auto_pull is False

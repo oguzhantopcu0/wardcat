@@ -3,8 +3,18 @@ import pytest
 from ai_guard.detectors.regex_detector import RegexDetector
 
 ALL_ENTITIES = {
-    "CREDIT_CARD", "EMAIL", "PHONE", "IBAN", "IP_ADDRESS", "TC_ID",
-    "UUID", "SSN", "MAC_ADDRESS", "JWT", "IPv6", "NIN",
+    "CREDIT_CARD",
+    "EMAIL",
+    "PHONE",
+    "IBAN",
+    "IP_ADDRESS",
+    "TC_ID",
+    "UUID",
+    "SSN",
+    "MAC_ADDRESS",
+    "JWT",
+    "IPv6",
+    "NIN",
 }
 
 
@@ -129,7 +139,7 @@ class TestNIN:
 
 class TestDisabledEntity:
     def test_disabled_entity_not_detected(self):
-        detector = RegexDetector({"EMAIL"})   # only EMAIL active
+        detector = RegexDetector({"EMAIL"})  # only EMAIL active
         spans = detector.detect("kart: 4111111111111111 mail: a@b.com")
         types = {s.entity_type for s in spans}
         assert "CREDIT_CARD" not in types
@@ -173,6 +183,7 @@ class TestValidateTCID:
 
 # ── G1 bypass fix tests ────────────────────────────────────────────────────
 
+
 class TestCreditCardSeparatorFixes:
     """G1a: credit card with double-space and dot separators."""
 
@@ -214,15 +225,11 @@ class TestConnectionStringCredentials:
 
     def test_empty_user_credential(self, detector):
         spans = detector.detect("redis://:r3d1sP_ss@cache:6379")
-        assert any(
-            s.entity_type == "CUSTOM_SECRET" and s.text == "r3d1sP_ss" for s in spans
-        )
+        assert any(s.entity_type == "CUSTOM_SECRET" and s.text == "r3d1sP_ss" for s in spans)
 
     def test_url_encoded_password(self, detector):
         spans = detector.detect("mongodb+srv://user:p%40ss123@cluster0.mongodb.net")
-        assert any(
-            s.entity_type == "CUSTOM_SECRET" and s.text == "p%40ss123" for s in spans
-        )
+        assert any(s.entity_type == "CUSTOM_SECRET" and s.text == "p%40ss123" for s in spans)
 
     def test_real_email_unaffected(self, detector):
         spans = detector.detect("Contact john@acme.com for details.")
@@ -234,10 +241,8 @@ class TestConnectionStringCredentials:
 
     def test_password_offset_correct(self, detector):
         text = "postgresql://admin:Sup3rS3cr3t@db.prod.internal"
-        secret = next(
-            s for s in detector.detect(text) if s.entity_type == "CUSTOM_SECRET"
-        )
-        assert text[secret.start:secret.end] == "Sup3rS3cr3t"
+        secret = next(s for s in detector.detect(text) if s.entity_type == "CUSTOM_SECRET")
+        assert text[secret.start : secret.end] == "Sup3rS3cr3t"
 
     def test_secret_disabled_still_suppresses_email(self):
         # When CUSTOM_SECRET is off, the password is not reported — but the
@@ -320,8 +325,10 @@ class TestCustomPatternsInRegexDetector:
         mock_ctx.__exit__ = MagicMock(return_value=False)
 
         with (
-            patch("ai_guard.detectors.regex_detector.concurrent.futures.ThreadPoolExecutor",
-                  return_value=mock_ctx),
+            patch(
+                "ai_guard.detectors.regex_detector.concurrent.futures.ThreadPoolExecutor",
+                return_value=mock_ctx,
+            ),
             caplog.at_level(logging.WARNING, logger="ai_guard.detectors.regex_detector"),
         ):
             result = _safe_finditer(pattern, "hello world")
@@ -342,7 +349,7 @@ class TestChecksumEdgeCases:
     def test_tc_id_invalid_checksum_not_detected(self, detector):
         """Randomly wrong TC_ID checksum → not detected."""
         # Modify last digit of a valid TC_ID
-        spans = detector.detect("12345678951")   # valid is 12345678950
+        spans = detector.detect("12345678951")  # valid is 12345678950
         assert not any(s.entity_type == "TC_ID" for s in spans)
 
     def test_iban_invalid_country_code_not_detected(self, detector):
@@ -360,53 +367,66 @@ class TestChecksumEdgeCases:
 
     def test_validate_iban_too_short(self):
         from ai_guard.detectors.regex_detector import _validate_iban
+
         assert _validate_iban("TR3") is False
 
     def test_validate_tc_id_too_short(self):
         from ai_guard.detectors.regex_detector import _validate_tc_id
+
         assert _validate_tc_id("1234") is False
 
     def test_validate_tc_id_starts_with_zero(self):
         from ai_guard.detectors.regex_detector import _validate_tc_id
+
         assert _validate_tc_id("01234567890") is False
 
     def test_validate_tc_id_non_digit(self):
         from ai_guard.detectors.regex_detector import _validate_tc_id
+
         assert _validate_tc_id("1234567890a") is False
 
 
 # ── VEHICLE_PLATE ──────────────────────────────────────────────────────────
 
+
 class TestVehiclePlate:
     @pytest.fixture
     def detector(self):
         from ai_guard.detectors.regex_detector import RegexDetector
+
         return RegexDetector({"VEHICLE_PLATE"})
 
-    @pytest.mark.parametrize("plate", [
-        "34 ABC 123",
-        "06 AZ 1234",
-        "81 T 4321",
-        "34ABC123",
-        "06AZ1234",
-        "01 A 12",
-        "35 BCD 5678",
-    ])
+    @pytest.mark.parametrize(
+        "plate",
+        [
+            "34 ABC 123",
+            "06 AZ 1234",
+            "81 T 4321",
+            "34ABC123",
+            "06AZ1234",
+            "01 A 12",
+            "35 BCD 5678",
+        ],
+    )
     def test_valid_plates_detected(self, detector, plate):
         spans = detector.detect(f"plaka: {plate}")
         assert any(s.entity_type == "VEHICLE_PLATE" for s in spans), f"not detected: {plate}"
 
-    @pytest.mark.parametrize("text", [
-        "00 ABC 123",    # city code 00 — invalid
-        "82 ABC 123",    # city code 82 — invalid (only 01–81)
-        "AB 123",        # no city code prefix
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "00 ABC 123",  # city code 00 — invalid
+            "82 ABC 123",  # city code 82 — invalid (only 01–81)
+            "AB 123",  # no city code prefix
+        ],
+    )
     def test_invalid_plates_not_detected(self, detector, text):
         spans = detector.detect(text)
         assert not any(s.entity_type == "VEHICLE_PLATE" for s in spans), f"falsely detected: {text}"
 
     def test_vehicle_plate_in_guard(self):
         from ai_guard import LLMGuard
+
         guard = LLMGuard(use_ner=False)
         guard.configure_entity("VEHICLE_PLATE", enabled=True, action="warn")
         result = guard.scan("Araç plakası: 34 ABC 123")
@@ -415,18 +435,18 @@ class TestVehiclePlate:
 
 # ── US_ZIP_CODE ────────────────────────────────────────────────────────────
 
+
 class TestUSZipCode:
     @pytest.fixture
     def detector(self):
         from ai_guard.detectors.regex_detector import RegexDetector
+
         return RegexDetector({"US_ZIP_CODE"})
 
     def test_zip_plus_four(self, detector):
         spans = detector.detect("address ZIP code 90210-1234 here")
         # The full ZIP+4 must be captured — not just the leading 5 digits.
-        assert any(
-            s.entity_type == "US_ZIP_CODE" and s.text == "90210-1234" for s in spans
-        )
+        assert any(s.entity_type == "US_ZIP_CODE" and s.text == "90210-1234" for s in spans)
 
     def test_labeled_bare_zip(self, detector):
         spans = detector.detect("ZIP: 90210")
@@ -440,20 +460,25 @@ class TestUSZipCode:
 
 # ── FINANCIAL_AMOUNT ───────────────────────────────────────────────────────
 
+
 class TestFinancialAmount:
     @pytest.fixture
     def detector(self):
         from ai_guard.detectors.regex_detector import RegexDetector
+
         return RegexDetector({"FINANCIAL_AMOUNT"})
 
-    @pytest.mark.parametrize("amount", [
-        "45.000 TL",
-        "350.000 TL",
-        "2.1 milyon TL",
-        "$85,000",
-        "€12.500",
-        "₺47.3 milyon",
-    ])
+    @pytest.mark.parametrize(
+        "amount",
+        [
+            "45.000 TL",
+            "350.000 TL",
+            "2.1 milyon TL",
+            "$85,000",
+            "€12.500",
+            "₺47.3 milyon",
+        ],
+    )
     def test_amounts_detected(self, detector, amount):
         spans = detector.detect(f"tutar {amount} olarak")
         assert any(s.entity_type == "FINANCIAL_AMOUNT" for s in spans), amount
@@ -462,6 +487,7 @@ class TestFinancialAmount:
         # Regression: the pattern existed but was missing from the guard's
         # _REGEX_ENTITIES set, so enabling it had no effect.
         from ai_guard import LLMGuard
+
         guard = LLMGuard(use_ner=False)
         guard.configure_entity("FINANCIAL_AMOUNT", enabled=True, action="redact")
         result = guard.scan("Sözleşme bedeli 2.1 milyon TL olarak belirlendi.")
@@ -470,52 +496,66 @@ class TestFinancialAmount:
 
 # ── Luhn validation for credit cards ───────────────────────────────────────
 
+
 class TestCreditCardLuhn:
     @pytest.fixture
     def detector(self):
         from ai_guard.detectors.regex_detector import RegexDetector
+
         return RegexDetector({"CREDIT_CARD"})
 
-    @pytest.mark.parametrize("card", [
-        "4111 1111 1111 1111",
-        "5500 0000 0000 0004",
-        "6011 1111 1111 1117",
-        "4532015112830366",
-    ])
+    @pytest.mark.parametrize(
+        "card",
+        [
+            "4111 1111 1111 1111",
+            "5500 0000 0000 0004",
+            "6011 1111 1111 1117",
+            "4532015112830366",
+        ],
+    )
     def test_valid_luhn_detected(self, detector, card):
         spans = detector.detect(f"kart: {card}")
         assert any(s.entity_type == "CREDIT_CARD" for s in spans), card
 
-    @pytest.mark.parametrize("card", [
-        "4111 1111 1111 1112",   # last digit off — fails Luhn
-        "1234 5678 9012 3456",   # random digits
-    ])
+    @pytest.mark.parametrize(
+        "card",
+        [
+            "4111 1111 1111 1112",  # last digit off — fails Luhn
+            "1234 5678 9012 3456",  # random digits
+        ],
+    )
     def test_invalid_luhn_rejected(self, detector, card):
         spans = detector.detect(f"kart: {card}")
         assert not any(s.entity_type == "CREDIT_CARD" for s in spans), card
 
     def test_validate_luhn_function(self):
         from ai_guard.detectors.regex_detector import _validate_luhn
+
         assert _validate_luhn("4111111111111111") is True
         assert _validate_luhn("4111111111111112") is False
-        assert _validate_luhn("123") is False   # too short
+        assert _validate_luhn("123") is False  # too short
 
 
 # ── Expanded CUSTOM_SECRET provider formats ────────────────────────────────
+
 
 class TestSecretFormats:
     @pytest.fixture
     def detector(self):
         from ai_guard.detectors.regex_detector import RegexDetector
+
         return RegexDetector({"CUSTOM_SECRET"})
 
-    @pytest.mark.parametrize("secret", [
-        "sk_live_51NxT8ABCDEF1234567890",            # Stripe
-        "sk-ant-api03-abcdefgh1234567890XYZ",         # Anthropic
-        "AIzaSyD1234567890abcdefghijklmnopqrstuv",    # Google API key (AIza+35)
-        "glpat-AbCdEf1234567890XyZw",                 # GitLab
-        "npm_abcdefghijklmnopqrstuvwxyz0123456789",   # npm
-    ])
+    @pytest.mark.parametrize(
+        "secret",
+        [
+            "sk_live_51NxT8ABCDEF1234567890",  # Stripe
+            "sk-ant-api03-abcdefgh1234567890XYZ",  # Anthropic
+            "AIzaSyD1234567890abcdefghijklmnopqrstuv",  # Google API key (AIza+35)
+            "glpat-AbCdEf1234567890XyZw",  # GitLab
+            "npm_abcdefghijklmnopqrstuvwxyz0123456789",  # npm
+        ],
+    )
     def test_provider_tokens(self, detector, secret):
         spans = detector.detect(f"token={secret}")
         assert any(s.entity_type == "CUSTOM_SECRET" and secret in s.text for s in spans), secret
@@ -533,18 +573,23 @@ class TestSecretFormats:
 
 # ── Multilingual DATE_OF_BIRTH (DE / FR) ───────────────────────────────────
 
+
 class TestMultilingualDOB:
     @pytest.fixture
     def detector(self):
         from ai_guard.detectors.regex_detector import RegexDetector
+
         return RegexDetector({"DATE_OF_BIRTH"})
 
-    @pytest.mark.parametrize("text", [
-        "geboren am 15. März 1988",
-        "Geburtsdatum: 15.03.1988",
-        "né le 3 février 1990",
-        "date de naissance: 1985-07-22",
-    ])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "geboren am 15. März 1988",
+            "Geburtsdatum: 15.03.1988",
+            "né le 3 février 1990",
+            "date de naissance: 1985-07-22",
+        ],
+    )
     def test_german_french_dob(self, detector, text):
         spans = detector.detect(text)
         assert any(s.entity_type == "DATE_OF_BIRTH" for s in spans), text
@@ -552,17 +597,22 @@ class TestMultilingualDOB:
 
 # ── Multilingual PHONE (FR national / DE mobile) ───────────────────────────
 
+
 class TestMultilingualPhone:
     @pytest.fixture
     def detector(self):
         from ai_guard.detectors.regex_detector import RegexDetector
+
         return RegexDetector({"PHONE"})
 
-    @pytest.mark.parametrize("text,number", [
-        ("Tel 01 23 45 67 89 svp", "01 23 45 67 89"),
-        ("appelez le 01.23.45.67.89", "01.23.45.67.89"),
-        ("Handy 0151 23456789 erreichbar", "0151 23456789"),
-    ])
+    @pytest.mark.parametrize(
+        "text,number",
+        [
+            ("Tel 01 23 45 67 89 svp", "01 23 45 67 89"),
+            ("appelez le 01.23.45.67.89", "01.23.45.67.89"),
+            ("Handy 0151 23456789 erreichbar", "0151 23456789"),
+        ],
+    )
     def test_fr_de_phone(self, detector, text, number):
         spans = detector.detect(text)
         assert any(s.entity_type == "PHONE" and s.text == number for s in spans), text
@@ -570,18 +620,23 @@ class TestMultilingualPhone:
 
 # ── VAT_NUMBER ─────────────────────────────────────────────────────────────
 
+
 class TestVatNumber:
     @pytest.fixture
     def detector(self):
         from ai_guard.detectors.regex_detector import RegexDetector
+
         return RegexDetector({"VAT_NUMBER"})
 
-    @pytest.mark.parametrize("text,vat", [
-        ("USt-IdNr DE123456789", "DE123456789"),
-        ("TVA FRAB123456789", "FRAB123456789"),
-        ("VAT GB123456789 reg", "GB123456789"),
-        ("partita IVA IT12345678901", "IT12345678901"),
-    ])
+    @pytest.mark.parametrize(
+        "text,vat",
+        [
+            ("USt-IdNr DE123456789", "DE123456789"),
+            ("TVA FRAB123456789", "FRAB123456789"),
+            ("VAT GB123456789 reg", "GB123456789"),
+            ("partita IVA IT12345678901", "IT12345678901"),
+        ],
+    )
     def test_eu_vat_prefixed(self, detector, text, vat):
         spans = detector.detect(text)
         assert any(s.entity_type == "VAT_NUMBER" and vat in s.text for s in spans), text
@@ -597,10 +652,12 @@ class TestVatNumber:
 
     def test_vat_in_guard(self):
         from ai_guard import LLMGuard
+
         guard = LLMGuard(use_ner=False)
         result = guard.scan("Firma USt-IdNr DE123456789 ile kayıtlı.")
         assert any(v.entity_type == "VAT_NUMBER" for v in result.violations)
 
     def test_vehicle_plate_in_turkish_entities(self):
         from ai_guard.entity_groups import turkish_entities
+
         assert "VEHICLE_PLATE" in turkish_entities()

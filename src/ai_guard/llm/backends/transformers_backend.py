@@ -33,6 +33,7 @@ Usage::
 Environment variables:
     HF_TOKEN   — HuggingFace access token for gated models
 """
+
 from __future__ import annotations
 
 import logging
@@ -69,13 +70,13 @@ class TransformersBackend(BaseLLMBackend):
         load_in_4bit: bool = False,
         max_new_tokens: int = 512,
     ) -> None:
-        self._model_name    = model
-        self._device_map    = device_map
-        self._load_in_8bit  = load_in_8bit
-        self._load_in_4bit  = load_in_4bit
+        self._model_name = model
+        self._device_map = device_map
+        self._load_in_8bit = load_in_8bit
+        self._load_in_4bit = load_in_4bit
         self._max_new_tokens = max_new_tokens
-        self._pipeline: Any  = None
-        self._lock           = threading.Lock()
+        self._pipeline: Any = None
+        self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # BaseLLMBackend interface
@@ -108,8 +109,8 @@ class TransformersBackend(BaseLLMBackend):
             outputs = pipe(
                 messages,
                 max_new_tokens=self._max_new_tokens,
-                do_sample=False,          # equivalent to temperature=0 — deterministic
-                return_full_text=False,   # return only new tokens
+                do_sample=False,  # equivalent to temperature=0 — deterministic
+                return_full_text=False,  # return only new tokens
             )
         except Exception as exc:
             raise ValueError(f"Model inference failed ({self._model_name}): {exc}") from exc
@@ -160,11 +161,12 @@ class TransformersBackend(BaseLLMBackend):
             raise ImportError(
                 "'huggingface_hub' is required to download models.\n"
                 "Install with: pip install huggingface_hub"
-            )
+            ) from None
 
         logger.info("Downloading from HuggingFace Hub: %s", model)
         if on_progress:
             from ai_guard.llm.backends.base import PullProgress
+
             on_progress(PullProgress(status="downloading", completed=0, total=0))
 
         snapshot_download(repo_id=model)
@@ -172,6 +174,7 @@ class TransformersBackend(BaseLLMBackend):
         logger.info("Model downloaded: %s", model)
         if on_progress:
             from ai_guard.llm.backends.base import PullProgress
+
             on_progress(PullProgress(status="success", completed=1, total=1))
 
     # ------------------------------------------------------------------
@@ -203,15 +206,15 @@ class TransformersBackend(BaseLLMBackend):
             raise ImportError(
                 "'transformers' and 'torch' are required for the Transformers backend.\n"
                 "Install with: pip install 'ai-guard[transformers]'"
-            )
+            ) from None
 
         logger.info("Loading Transformers model: %s", self._model_name)
 
         kwargs: dict[str, Any] = {
-            "task":       "text-generation",
-            "model":      self._model_name,
+            "task": "text-generation",
+            "model": self._model_name,
             "device_map": self._device_map,
-            "dtype":      torch.bfloat16,
+            "dtype": torch.bfloat16,
         }
 
         if self._load_in_8bit:

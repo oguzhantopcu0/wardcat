@@ -8,11 +8,10 @@ behave exactly as pure detection.
 
 The LLM backend is mocked — no real model calls.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
-
-import pytest
 
 from ai_guard.core.engine import DetectionEngine
 from ai_guard.detectors.base import BaseDetector, DetectedSpan
@@ -20,8 +19,8 @@ from ai_guard.detectors.llm_detector import LLMDetector
 from ai_guard.llm.backends.base import BaseLLMBackend
 from ai_guard.llm.prompt import build_messages
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────
+
 
 class FakeDetector(BaseDetector):
     """Returns a fixed set of spans — stands in for regex/NER."""
@@ -44,8 +43,8 @@ def _engine(detectors, adjudicate: bool) -> DetectionEngine:
         "salt": "",
         "entities": {
             "CREDIT_CARD": {"enabled": True, "action": "hash"},
-            "EMAIL":       {"enabled": True, "action": "warn"},
-            "PERSON":      {"enabled": True, "action": "hash"},
+            "EMAIL": {"enabled": True, "action": "warn"},
+            "PERSON": {"enabled": True, "action": "hash"},
         },
         "llm_detector": {"adjudicate": adjudicate},
     }
@@ -54,10 +53,12 @@ def _engine(detectors, adjudicate: bool) -> DetectionEngine:
 
 # ── Prompt ─────────────────────────────────────────────────────────────────
 
+
 class TestAdjudicationPrompt:
     def test_candidates_add_adjudication_block(self):
         msgs = build_messages(
-            "some text", {"EMAIL"},
+            "some text",
+            {"EMAIL"},
             candidates=[("PERSON", "Senior Backend Engineer")],
         )
         system = msgs[0]["content"]
@@ -74,6 +75,7 @@ class TestAdjudicationPrompt:
 
 
 # ── LLM detector candidate routing ─────────────────────────────────────────
+
 
 class TestDetectorCandidates:
     def test_candidates_passed_to_backend(self):
@@ -96,29 +98,31 @@ class TestDetectorCandidates:
 
 # ── Engine adjudication behaviour ──────────────────────────────────────────
 
+
 class TestEngineAdjudication:
     TEXT = "Senior Backend Engineer contacted a@b.com about card 4111 1111 1111 1111"
 
     def _candidates(self):
         cc = "4111 1111 1111 1111"
         cc_start = self.TEXT.find(cc)
-        return FakeDetector([
-            # NER false positive — model-based, low confidence
-            DetectedSpan("PERSON", "Senior Backend Engineer", 0, 23, confidence=0.85),
-            # Regex deterministic — must always survive
-            DetectedSpan("CREDIT_CARD", cc, cc_start, cc_start + len(cc), confidence=1.0),
-        ])
+        return FakeDetector(
+            [
+                # NER false positive — model-based, low confidence
+                DetectedSpan("PERSON", "Senior Backend Engineer", 0, 23, confidence=0.85),
+                # Regex deterministic — must always survive
+                DetectedSpan("CREDIT_CARD", cc, cc_start, cc_start + len(cc), confidence=1.0),
+            ]
+        )
 
     def test_llm_drops_ner_false_positive(self):
         # LLM omits the PERSON candidate and adds a new EMAIL.
-        llm = _mock_llm('[{"type":"EMAIL","text":"a@b.com"}]',
-                        {"PERSON", "EMAIL", "CREDIT_CARD"})
+        llm = _mock_llm('[{"type":"EMAIL","text":"a@b.com"}]', {"PERSON", "EMAIL", "CREDIT_CARD"})
         engine = _engine([self._candidates(), llm], adjudicate=True)
         result = engine.scan(self.TEXT)
         types = {v.entity_type for v in result.violations}
-        assert "PERSON" not in types                     # dropped by adjudication
-        assert "CREDIT_CARD" in types                    # deterministic, kept
-        assert "EMAIL" in types                          # new LLM find
+        assert "PERSON" not in types  # dropped by adjudication
+        assert "CREDIT_CARD" in types  # deterministic, kept
+        assert "EMAIL" in types  # new LLM find
         assert "Senior Backend Engineer" in result.sanitized_text
 
     def test_deterministic_kept_even_if_llm_silent(self):

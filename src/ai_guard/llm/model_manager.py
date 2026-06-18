@@ -1,10 +1,10 @@
 """
 Model management: downloading, listing, availability checking.
 """
+
 from __future__ import annotations
 
 import logging
-import sys
 
 from ai_guard.llm.backends.base import BaseLLMBackend, PullProgress
 
@@ -53,7 +53,7 @@ class ModelManager:
         if verbose:
             logger.info("Model not found: %s", model)
             try:
-                answer = input(f"  Download it? (~GB in size) [y/N]: ").strip().lower()
+                answer = input("  Download it? (~GB in size) [y/N]: ").strip().lower()
             except (EOFError, KeyboardInterrupt):
                 answer = ""
             if answer not in ("y", "yes"):
@@ -77,9 +77,9 @@ class ModelManager:
             if not verbose:
                 return
             if p.total:
-                bar_len  = 30
-                filled   = int(bar_len * p.completed / p.total)
-                bar      = "█" * filled + "░" * (bar_len - filled)
+                bar_len = 30
+                filled = int(bar_len * p.completed / p.total)
+                bar = "█" * filled + "░" * (bar_len - filled)
                 print(f"\r  [{bar}] {p.percent:5.1f}%  {p.status:<20}", end="", flush=True)
             else:
                 print(f"\r  {p.status:<40}", end="", flush=True)

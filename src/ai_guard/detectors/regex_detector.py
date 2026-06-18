@@ -3,26 +3,26 @@ from __future__ import annotations
 import concurrent.futures
 import logging
 import re
-from typing import Dict, List, Set, Tuple
+from collections.abc import Callable
 
 from ai_guard.detectors.base import BaseDetector, DetectedSpan
 
 logger = logging.getLogger(__name__)
 
 # (pattern, flags) tuple — per-entity flag support
-_SEP = r"[ \-\.]{0,2}"   # optional space/dash/dot in card numbers (up to 2 chars)
+_SEP = r"[ \-\.]{0,2}"  # optional space/dash/dot in card numbers (up to 2 chars)
 
-_PATTERNS: Dict[str, Tuple[str, int]] = {
+_PATTERNS: dict[str, tuple[str, int]] = {
     # ── Credit card ──────────────────────────────────────────────────
     # Supports spaced and compact formats: 4111111111111111 or 4111 1111 1111 1111
     "CREDIT_CARD": (
         r"(?<!\d)"
         r"(?:"
-        rf"4[0-9]{{3}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"   # Visa 16
-        rf"|4[0-9]{{12}}"                                                    # Visa 13
+        rf"4[0-9]{{3}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # Visa 16
+        rf"|4[0-9]{{12}}"  # Visa 13
         rf"|5[1-5][0-9]{{2}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # MasterCard
-        rf"|3[47][0-9]{{2}}{_SEP}[0-9]{{6}}{_SEP}[0-9]{{5}}"              # Amex (4-6-5)
-        rf"|3(?:0[0-5]|[68][0-9])[0-9]{{11}}"                              # Diners
+        rf"|3[47][0-9]{{2}}{_SEP}[0-9]{{6}}{_SEP}[0-9]{{5}}"  # Amex (4-6-5)
+        rf"|3(?:0[0-5]|[68][0-9])[0-9]{{11}}"  # Diners
         rf"|6(?:011|5[0-9]{{2}}){_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # Discover
         r")"
         r"(?!\d)",
@@ -319,14 +319,14 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
     "IPv6": (
         r"(?<![:\w])"
         r"(?:"
-        r"(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}"                       # full
-        r"|(?:[0-9a-fA-F]{1,4}:){1,7}:"                                    # trailing ::
-        r"|:(?::[0-9a-fA-F]{1,4}){1,7}"                                    # leading ::
-        r"|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}"                   # 1 gap
-        r"|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}"         # 2 gap
-        r"|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}"         # 3 gap
-        r"|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}"         # 4 gap
-        r"|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}"         # 5 gap
+        r"(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}"  # full
+        r"|(?:[0-9a-fA-F]{1,4}:){1,7}:"  # trailing ::
+        r"|:(?::[0-9a-fA-F]{1,4}){1,7}"  # leading ::
+        r"|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}"  # 1 gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}"  # 2 gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}"  # 3 gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}"  # 4 gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}"  # 5 gap
         r")"
         r"(?![:\w])",
         0,
@@ -347,19 +347,18 @@ _PATTERNS: Dict[str, Tuple[str, int]] = {
     # Spaced and compact forms are both matched.
     "VEHICLE_PLATE": (
         r"(?<!\d)"
-        r"(?:0[1-9]|[1-7]\d|80|81)"   # city code 01–81
+        r"(?:0[1-9]|[1-7]\d|80|81)"  # city code 01–81
         r"[\s]?"
-        r"[A-Z]{1,3}"                  # 1–3 Latin letters
+        r"[A-Z]{1,3}"  # 1–3 Latin letters
         r"[\s]?"
-        r"\d{2,4}"                     # 2–4 digits
+        r"\d{2,4}"  # 2–4 digits
         r"(?!\d)",
         0,
     ),
 }
 
-_COMPILED: Dict[str, re.Pattern] = {
-    entity: re.compile(pattern, flags)
-    for entity, (pattern, flags) in _PATTERNS.items()
+_COMPILED: dict[str, re.Pattern] = {
+    entity: re.compile(pattern, flags) for entity, (pattern, flags) in _PATTERNS.items()
 }
 
 # ── Connection-string credentials ────────────────────────────────────────────
@@ -391,22 +390,97 @@ def _safe_finditer(pattern: re.Pattern, text: str) -> list:
         except concurrent.futures.TimeoutError:
             logger.warning(
                 "Custom pattern %r timed out after %.1fs on input of length %d — skipped.",
-                pattern.pattern, _CUSTOM_PATTERN_TIMEOUT, len(text),
+                pattern.pattern,
+                _CUSTOM_PATTERN_TIMEOUT,
+                len(text),
             )
             return []
 
 
 # ISO 3166-1 alpha-2 country codes that have published IBAN formats (SWIFT/IBAN registry).
-_VALID_IBAN_COUNTRIES: frozenset[str] = frozenset({
-    "AD", "AE", "AL", "AT", "AZ", "BA", "BE", "BG", "BH", "BR", "BY",
-    "CH", "CR", "CY", "CZ", "DE", "DK", "DO", "EE", "EG", "ES", "FI",
-    "FO", "FR", "GB", "GE", "GI", "GL", "GR", "GT", "HR", "HU", "IE",
-    "IL", "IQ", "IS", "IT", "JO", "KW", "KZ", "LB", "LC", "LI", "LT",
-    "LU", "LV", "LY", "MC", "MD", "ME", "MK", "MR", "MT", "MU", "NL",
-    "NO", "PK", "PL", "PS", "PT", "QA", "RO", "RS", "SA", "SC", "SD",
-    "SE", "SI", "SK", "SM", "ST", "SV", "TL", "TN", "TR", "UA", "VA",
-    "VG", "XK",
-})
+_VALID_IBAN_COUNTRIES: frozenset[str] = frozenset(
+    {
+        "AD",
+        "AE",
+        "AL",
+        "AT",
+        "AZ",
+        "BA",
+        "BE",
+        "BG",
+        "BH",
+        "BR",
+        "BY",
+        "CH",
+        "CR",
+        "CY",
+        "CZ",
+        "DE",
+        "DK",
+        "DO",
+        "EE",
+        "EG",
+        "ES",
+        "FI",
+        "FO",
+        "FR",
+        "GB",
+        "GE",
+        "GI",
+        "GL",
+        "GR",
+        "GT",
+        "HR",
+        "HU",
+        "IE",
+        "IL",
+        "IQ",
+        "IS",
+        "IT",
+        "JO",
+        "KW",
+        "KZ",
+        "LB",
+        "LC",
+        "LI",
+        "LT",
+        "LU",
+        "LV",
+        "LY",
+        "MC",
+        "MD",
+        "ME",
+        "MK",
+        "MR",
+        "MT",
+        "MU",
+        "NL",
+        "NO",
+        "PK",
+        "PL",
+        "PS",
+        "PT",
+        "QA",
+        "RO",
+        "RS",
+        "SA",
+        "SC",
+        "SD",
+        "SE",
+        "SI",
+        "SK",
+        "SM",
+        "ST",
+        "SV",
+        "TL",
+        "TN",
+        "TR",
+        "UA",
+        "VA",
+        "VG",
+        "XK",
+    }
+)
 
 
 def _validate_iban(value: str) -> bool:
@@ -469,7 +543,7 @@ def _validate_tc_id(value: str) -> bool:
     if len(value) != 11 or not value.isdigit() or value[0] == "0":
         return False
     d = [int(c) for c in value]
-    odd_sum  = d[0] + d[2] + d[4] + d[6] + d[8]
+    odd_sum = d[0] + d[2] + d[4] + d[6] + d[8]
     even_sum = d[1] + d[3] + d[5] + d[7]
     if (odd_sum * 7 - even_sum) % 10 != d[9]:
         return False
@@ -481,9 +555,9 @@ def _validate_tc_id(value: str) -> bool:
 # Entity-type → checksum/structural validator. A regex match is only accepted
 # as a violation when its validator (if any) returns True. Adding a new
 # validated entity is a one-line registry entry — no changes to detect().
-_VALIDATORS: Dict[str, "callable[[str], bool]"] = {
-    "TC_ID":       _validate_tc_id,
-    "IBAN":        _validate_iban,
+_VALIDATORS: dict[str, Callable[[str], bool]] = {
+    "TC_ID": _validate_tc_id,
+    "IBAN": _validate_iban,
     "CREDIT_CARD": _validate_luhn,
 }
 
@@ -491,27 +565,26 @@ _VALIDATORS: Dict[str, "callable[[str], bool]"] = {
 class RegexDetector(BaseDetector):
     """Detects structural PII patterns using regex (CC, IBAN, TC_ID, email, …)."""
 
-    def __init__(self, enabled_entities: Set[str], custom_patterns: dict = {}) -> None:
+    def __init__(self, enabled_entities: set[str], custom_patterns: dict | None = None) -> None:
         self.enabled_entities = enabled_entities
+        custom_patterns = custom_patterns or {}
         # Compile custom patterns: {entity_type: (compiled_pattern, action)}
-        self._custom_compiled: Dict[str, Tuple[re.Pattern, str]] = {}
+        self._custom_compiled: dict[str, tuple[re.Pattern, str]] = {}
         for name, cfg in custom_patterns.items():
             pattern_str = cfg.get("pattern", "")
             action = cfg.get("action", "warn")
             try:
                 self._custom_compiled[name] = (re.compile(pattern_str), action)
             except re.error as exc:
-                logger.warning(
-                    "Custom pattern %r could not be compiled: %s — skipped.", name, exc
-                )
+                logger.warning("Custom pattern %r could not be compiled: %s — skipped.", name, exc)
 
-    def detect(self, text: str) -> List[DetectedSpan]:
+    def detect(self, text: str) -> list[DetectedSpan]:
         """Return all regex matches for enabled entity types."""
-        spans: List[DetectedSpan] = []
+        spans: list[DetectedSpan] = []
 
         # Connection-string credentials: capture the password as a secret and
         # mark its offset so the spurious EMAIL match (password@host) is dropped.
-        cred_pwd_starts: Set[int] = set()
+        cred_pwd_starts: set[int] = set()
         for match in _URI_CREDENTIAL.finditer(text):
             cred_pwd_starts.add(match.start("pwd"))
             if "CUSTOM_SECRET" in self.enabled_entities:
@@ -539,7 +612,8 @@ class RegexDetector(BaseDetector):
                     logger.debug(
                         "%s format match rejected (failed validation): %r — "
                         "if this is real PII, the value may be incorrectly formatted.",
-                        entity_type, value,
+                        entity_type,
+                        value,
                     )
                     continue
                 spans.append(

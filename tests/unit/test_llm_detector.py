@@ -4,19 +4,18 @@ LLMDetector unit tests.
 No real LLM calls are made; the backend is mocked.
 This allows tests to run without Ollama installed.
 """
+
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from ai_guard.detectors.llm_detector import LLMDetector
 from ai_guard.llm.backends.base import BaseLLMBackend
 from ai_guard.llm.prompt import build_prompt
 
-
 # ── Mock backend helper ──────────────────────────────────────────────────────
+
 
 def _mock_backend(response: str) -> BaseLLMBackend:
     backend = MagicMock(spec=BaseLLMBackend)
@@ -37,6 +36,7 @@ def _detector(response: str, entities: set[str] | None = None) -> LLMDetector:
 # ═══════════════════════════════════════════════════════════════════════════
 # JSON response parsing
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestParseResponse:
     def test_clean_json_array(self):
@@ -84,14 +84,15 @@ class TestParseResponse:
 # Span location
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestSpanLocation:
     def test_correct_start_end(self):
         text = "bana a@b.com yaz"
         det = _detector('[{"type":"EMAIL","text":"a@b.com"}]')
         spans = det.detect(text)
         assert spans[0].start == 5
-        assert spans[0].end   == 12
-        assert text[spans[0].start:spans[0].end] == "a@b.com"
+        assert spans[0].end == 12
+        assert text[spans[0].start : spans[0].end] == "a@b.com"
 
     def test_multiple_occurrences_all_located(self):
         text = "a@b.com ve a@b.com"
@@ -109,22 +110,26 @@ class TestSpanLocation:
 
     def test_multiple_entity_types(self):
         text = "TC: 12345678950 kart: 4111111111111111"
-        response = json.dumps([
-            {"type": "TC_ID",       "text": "12345678950"},
-            {"type": "CREDIT_CARD", "text": "4111111111111111"},
-        ])
+        response = json.dumps(
+            [
+                {"type": "TC_ID", "text": "12345678950"},
+                {"type": "CREDIT_CARD", "text": "4111111111111111"},
+            ]
+        )
         det = _detector(response)
         spans = det.detect(text)
         types = {s.entity_type for s in spans}
-        assert "TC_ID"       in types
+        assert "TC_ID" in types
         assert "CREDIT_CARD" in types
 
     def test_no_duplicate_spans_for_same_position(self):
         """Even if the same entity is returned twice, only one span should be created."""
-        response = json.dumps([
-            {"type": "EMAIL", "text": "a@b.com"},
-            {"type": "EMAIL", "text": "a@b.com"},   # duplicate
-        ])
+        response = json.dumps(
+            [
+                {"type": "EMAIL", "text": "a@b.com"},
+                {"type": "EMAIL", "text": "a@b.com"},  # duplicate
+            ]
+        )
         det = _detector(response)
         spans = det.detect("a@b.com")
         assert len(spans) == 1
@@ -134,12 +139,13 @@ class TestSpanLocation:
 # Entity filter
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestEntityFilter:
     def test_disabled_entity_skipped(self):
         """Even if the LLM returns a disabled entity, no span should be created."""
         det = _detector(
             '[{"type":"ORG","text":"Apple"}]',
-            entities={"PERSON"},   # ORG disabled
+            entities={"PERSON"},  # ORG disabled
         )
         spans = det.detect("Apple şirketi")
         assert not any(s.entity_type == "ORG" for s in spans)
@@ -169,9 +175,11 @@ class TestEntityFilter:
 # Error handling
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestErrorHandling:
     def test_connection_error_returns_empty_with_warning(self, caplog):
         import logging
+
         backend = MagicMock(spec=BaseLLMBackend)
         backend.complete_messages.side_effect = ConnectionError("Connection refused")
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
@@ -184,6 +192,7 @@ class TestErrorHandling:
 
     def test_generic_exception_returns_empty_with_warning(self, caplog):
         import logging
+
         backend = MagicMock(spec=BaseLLMBackend)
         backend.complete_messages.side_effect = OSError("Beklenmedik hata")
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
@@ -214,6 +223,7 @@ class TestErrorHandling:
 # ═══════════════════════════════════════════════════════════════════════════
 # Prompt building
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestHallucinationFilter:
     def test_person_single_word_rejected(self):
@@ -265,7 +275,7 @@ class TestCache:
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"}, cache_ttl=60)
         spans1 = det.detect("a@b.com here")
         spans2 = det.detect("a@b.com here")
-        assert backend.complete_messages.call_count == 1   # second call used cache
+        assert backend.complete_messages.call_count == 1  # second call used cache
         assert len(spans1) == len(spans2) == 1
 
     def test_cache_miss_calls_backend(self):
@@ -280,11 +290,12 @@ class TestCache:
     def test_cache_expiry_calls_backend_again(self):
         """After TTL expires, backend is called again."""
         import time
+
         backend = MagicMock()
         backend.complete_messages.return_value = "[]"
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"}, cache_ttl=0.01)
         det.detect("text")
-        time.sleep(0.05)   # wait for cache to expire
+        time.sleep(0.05)  # wait for cache to expire
         det.detect("text")
         assert backend.complete_messages.call_count == 2
 
@@ -293,9 +304,9 @@ class TestCache:
         backend = MagicMock()
         backend.complete_messages.return_value = '[{"type":"EMAIL","text":"a@b.com"}]'
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"}, cache_ttl=60)
-        spans_first  = det.detect("contact a@b.com please")
+        spans_first = det.detect("contact a@b.com please")
         spans_second = det.detect("contact a@b.com please")
-        assert spans_first[0].text  == spans_second[0].text
+        assert spans_first[0].text == spans_second[0].text
         assert spans_first[0].start == spans_second[0].start
 
 
@@ -306,9 +317,9 @@ class TestPromptBuilding:
 
     def test_prompt_contains_entity_types(self):
         prompt = build_prompt("test", {"EMAIL", "CREDIT_CARD", "PERSON"})
-        assert "EMAIL"       in prompt
+        assert "EMAIL" in prompt
         assert "CREDIT_CARD" in prompt
-        assert "PERSON"      in prompt
+        assert "PERSON" in prompt
 
     def test_prompt_requests_json_output(self):
         prompt = build_prompt("test", {"EMAIL"})
@@ -323,7 +334,7 @@ class TestPromptBuilding:
         messages = backend.complete_messages.call_args[0][0]
         combined = " ".join(m["content"] for m in messages)
         assert "a@b.com" in combined
-        assert "EMAIL"   in combined
+        assert "EMAIL" in combined
 
 
 # ── detect_async ─────────────────────────────────────────────────────────────

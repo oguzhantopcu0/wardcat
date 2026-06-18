@@ -53,11 +53,13 @@ preserved exactly.
     each string field would trigger a separate LLM call.  Set
     ``json_field_scan=False`` to scan the raw JSON text instead.
 """
+
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +143,8 @@ class AIGuardMiddleware:
         if len(body) > self.max_body_bytes:
             logger.debug(
                 "ai-guard: request body (%d bytes) exceeds max_body_bytes (%d) — skipped.",
-                len(body), self.max_body_bytes,
+                len(body),
+                self.max_body_bytes,
             )
             await self._forward(scope, send, body)
             return
@@ -170,7 +173,8 @@ class AIGuardMiddleware:
                 logger.warning(
                     "ai-guard: PII detected in request to %s — %d violation(s). "
                     "(mode=warn, passing through)",
-                    path, len(result.violations),
+                    path,
+                    len(result.violations),
                 )
             await self._forward(scope, send, body)
             return
@@ -178,7 +182,8 @@ class AIGuardMiddleware:
         if self.on_pii_detected == "block":
             logger.info(
                 "ai-guard: blocked request to %s — %d PII violation(s).",
-                path, len(result.violations),
+                path,
+                len(result.violations),
             )
             await self._send_422(send, result.redacted())
             return
@@ -186,7 +191,8 @@ class AIGuardMiddleware:
         # sanitize mode: forward sanitized body downstream
         logger.info(
             "ai-guard: sanitized %d violation(s) in request to %s.",
-            len(result.violations), path,
+            len(result.violations),
+            path,
         )
         await self._forward(scope, send, sanitized_body)
 
@@ -253,21 +259,27 @@ class AIGuardMiddleware:
     @staticmethod
     async def _send_422(send, redacted: dict) -> None:
         """Send an HTTP 422 response with violation metadata (no raw PII)."""
-        body = json.dumps({
-            "error": "Request blocked: PII detected.",
-            "violations": redacted.get("violations", []),
-        }).encode("utf-8")
+        body = json.dumps(
+            {
+                "error": "Request blocked: PII detected.",
+                "violations": redacted.get("violations", []),
+            }
+        ).encode("utf-8")
 
-        await send({
-            "type": "http.response.start",
-            "status": 422,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(body)).encode()),
-            ],
-        })
-        await send({
-            "type": "http.response.body",
-            "body": body,
-            "more_body": False,
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 422,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            }
+        )
+        await send(
+            {
+                "type": "http.response.body",
+                "body": body,
+                "more_body": False,
+            }
+        )

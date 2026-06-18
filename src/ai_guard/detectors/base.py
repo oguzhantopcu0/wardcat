@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List
 
 
 @dataclass
@@ -30,6 +29,6 @@ class BaseDetector(ABC):
     can_adjudicate: bool = False
 
     @abstractmethod
-    def detect(self, text: str) -> List[DetectedSpan]:
+    def detect(self, text: str) -> list[DetectedSpan]:
         """Scan text and return the list of found spans."""
         ...

@@ -24,7 +24,7 @@ def _warn_if_http(url: str) -> None:
         return
     if os.environ.get("LLMGUARD_ALLOW_HTTP", "").lower() in ("1", "true", "yes"):
         return
-    host = url[len("http://"):].split("/")[0].split(":")[0]
+    host = url[len("http://") :].split("/")[0].split(":")[0]
     if host in _LOCALHOST_HOSTS:
         logger.warning(
             "LLM backend is using HTTP: %s — PII will be transmitted unencrypted. "
@@ -42,12 +42,12 @@ def _warn_if_http(url: str) -> None:
 def _httpx():
     try:
         import httpx
+
         return httpx
     except ImportError:
         raise ImportError(
-            "'httpx' is required for the LLM detector. "
-            "Install with: uv add 'ai-guard[llm]'"
-        )
+            "'httpx' is required for the LLM detector. Install with: uv add 'ai-guard[llm]'"
+        ) from None
 
 
 class OllamaBackend(BaseLLMBackend):
@@ -73,7 +73,7 @@ class OllamaBackend(BaseLLMBackend):
             response = httpx.post(
                 f"{self.base_url}/api/generate",
                 json={
-                    "model":  self.model,
+                    "model": self.model,
                     "prompt": prompt,
                     "stream": False,
                     "options": {"temperature": 0},  # deterministic output
@@ -91,7 +91,7 @@ class OllamaBackend(BaseLLMBackend):
             raise ConnectionError(
                 f"Could not connect to Ollama service: {self.base_url}\n"
                 "Is the service running? Check: ollama serve"
-            )
+            ) from None
 
     async def complete_async(self, prompt: str, *, timeout: int = 60) -> str:
         """Native async variant using ``httpx.AsyncClient``."""
@@ -101,7 +101,7 @@ class OllamaBackend(BaseLLMBackend):
                 response = await client.post(
                     f"{self.base_url}/api/generate",
                     json={
-                        "model":  self.model,
+                        "model": self.model,
                         "prompt": prompt,
                         "stream": False,
                         "options": {"temperature": 0},
@@ -119,7 +119,7 @@ class OllamaBackend(BaseLLMBackend):
             raise ConnectionError(
                 f"Could not connect to Ollama service: {self.base_url}\n"
                 "Is the service running? Check: ollama serve"
-            )
+            ) from None
 
     def list_models(self) -> list[str]:
         httpx = _httpx()
@@ -128,7 +128,7 @@ class OllamaBackend(BaseLLMBackend):
             response.raise_for_status()
             return [m["name"] for m in response.json().get("models", [])]
         except httpx.ConnectError:
-            raise ConnectionError(f"Could not connect to Ollama service: {self.base_url}")
+            raise ConnectionError(f"Could not connect to Ollama service: {self.base_url}") from None
 
     def pull_model(
         self,
@@ -146,7 +146,7 @@ class OllamaBackend(BaseLLMBackend):
                 "POST",
                 f"{self.base_url}/api/pull",
                 json={"name": model},
-                timeout=None,   # download duration is unpredictable
+                timeout=None,  # download duration is unpredictable
             ) as response:
                 response.raise_for_status()
                 for line in response.iter_lines():
@@ -154,10 +154,12 @@ class OllamaBackend(BaseLLMBackend):
                         continue
                     data = json.loads(line)
                     if on_progress:
-                        on_progress(PullProgress(
-                            status=data.get("status", ""),
-                            completed=data.get("completed", 0),
-                            total=data.get("total", 0),
-                        ))
+                        on_progress(
+                            PullProgress(
+                                status=data.get("status", ""),
+                                completed=data.get("completed", 0),
+                                total=data.get("total", 0),
+                            )
+                        )
         except httpx.ConnectError:
-            raise ConnectionError(f"Could not connect to Ollama service: {self.base_url}")
+            raise ConnectionError(f"Could not connect to Ollama service: {self.base_url}") from None

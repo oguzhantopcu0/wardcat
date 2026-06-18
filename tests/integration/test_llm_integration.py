@@ -4,6 +4,7 @@ LLM detector integration tests.
 Tests the cooperation of LLMGuard + LLMDetector via a mock backend,
 without a real Ollama service.
 """
+
 from __future__ import annotations
 
 import json
@@ -32,8 +33,17 @@ def _guard_with_llm(response: str, entities: set[str] | None = None) -> LLMGuard
     we inject the detector afterwards.
     """
     guard = LLMGuard(use_ner=False, use_llm=False)  # build without LLM first
-    enabled = entities or {"CREDIT_CARD", "EMAIL", "PERSON", "TC_ID", "IBAN",
-                           "PHONE", "IP_ADDRESS", "ADDRESS", "CUSTOM_SECRET"}
+    enabled = entities or {
+        "CREDIT_CARD",
+        "EMAIL",
+        "PERSON",
+        "TC_ID",
+        "IBAN",
+        "PHONE",
+        "IP_ADDRESS",
+        "ADDRESS",
+        "CUSTOM_SECRET",
+    }
     llm_det = LLMDetector(
         backend=_mock_backend(response),
         enabled_entities=enabled,
@@ -41,10 +51,11 @@ def _guard_with_llm(response: str, entities: set[str] | None = None) -> LLMGuard
     # Add LLM entities to engine config (avoid warn if not present when guard._rebuild() runs)
     for e in enabled:
         guard._config["entities"].setdefault(e, {"enabled": True, "action": "warn"})
-    guard._config["entities"]["PERSON"]        = {"enabled": True, "action": "hash"}
+    guard._config["entities"]["PERSON"] = {"enabled": True, "action": "hash"}
     guard._config["entities"]["CUSTOM_SECRET"] = {"enabled": True, "action": "hash"}
     guard._detectors.append(llm_det)
     from ai_guard.core.engine import DetectionEngine
+
     guard._engine = DetectionEngine(guard._config, guard._detectors)
     return guard
 
@@ -52,6 +63,7 @@ def _guard_with_llm(response: str, entities: set[str] | None = None) -> LLMGuard
 # ═══════════════════════════════════════════════════════════════════════════
 # LLM single detection
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestLLMSingleDetection:
     def test_person_detected_and_hashed(self):
@@ -84,15 +96,16 @@ class TestLLMSingleDetection:
 # LLM + Regex hybrid
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestLLMPlusRegex:
     def test_regex_and_llm_both_detect(self):
         """Regex detects the card, LLM detects the person."""
         llm_response = json.dumps([{"type": "PERSON", "text": "Mehmet Demir"}])
         guard = _guard_with_llm(llm_response)
-        text  = "Mehmet Demir kartıyla 4111111111111111 ödedi."
+        text = "Mehmet Demir kartıyla 4111111111111111 ödedi."
         result = guard.scan(text)
         types = {v.entity_type for v in result.violations}
-        assert "PERSON"      in types
+        assert "PERSON" in types
         assert "CREDIT_CARD" in types
 
     def test_llm_and_regex_same_entity_no_duplicate(self):
@@ -123,6 +136,7 @@ class TestLLMPlusRegex:
 # Sanitized text integrity
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestLLMSanitizedIntegrity:
     def test_person_position_correct_in_original(self):
         name = "Ayşe Kaya"
@@ -133,25 +147,28 @@ class TestLLMSanitizedIntegrity:
 
         for v in result.violations:
             if v.entity_type == "PERSON":
-                assert text[v.start:v.end] == v.original
+                assert text[v.start : v.end] == v.original
 
     def test_multiple_llm_detections_sanitized_correctly(self):
         text = "Kişi: Ali Yılmaz, kod: PROJE-X-42"
-        llm_response = json.dumps([
-            {"type": "PERSON",        "text": "Ali Yılmaz"},
-            {"type": "CUSTOM_SECRET", "text": "PROJE-X-42"},
-        ])
+        llm_response = json.dumps(
+            [
+                {"type": "PERSON", "text": "Ali Yılmaz"},
+                {"type": "CUSTOM_SECRET", "text": "PROJE-X-42"},
+            ]
+        )
         guard = _guard_with_llm(llm_response, {"PERSON", "CUSTOM_SECRET"})
         result = guard.scan(text)
         assert "Ali Yılmaz" not in result.sanitized_text
         assert "PROJE-X-42" not in result.sanitized_text
-        assert "[PERSON:"        in result.sanitized_text
+        assert "[PERSON:" in result.sanitized_text
         assert "[CUSTOM_SECRET:" in result.sanitized_text
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Error handling — even if LLM errors, other detectors should run
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestLLMFaultTolerance:
     def test_llm_error_doesnt_block_regex(self):
@@ -164,6 +181,7 @@ class TestLLMFaultTolerance:
         llm_det = LLMDetector(backend=failing_backend, enabled_entities={"PERSON"})
         guard._detectors.append(llm_det)
         from ai_guard.core.engine import DetectionEngine
+
         guard._engine = DetectionEngine(guard._config, guard._detectors)
 
         with warnings.catch_warnings(record=True):
@@ -189,21 +207,23 @@ class TestLLMFaultTolerance:
 # LLMGuard configuration — use_llm flag
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestLLMGuardConfig:
     def test_use_llm_false_no_llm_detector(self):
         guard = LLMGuard(use_ner=False, use_llm=False)
         from ai_guard.detectors.llm_detector import LLMDetector
+
         assert not any(isinstance(d, LLMDetector) for d in guard._detectors)
 
     def test_llm_config_stored_correctly(self):
         guard = LLMGuard(
             use_ner=False,
-            use_llm=False,           # test without service; check config
+            use_llm=False,  # test without service; check config
             llm_model="mistral",
             llm_base_url="http://10.0.0.5:11434",
         )
         cfg = guard._config["llm_detector"]
-        assert cfg["model"]    == "mistral"
+        assert cfg["model"] == "mistral"
         assert cfg["base_url"] == "http://10.0.0.5:11434"
 
     def test_invalid_backend_raises(self):

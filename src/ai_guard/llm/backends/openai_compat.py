@@ -19,7 +19,7 @@ def _warn_if_http(url: str) -> None:
         return
     if os.environ.get("LLMGUARD_ALLOW_HTTP", "").lower() in ("1", "true", "yes"):
         return
-    host = url[len("http://"):].split("/")[0].split(":")[0]
+    host = url[len("http://") :].split("/")[0].split(":")[0]
     if host in _LOCALHOST_HOSTS:
         logger.warning(
             "LLM backend is using HTTP: %s — PII will be transmitted unencrypted. "
@@ -37,12 +37,12 @@ def _warn_if_http(url: str) -> None:
 def _httpx():
     try:
         import httpx
+
         return httpx
     except ImportError:
         raise ImportError(
-            "'httpx' is required for the LLM detector. "
-            "Install with: uv add 'ai-guard[llm]'"
-        )
+            "'httpx' is required for the LLM detector. Install with: uv add 'ai-guard[llm]'"
+        ) from None
 
 
 class OpenAICompatBackend(BaseLLMBackend):
@@ -85,11 +85,9 @@ class OpenAICompatBackend(BaseLLMBackend):
             except (KeyError, IndexError) as exc:
                 raise ConnectionError(
                     f"Unexpected response format from LLM service (missing expected keys): {exc}"
-                )
+                ) from exc
         except httpx.ConnectError:
-            raise ConnectionError(
-                f"Could not connect to LLM service: {self.base_url}"
-            )
+            raise ConnectionError(f"Could not connect to LLM service: {self.base_url}") from None
 
     async def complete_async(self, prompt: str, *, timeout: int = 60) -> str:
         """Native async variant using ``httpx.AsyncClient``."""
@@ -112,11 +110,9 @@ class OpenAICompatBackend(BaseLLMBackend):
                 except (KeyError, IndexError) as exc:
                     raise ConnectionError(
                         f"Unexpected response format from LLM service: {exc}"
-                    )
+                    ) from exc
         except httpx.ConnectError:
-            raise ConnectionError(
-                f"Could not connect to LLM service: {self.base_url}"
-            )
+            raise ConnectionError(f"Could not connect to LLM service: {self.base_url}") from None
 
     def list_models(self) -> list[str]:
         httpx = _httpx()
@@ -129,7 +125,7 @@ class OpenAICompatBackend(BaseLLMBackend):
             response.raise_for_status()
             return [m["id"] for m in response.json().get("data", [])]
         except httpx.ConnectError:
-            raise ConnectionError(f"Could not connect to LLM service: {self.base_url}")
+            raise ConnectionError(f"Could not connect to LLM service: {self.base_url}") from None
 
     def pull_model(
         self,

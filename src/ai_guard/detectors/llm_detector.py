@@ -10,6 +10,7 @@ Rationale: A direct httpx implementation for a single prompt → JSON parse →
 DetectedSpan conversion is lighter, more testable, and more transparent
 than 100+ transitive dependencies.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -19,8 +20,7 @@ import logging
 import re
 import threading
 import time
-from dataclasses import dataclass, field
-from typing import List, Set
+from dataclasses import dataclass
 
 from ai_guard.detectors.base import BaseDetector, DetectedSpan
 from ai_guard.llm.backends.base import BaseLLMBackend
@@ -38,8 +38,10 @@ _PARA_RE = re.compile(r"\n+")
 @dataclass
 class _CacheEntry:
     """A single TTL cache entry."""
-    spans: List[DetectedSpan]
+
+    spans: list[DetectedSpan]
     expires_at: float
+
 
 # Minimum format validation patterns for structural entities.
 # If the LLM returns these types, the content must also match the format;
@@ -47,31 +49,33 @@ class _CacheEntry:
 _STRUCTURAL_VALIDATORS: dict[str, re.Pattern] = {
     # Person name must consist of at least two words (first + last name).
     # Single words (e.g. "target", "customer") are LLM hallucinations → discarded.
-    "PERSON":     re.compile(r"^\S+(?:\s+\S+)+$"),
-    "TC_ID":      re.compile(r"^\d{11}$"),
-    "IBAN":       re.compile(r"^[A-Z]{2}\d{2}[A-Z0-9 ]{10,}$", re.IGNORECASE),
+    "PERSON": re.compile(r"^\S+(?:\s+\S+)+$"),
+    "TC_ID": re.compile(r"^\d{11}$"),
+    "IBAN": re.compile(r"^[A-Z]{2}\d{2}[A-Z0-9 ]{10,}$", re.IGNORECASE),
     "CREDIT_CARD": re.compile(r"^[\d\s\-]{13,19}$"),
-    "PHONE":      re.compile(r"[\d\s\-\+\(\)]{7,}"),
+    "PHONE": re.compile(r"[\d\s\-\+\(\)]{7,}"),
     "IP_ADDRESS": re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$"),
     "POSTAL_CODE": re.compile(r"^\d{5}$"),
-    "UUID":        re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE),
-    "SSN":         re.compile(r"^\d{3}-\d{2}-\d{4}$"),
+    "UUID": re.compile(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+    ),
+    "SSN": re.compile(r"^\d{3}-\d{2}-\d{4}$"),
     "MAC_ADDRESS": re.compile(r"^(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$"),
-    "JWT":         re.compile(r"^eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]*$"),
-    "IPv6":        re.compile(
+    "JWT": re.compile(r"^eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]*$"),
+    "IPv6": re.compile(
         r"^(?:"
-        r"(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}"                   # full
-        r"|(?:[0-9a-fA-F]{1,4}:){1,7}:"                                # trailing ::
-        r"|:(?::[0-9a-fA-F]{1,4}){1,7}"                                # leading ::
-        r"|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}"              # 1-gap
-        r"|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}"    # 2-gap
-        r"|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}"    # 3-gap
-        r"|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}"    # 4-gap
-        r"|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}"    # 5-gap
+        r"(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}"  # full
+        r"|(?:[0-9a-fA-F]{1,4}:){1,7}:"  # trailing ::
+        r"|:(?::[0-9a-fA-F]{1,4}){1,7}"  # leading ::
+        r"|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}"  # 1-gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}"  # 2-gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}"  # 3-gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}"  # 4-gap
+        r"|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}"  # 5-gap
         r")$",
         re.IGNORECASE,
     ),
-    "NIN":         re.compile(r"^[A-Z]{2}\d{6}[A-D]$", re.IGNORECASE),
+    "NIN": re.compile(r"^[A-Z]{2}\d{6}[A-D]$", re.IGNORECASE),
 }
 
 
@@ -98,25 +102,25 @@ class LLMDetector(BaseDetector):
     def __init__(
         self,
         backend: BaseLLMBackend,
-        enabled_entities: Set[str],
+        enabled_entities: set[str],
         *,
         timeout: int = 60,
         cache_ttl: int = 0,
         chunk_chars: int = 800,
     ) -> None:
-        self.backend          = backend
+        self.backend = backend
         self.enabled_entities = enabled_entities
-        self.timeout          = timeout
-        self._cache_ttl       = cache_ttl    # seconds; 0 = disabled
-        self._chunk_chars     = chunk_chars  # max chars per LLM call; 0 = disabled
+        self.timeout = timeout
+        self._cache_ttl = cache_ttl  # seconds; 0 = disabled
+        self._chunk_chars = chunk_chars  # max chars per LLM call; 0 = disabled
         self._cache: dict[str, _CacheEntry] = {}
-        self._cache_lock      = threading.Lock()
+        self._cache_lock = threading.Lock()
 
     def detect(
         self,
         text: str,
-        candidates: List[DetectedSpan] | None = None,
-    ) -> List[DetectedSpan]:
+        candidates: list[DetectedSpan] | None = None,
+    ) -> list[DetectedSpan]:
         if not text.strip():
             return []
 
@@ -131,7 +135,7 @@ class LLMDetector(BaseDetector):
             key = None
 
         chunks = self._to_chunks(text)
-        spans: List[DetectedSpan] = []
+        spans: list[DetectedSpan] = []
 
         for chunk_text, offset in chunks:
             if not chunk_text.strip():
@@ -145,7 +149,9 @@ class LLMDetector(BaseDetector):
                 spans.extend(self._offset_spans(chunk_spans, offset))
                 logger.debug(
                     "LLM detector: chunk offset=%d len=%d → %d span(s)",
-                    offset, len(chunk_text), len(chunk_spans),
+                    offset,
+                    len(chunk_text),
+                    len(chunk_spans),
                 )
             except ConnectionError as exc:
                 logger.warning("LLM detector connection error (offset=%d): %s", offset, exc)
@@ -164,8 +170,8 @@ class LLMDetector(BaseDetector):
     async def detect_async(
         self,
         text: str,
-        candidates: List[DetectedSpan] | None = None,
-    ) -> List[DetectedSpan]:
+        candidates: list[DetectedSpan] | None = None,
+    ) -> list[DetectedSpan]:
         """Async variant — chunks are scanned concurrently via asyncio.gather."""
         if not text.strip():
             return []
@@ -182,7 +188,7 @@ class LLMDetector(BaseDetector):
 
         chunks = self._to_chunks(text)
 
-        async def _scan_chunk(chunk_text: str, offset: int) -> List[DetectedSpan]:
+        async def _scan_chunk(chunk_text: str, offset: int) -> list[DetectedSpan]:
             if not chunk_text.strip():
                 return []
             chunk_cands = self._candidates_for_chunk(candidates, offset, len(chunk_text))
@@ -199,7 +205,7 @@ class LLMDetector(BaseDetector):
                 return []
 
         results = await asyncio.gather(*[_scan_chunk(ct, off) for ct, off in chunks])
-        spans: List[DetectedSpan] = [s for chunk_spans in results for s in chunk_spans]
+        spans: list[DetectedSpan] = [s for chunk_spans in results for s in chunk_spans]
 
         if self._cache_ttl > 0 and key is not None:
             with self._cache_lock:
@@ -214,7 +220,7 @@ class LLMDetector(BaseDetector):
 
     @staticmethod
     def _candidates_for_chunk(
-        candidates: List[DetectedSpan] | None,
+        candidates: list[DetectedSpan] | None,
         offset: int,
         chunk_len: int,
     ) -> list[tuple[str, str]] | None:
@@ -226,13 +232,9 @@ class LLMDetector(BaseDetector):
         if not candidates:
             return None
         end = offset + chunk_len
-        return [
-            (s.entity_type, s.text)
-            for s in candidates
-            if s.start >= offset and s.end <= end
-        ]
+        return [(s.entity_type, s.text) for s in candidates if s.start >= offset and s.end <= end]
 
-    def _cache_key(self, text: str, candidates: List[DetectedSpan] | None) -> str:
+    def _cache_key(self, text: str, candidates: list[DetectedSpan] | None) -> str:
         """Cache key over text + candidate set (different candidates → different verdict)."""
         h = hashlib.md5(text.encode("utf-8", errors="replace"))
         if candidates:
@@ -266,7 +268,7 @@ class LLMDetector(BaseDetector):
         # Greedily group segments into chunks ≤ chunk_chars
         result: list[tuple[str, int]] = []
         chunk_start = segs[0][0]
-        chunk_end   = segs[0][1]
+        chunk_end = segs[0][1]
 
         for i in range(1, len(segs)):
             seg_start, seg_end = segs[i]
@@ -279,7 +281,7 @@ class LLMDetector(BaseDetector):
         return result
 
     @staticmethod
-    def _offset_spans(spans: List[DetectedSpan], offset: int) -> List[DetectedSpan]:
+    def _offset_spans(spans: list[DetectedSpan], offset: int) -> list[DetectedSpan]:
         """Shift span positions by offset to map chunk positions back to full text."""
         if offset == 0:
             return spans
@@ -319,15 +321,15 @@ class LLMDetector(BaseDetector):
             logger.debug("LLM response JSON parse error: %s — raw: %.200r", exc, raw)
             return []
 
-    def _locate_spans(self, text: str, entities: list[dict]) -> List[DetectedSpan]:
+    def _locate_spans(self, text: str, entities: list[dict]) -> list[DetectedSpan]:
         """
         Locate the entity texts returned by the LLM within the original text.
 
         The LLM sometimes slightly modifies text (case changes, etc.);
         if no match is found, that entity is skipped.
         """
-        spans: List[DetectedSpan] = []
-        seen: set[tuple[int, int]] = set()   # duplicate position check
+        spans: list[DetectedSpan] = []
+        seen: set[tuple[int, int]] = set()  # duplicate position check
 
         for item in entities:
             entity_type = str(item.get("type", "")).upper().strip()
@@ -342,7 +344,8 @@ class LLMDetector(BaseDetector):
             if validator and not validator.search(entity_text):
                 logger.debug(
                     "Hallucination filter: %s %r failed format validation",
-                    entity_type, entity_text,
+                    entity_type,
+                    entity_text,
                 )
                 continue
 
@@ -355,13 +358,15 @@ class LLMDetector(BaseDetector):
                 span_key = (pos, pos + len(entity_text))
                 if span_key not in seen:
                     seen.add(span_key)
-                    spans.append(DetectedSpan(
-                        entity_type=entity_type,
-                        text=entity_text,
-                        start=pos,
-                        end=pos + len(entity_text),
-                        confidence=0.85,
-                    ))
+                    spans.append(
+                        DetectedSpan(
+                            entity_type=entity_type,
+                            text=entity_text,
+                            start=pos,
+                            end=pos + len(entity_text),
+                            confidence=0.85,
+                        )
+                    )
                 start = pos + 1
 
         return spans

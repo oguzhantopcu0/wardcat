@@ -1,4 +1,3 @@
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -58,6 +57,7 @@ def test_missing_yaml_file_raises():
 
 def test_deep_copy_handles_list():
     from ai_guard.config.loader import _deep_copy
+
     original = {"key": [1, 2, {"nested": True}]}
     copied = _deep_copy(original)
     copied["key"][0] = 99
@@ -65,6 +65,7 @@ def test_deep_copy_handles_list():
 
 
 # ── G2a: max_text_bytes configurable ──────────────────────────────────────
+
 
 def test_default_max_text_bytes():
     config = load_config()
@@ -82,6 +83,7 @@ def test_custom_max_text_bytes_from_yaml(tmp_path: Path):
 def test_max_text_bytes_enforced_by_engine(tmp_path: Path):
     """Engine should use the configured max_text_bytes, not the hardcoded default."""
     from ai_guard import LLMGuard
+
     cfg = {"max_text_bytes": 10}
     cfg_file = tmp_path / "policy.yaml"
     cfg_file.write_text(yaml.dump(cfg))
@@ -91,6 +93,7 @@ def test_max_text_bytes_enforced_by_engine(tmp_path: Path):
 
 
 # ── G6: custom_patterns validation ────────────────────────────────────────
+
 
 def test_custom_patterns_default_is_empty():
     config = load_config()
@@ -152,6 +155,7 @@ def test_custom_patterns_invalid_action_raises(tmp_path: Path):
 def test_custom_patterns_detected_in_scan(tmp_path: Path):
     """End-to-end: custom_patterns in YAML config flows through to detection."""
     from ai_guard import LLMGuard
+
     override = {
         "custom_patterns": {
             "EMPLOYEE_ID": {
@@ -211,8 +215,9 @@ def test_check_redos_timeout_rejects_pattern(tmp_path: Path):
     mock_ctx.__exit__ = MagicMock(return_value=False)
 
     with (
-        patch("ai_guard.config.loader.concurrent.futures.ThreadPoolExecutor",
-              return_value=mock_ctx),
+        patch(
+            "ai_guard.config.loader.concurrent.futures.ThreadPoolExecutor", return_value=mock_ctx
+        ),
         pytest.raises(ValueError, match="catastrophic backtracking"),
     ):
         load_config(cfg_file)

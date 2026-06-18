@@ -3,9 +3,10 @@ ModelManager.ensure_available() unit tests.
 
 No real Ollama connection is made; the backend is mocked.
 """
+
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -15,9 +16,9 @@ from ai_guard.llm.model_manager import ModelManager
 
 def _mgr(available: list[str]) -> ModelManager:
     backend = MagicMock(spec=BaseLLMBackend)
-    backend.list_models.return_value         = available
-    backend.is_model_available.side_effect   = lambda m: m in available
-    backend.pull_model.return_value          = None
+    backend.list_models.return_value = available
+    backend.is_model_available.side_effect = lambda m: m in available
+    backend.pull_model.return_value = None
     return ModelManager(backend)
 
 
@@ -95,6 +96,7 @@ class TestPullStillWorks:
 
     def test_pull_verbose_prints(self, capsys, caplog):
         import logging
+
         backend = MagicMock(spec=BaseLLMBackend)
 
         def fake_pull(model, *, on_progress=None):
@@ -107,4 +109,4 @@ class TestPullStillWorks:
             ModelManager(backend).pull("llama3.1:8b", verbose=True)
         # Model name appears in log messages; progress bar goes to stdout
         assert "llama3.1:8b" in caplog.text
-        assert capsys.readouterr().out != ""   # progress bar still printed
+        assert capsys.readouterr().out != ""  # progress bar still printed

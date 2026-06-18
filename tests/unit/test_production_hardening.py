@@ -13,14 +13,13 @@ Scope:
 - Encoding error handling (CLI)
 - __version__ export
 """
+
 from __future__ import annotations
 
 import logging
 import os
 import threading
 import time
-from io import StringIO
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -30,17 +29,19 @@ from ai_guard.config.loader import load_config, validate_config
 from ai_guard.core.models import KNOWN_ENTITY_TYPES, warn_unknown_entity
 from ai_guard.detectors.regex_detector import RegexDetector
 
-
 # ── __version__ ───────────────────────────────────────────────────────────────
+
 
 def test_version_exported():
     import re
+
     assert __version__ is not None
     # PEP 440: X.Y.Z or X.Y.ZaN / X.Y.ZbN / X.Y.ZrcN (alpha/beta/rc)
     assert re.match(r"^\d+\.\d+\.\d+", __version__), f"Invalid version: {__version__}"
 
 
 # ── ReDoS Protection ──────────────────────────────────────────────────────────
+
 
 class TestReDoS:
     """
@@ -87,6 +88,7 @@ class TestReDoS:
 
 # ── Large Input ───────────────────────────────────────────────────────────────
 
+
 class TestLargeInput:
     def _guard(self):
         return LLMGuard(use_ner=False)
@@ -110,10 +112,7 @@ class TestLargeInput:
         texts = [f"User {i}: user{i}@example.com" for i in range(100)]
         results = self._guard().scan_batch(texts)
         assert len(results) == 100
-        assert all(
-            any(v.entity_type == "EMAIL" for v in r.violations)
-            for r in results
-        )
+        assert all(any(v.entity_type == "EMAIL" for v in r.violations) for r in results)
 
     def test_scan_batch_large_items(self):
         """Performance check: batch of 10 items each 10 KB."""
@@ -126,6 +125,7 @@ class TestLargeInput:
 
 
 # ── Thread-Safety ─────────────────────────────────────────────────────────────
+
 
 class TestThreadSafety:
     def test_concurrent_scan_no_crash(self):
@@ -185,6 +185,7 @@ class TestThreadSafety:
 
 # ── scan_batch Error Isolation ────────────────────────────────────────────────
 
+
 class TestScanBatchIsolation:
     def test_exception_in_one_item_does_not_fail_others(self):
         """
@@ -218,6 +219,7 @@ class TestScanBatchIsolation:
 
 
 # ── Environment Variable Configuration ───────────────────────────────────────
+
 
 class TestEnvVarConfig:
     def test_llmguard_salt_from_env(self):
@@ -263,6 +265,7 @@ class TestEnvVarConfig:
 
 # ── Config Validation ─────────────────────────────────────────────────────────
 
+
 class TestConfigValidation:
     def test_invalid_action_raises(self):
         cfg = {"entities": {"EMAIL": {"enabled": True, "action": "invalid_action"}}}
@@ -303,6 +306,7 @@ class TestConfigValidation:
 
 # ── Entity Type Warning ───────────────────────────────────────────────────────
 
+
 class TestEntityTypeWarning:
     def test_known_types_no_warning(self, caplog):
         with caplog.at_level(logging.WARNING, logger="ai_guard.core.models"):
@@ -324,6 +328,7 @@ class TestEntityTypeWarning:
 
 # ── Salt Warning ──────────────────────────────────────────────────────────────
 
+
 class TestSaltWarning:
     def test_empty_salt_with_hash_action_logs_warning(self, caplog):
         with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
@@ -338,16 +343,19 @@ class TestSaltWarning:
 
 # ── CLI Encoding Error Handling ───────────────────────────────────────────────
 
+
 class TestCLIEncodingError:
     def test_utf8_file_read_ok(self, tmp_path):
         f = tmp_path / "test.txt"
         f.write_text("ali@example.com", encoding="utf-8")
         from ai_guard.__main__ import _read_file
+
         content = _read_file(f)
         assert "ali@example.com" in content
 
     def test_nonexistent_file_raises(self, tmp_path):
         from ai_guard.__main__ import _read_file
+
         with pytest.raises(FileNotFoundError):
             _read_file(tmp_path / "yok.txt")
 
@@ -355,6 +363,7 @@ class TestCLIEncodingError:
         f = tmp_path / "bad.txt"
         f.write_bytes(b"\xff\xfe invalid utf-8 \x80\x81")
         from ai_guard.__main__ import _read_file
+
         with pytest.raises(ValueError, match="UTF-8"):
             _read_file(f)
 
@@ -363,6 +372,7 @@ class TestCLIEncodingError:
         f = tmp_path / "bad.txt"
         f.write_bytes(b"\xff\xfe bad encoding")
         from ai_guard.__main__ import _build_parser, cmd_scan
+
         parser = _build_parser()
         args = parser.parse_args(["scan", "--file", str(f), "--no-ner"])
         # cmd_scan raises ValueError directly (main() catches it and calls sys.exit(1))
@@ -371,6 +381,7 @@ class TestCLIEncodingError:
 
     def test_cli_scan_missing_file_raises_file_not_found(self, tmp_path):
         from ai_guard.__main__ import _build_parser, cmd_scan
+
         parser = _build_parser()
         args = parser.parse_args(["scan", "--file", str(tmp_path / "missing.txt"), "--no-ner"])
         with pytest.raises(FileNotFoundError):
@@ -379,21 +390,26 @@ class TestCLIEncodingError:
 
 # ── Logging Integration ───────────────────────────────────────────────────────
 
+
 class TestLogging:
     def test_engine_logs_scan_completion(self, caplog):
-        from ai_guard.core.engine import DetectionEngine
         from ai_guard.config.loader import load_config
+        from ai_guard.core.engine import DetectionEngine
+
         cfg = load_config()
         cfg["entities"]["EMAIL"]["enabled"] = True
         from ai_guard.detectors.regex_detector import RegexDetector
+
         engine = DetectionEngine(cfg, [RegexDetector({"EMAIL"})])
         with caplog.at_level(logging.INFO, logger="ai_guard.core.engine"):
             engine.scan("test@example.com")
         assert "scan completed" in caplog.text
 
     def test_llm_detector_logs_on_connection_error(self, caplog):
-        from ai_guard.detectors.llm_detector import LLMDetector
         from unittest.mock import MagicMock
+
+        from ai_guard.detectors.llm_detector import LLMDetector
+
         backend = MagicMock()
         backend.complete_messages.side_effect = ConnectionError("no connection")
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})

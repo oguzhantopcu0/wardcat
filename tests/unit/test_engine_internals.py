@@ -7,16 +7,14 @@ Scope:
   - Violation ordering: compliance with order of appearance in text
   - Empty input behavior
 """
+
 from __future__ import annotations
 
-import pytest
-
 from ai_guard.core.engine import DetectionEngine
-from ai_guard.core.models import Action
 from ai_guard.detectors.base import BaseDetector, DetectedSpan
 
-
 # ── Helper: fake detector that returns a fixed span list ────────────────────
+
 
 class _FixedDetector(BaseDetector):
     def __init__(self, spans: list[DetectedSpan]) -> None:
@@ -37,6 +35,7 @@ def _engine(spans: list[DetectedSpan], entity_actions: dict[str, str]) -> Detect
 # ═══════════════════════════════════════════════════════════════════════════
 # _resolve_overlaps
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestResolveOverlaps:
     def _engine(self):
@@ -66,38 +65,38 @@ class TestResolveOverlaps:
 
     # Overlap — longer wins
     def test_overlap_longer_wins(self):
-        long  = DetectedSpan("LONG",  "hello world", 0, 11)
-        short = DetectedSpan("SHORT", "hello",        0,  5)
+        long = DetectedSpan("LONG", "hello world", 0, 11)
+        short = DetectedSpan("SHORT", "hello", 0, 5)
         result = self._engine()._resolve_overlaps([long, short])
         assert len(result) == 1
         assert result[0].entity_type == "LONG"
 
     def test_overlap_same_start_first_if_longer(self):
         a = DetectedSpan("A", "abcde", 0, 5)
-        b = DetectedSpan("B", "abc",   0, 3)
+        b = DetectedSpan("B", "abc", 0, 3)
         result = self._engine()._resolve_overlaps(sorted([a, b], key=lambda s: s.start))
         assert result[0].entity_type == "A"
 
     def test_overlap_contained_span_discarded(self):
         outer = DetectedSpan("OUTER", "hello world", 0, 11)
-        inner = DetectedSpan("INNER", "world",        6, 11)
+        inner = DetectedSpan("INNER", "world", 6, 11)
         result = self._engine()._resolve_overlaps([outer, inner])
         assert len(result) == 1
         assert result[0].entity_type == "OUTER"
 
     def test_overlap_shorter_first_in_list_but_longer_wins(self):
         """The one that appears first in ordering but is shorter loses."""
-        short = DetectedSpan("SHORT", "abc",    0, 3)
-        long  = DetectedSpan("LONG",  "abcdef", 0, 6)
+        short = DetectedSpan("SHORT", "abc", 0, 3)
+        long = DetectedSpan("LONG", "abcdef", 0, 6)
         # resolve_overlaps receives sorted input (by start); same start for both (0)
         result = self._engine()._resolve_overlaps(sorted([short, long], key=lambda s: s.start))
         assert result[0].entity_type == "LONG"
 
     def test_three_way_overlap_longest_wins(self):
         spans = [
-            DetectedSpan("S", "ab",     0, 2),
-            DetectedSpan("M", "abcde",  0, 5),
-            DetectedSpan("L", "abcdefg",0, 7),
+            DetectedSpan("S", "ab", 0, 2),
+            DetectedSpan("M", "abcde", 0, 5),
+            DetectedSpan("L", "abcdefg", 0, 7),
         ]
         result = self._engine()._resolve_overlaps(sorted(spans, key=lambda s: s.start))
         assert len(result) == 1
@@ -107,7 +106,7 @@ class TestResolveOverlaps:
         """The span following an overlap should also be preserved."""
         spans = [
             DetectedSpan("A", "hello", 0, 5),
-            DetectedSpan("B", "hel",   0, 3),   # overlaps A, A wins
+            DetectedSpan("B", "hel", 0, 3),  # overlaps A, A wins
             DetectedSpan("C", "world", 6, 11),  # no overlap
         ]
         result = self._engine()._resolve_overlaps(sorted(spans, key=lambda s: s.start))
@@ -121,20 +120,22 @@ class TestResolveOverlaps:
 # Offset tracking — text integrity after multiple replacements
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestOffsetTracking:
     """
     Verifies that when multiple hash replacements are applied,
     subsequent replacements are computed at the correct positions.
     """
 
-    def _scan_with_known_spans(self, text: str, spans: list[DetectedSpan],
-                                actions: dict[str, str]) -> tuple:
+    def _scan_with_known_spans(
+        self, text: str, spans: list[DetectedSpan], actions: dict[str, str]
+    ) -> tuple:
         engine = _engine(spans, actions)
         result = engine.scan(text)
         return result
 
     def test_single_replacement_correctness(self):
-        text  = "prefix [TARGET] suffix"
+        text = "prefix [TARGET] suffix"
         spans = [DetectedSpan("X", "TARGET", 8, 14)]
         result = _engine(spans, {"X": "hash"}).scan(text)
         assert "TARGET" not in result.sanitized_text
@@ -143,13 +144,13 @@ class TestOffsetTracking:
         assert result.sanitized_text.endswith(" suffix")
 
     def test_two_replacements_order_preserved(self):
-        text  = "A: FIRST | B: SECOND"
+        text = "A: FIRST | B: SECOND"
         spans = [
-            DetectedSpan("TYPE1", "FIRST",  3,  8),
+            DetectedSpan("TYPE1", "FIRST", 3, 8),
             DetectedSpan("TYPE2", "SECOND", 14, 20),
         ]
         result = _engine(spans, {"TYPE1": "hash", "TYPE2": "hash"}).scan(text)
-        assert "FIRST"  not in result.sanitized_text
+        assert "FIRST" not in result.sanitized_text
         assert "SECOND" not in result.sanitized_text
         assert "[TYPE1:" in result.sanitized_text
         assert "[TYPE2:" in result.sanitized_text
@@ -159,23 +160,28 @@ class TestOffsetTracking:
     def test_five_replacements_all_correct(self):
         """All 5 consecutive entities should be replaced at the correct position."""
         # Use values different from entity type names; type name appears in placeholder
-        text  = "a:CARD b:TCNO c:MAIL d:PHONE e:IBAN_NUM"
+        text = "a:CARD b:TCNO c:MAIL d:PHONE e:IBAN_NUM"
+
         # Compute positions from the text — eliminates manual error risk
-        def _pos(word): s = text.index(word); return s, s + len(word)
+        def _pos(word):
+            s = text.index(word)
+            return s, s + len(word)
+
         spans = [
-            DetectedSpan("CC", "CARD",     *_pos("CARD")),
-            DetectedSpan("TC", "TCNO",     *_pos("TCNO")),
-            DetectedSpan("EM", "MAIL",     *_pos("MAIL")),
-            DetectedSpan("PH", "PHONE",    *_pos("PHONE")),
+            DetectedSpan("CC", "CARD", *_pos("CARD")),
+            DetectedSpan("TC", "TCNO", *_pos("TCNO")),
+            DetectedSpan("EM", "MAIL", *_pos("MAIL")),
+            DetectedSpan("PH", "PHONE", *_pos("PHONE")),
             DetectedSpan("IB", "IBAN_NUM", *_pos("IBAN_NUM")),
         ]
-        actions = {t: "hash" for t in ["CC", "TC", "EM", "PH", "IB"]}
+        actions = dict.fromkeys(["CC", "TC", "EM", "PH", "IB"], "hash")
         result = _engine(spans, actions).scan(text)
 
         # Original content values should not be in the sanitized text
         for original in ["CARD", "TCNO", "MAIL", "PHONE", "IBAN_NUM"]:
-            assert original not in result.sanitized_text, \
+            assert original not in result.sanitized_text, (
                 f"'{original}' still present in sanitized text: {result.sanitized_text!r}"
+            )
 
         # All placeholders should be present in the text
         for t in ["CC", "TC", "EM", "PH", "IB"]:
@@ -187,23 +193,23 @@ class TestOffsetTracking:
 
     def test_warn_does_not_shift_offset(self):
         """warn action should not shift offset; subsequent hash should be at the correct position."""
-        text  = "W: WARN | H: HASH"
+        text = "W: WARN | H: HASH"
         spans = [
-            DetectedSpan("W", "WARN", 3,  7),
+            DetectedSpan("W", "WARN", 3, 7),
             DetectedSpan("H", "HASH", 13, 17),
         ]
         result = _engine(spans, {"W": "warn", "H": "hash"}).scan(text)
-        assert "WARN" in result.sanitized_text   # warn → unchanged
+        assert "WARN" in result.sanitized_text  # warn → unchanged
         assert "HASH" not in result.sanitized_text
         assert "[H:" in result.sanitized_text
 
     def test_replacement_longer_than_original(self):
         """If the replacement is longer than the original, the next span should still be in the correct position."""
-        text  = "A: X | B: Y"
+        text = "A: X | B: Y"
         # 'X' → '[VERY_LONG_TYPE_NAME:abcd1234]' (much longer)
         spans = [
             DetectedSpan("VERY_LONG_TYPE_NAME", "X", 3, 4),
-            DetectedSpan("B",                   "Y", 10, 11),
+            DetectedSpan("B", "Y", 10, 11),
         ]
         result = _engine(spans, {"VERY_LONG_TYPE_NAME": "hash", "B": "hash"}).scan(text)
         assert "[VERY_LONG_TYPE_NAME:" in result.sanitized_text
@@ -211,10 +217,10 @@ class TestOffsetTracking:
 
     def test_replacement_shorter_than_original(self):
         """Even if the replacement is shorter than the original, the next span should still be in the correct position."""
-        text  = "AAAAAAAAAA | B: Y"
+        text = "AAAAAAAAAA | B: Y"
         spans = [
             DetectedSpan("LONG", "AAAAAAAAAA", 0, 10),  # 10 char → ~22 char placeholder
-            DetectedSpan("B",    "Y",           15, 16),
+            DetectedSpan("B", "Y", 15, 16),
         ]
         result = _engine(spans, {"LONG": "hash", "B": "hash"}).scan(text)
         assert "[LONG:" in result.sanitized_text
@@ -225,14 +231,15 @@ class TestOffsetTracking:
 # Violation ordering
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestViolationOrdering:
     def test_violations_in_text_order(self):
         """Violations should be returned in order of appearance in the text."""
-        text  = "first: ALPHA second: BETA third: GAMMA"
+        text = "first: ALPHA second: BETA third: GAMMA"
         spans = [
             DetectedSpan("C", "GAMMA", 33, 38),
-            DetectedSpan("A", "ALPHA", 7,  12),
-            DetectedSpan("B", "BETA",  21, 25),
+            DetectedSpan("A", "ALPHA", 7, 12),
+            DetectedSpan("B", "BETA", 21, 25),
         ]
         result = _engine(spans, {"A": "warn", "B": "warn", "C": "warn"}).scan(text)
         entity_order = [v.entity_type for v in result.violations]
@@ -240,8 +247,9 @@ class TestViolationOrdering:
 
     def test_violation_start_positions_ascending(self):
         from ai_guard import LLMGuard
+
         guard = LLMGuard(use_ner=False)
-        text  = "a@a.com 0532 111 22 33 b@b.com"
+        text = "a@a.com 0532 111 22 33 b@b.com"
         result = guard.scan(text)
         starts = [v.start for v in result.violations]
         assert starts == sorted(starts)
@@ -251,12 +259,13 @@ class TestViolationOrdering:
 # Empty / minimal input
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestEmptyAndMinimalInput:
     def test_empty_string(self):
         result = _engine([], {}).scan("")
         assert result.is_clean
         assert result.sanitized_text == ""
-        assert result.original_text  == ""
+        assert result.original_text == ""
 
     def test_whitespace_only(self):
         result = _engine([], {}).scan("   \n\t  ")

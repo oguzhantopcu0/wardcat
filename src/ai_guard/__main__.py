@@ -24,6 +24,7 @@ Environment variables:
     LLMGUARD_LLM_MODEL    — instead of --llm-model
     LLMGUARD_LLM_API_KEY  — instead of --llm-api-key
 """
+
 from __future__ import annotations
 
 import argparse
@@ -45,45 +46,86 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # ── common arguments ────────────────────────────────────────────────
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--config",  metavar="PATH", help="YAML policy file")
-    common.add_argument("--salt",    default="",     help="Hash salt value (can also be set via LLMGUARD_SALT env)")
-    common.add_argument("--no-ner",  action="store_true", help="Disable SpaCy NER")
-    common.add_argument("--model",   default="en_core_web_sm", metavar="MODEL",
-                        help="SpaCy model (default: en_core_web_sm)")
-    common.add_argument("--format",  choices=["text", "json"], default="text",
-                        help="Output format (default: text)")
-    common.add_argument("--log-level", default="WARNING",
-                        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-                        help="Log level (default: WARNING)")
+    common.add_argument("--config", metavar="PATH", help="YAML policy file")
+    common.add_argument(
+        "--salt", default="", help="Hash salt value (can also be set via LLMGUARD_SALT env)"
+    )
+    common.add_argument("--no-ner", action="store_true", help="Disable SpaCy NER")
+    common.add_argument(
+        "--model",
+        default="en_core_web_sm",
+        metavar="MODEL",
+        help="SpaCy model (default: en_core_web_sm)",
+    )
+    common.add_argument(
+        "--format", choices=["text", "json"], default="text", help="Output format (default: text)"
+    )
+    common.add_argument(
+        "--log-level",
+        default="WARNING",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Log level (default: WARNING)",
+    )
     # LLM detector common arguments
-    common.add_argument("--llm",         action="store_true",
-                        help="Enable LLM detector (Ollama or OpenAI-compat)")
-    common.add_argument("--llm-backend", default="ollama",
-                        choices=["ollama", "openai_compatible", "transformers"],
-                        metavar="BACKEND", help="LLM backend (default: ollama)")
-    common.add_argument("--llm-model",   default="llama3.1:8b", metavar="MODEL",
-                        help="LLM model name (default: llama3.1:8b)")
-    common.add_argument("--llm-url",     default="", metavar="URL",
-                        help="LLM service URL (default: LLMGUARD_LLM_URL or http://localhost:11434)")
-    common.add_argument("--llm-api-key", default="", metavar="KEY",
-                        help="OpenAI-compat API key (can also be set via LLMGUARD_LLM_API_KEY env)")
-    common.add_argument("--auto-pull",   action="store_true",
-                        help="Automatically download from Ollama if model is not available")
+    common.add_argument(
+        "--llm", action="store_true", help="Enable LLM detector (Ollama or OpenAI-compat)"
+    )
+    common.add_argument(
+        "--llm-backend",
+        default="ollama",
+        choices=["ollama", "openai_compatible", "transformers"],
+        metavar="BACKEND",
+        help="LLM backend (default: ollama)",
+    )
+    common.add_argument(
+        "--llm-model",
+        default="llama3.1:8b",
+        metavar="MODEL",
+        help="LLM model name (default: llama3.1:8b)",
+    )
+    common.add_argument(
+        "--llm-url",
+        default="",
+        metavar="URL",
+        help="LLM service URL (default: LLMGUARD_LLM_URL or http://localhost:11434)",
+    )
+    common.add_argument(
+        "--llm-api-key",
+        default="",
+        metavar="KEY",
+        help="OpenAI-compat API key (can also be set via LLMGUARD_LLM_API_KEY env)",
+    )
+    common.add_argument(
+        "--auto-pull",
+        action="store_true",
+        help="Automatically download from Ollama if model is not available",
+    )
 
     # ── scan ────────────────────────────────────────────────────────────
     p_scan = sub.add_parser("scan", parents=[common], help="Scan a single text")
     src = p_scan.add_mutually_exclusive_group(required=True)
-    src.add_argument("--text", metavar="TEXT",  help="Direct text input")
-    src.add_argument("--file", metavar="PATH",  type=Path, help="Text file")
+    src.add_argument("--text", metavar="TEXT", help="Direct text input")
+    src.add_argument("--file", metavar="PATH", type=Path, help="Text file")
 
     # ── batch ───────────────────────────────────────────────────────────
-    p_batch = sub.add_parser("batch", parents=[common],
-                              help="Scan each line in a file as a separate text")
-    p_batch.add_argument("--file", metavar="PATH", type=Path, required=True,
-                         help="File where each line is an independent text")
-    p_batch.add_argument("--batch-workers", metavar="N", type=int, default=None,
-                         dest="batch_workers",
-                         help="Number of parallel workers for batch scanning (default: config value)")
+    p_batch = sub.add_parser(
+        "batch", parents=[common], help="Scan each line in a file as a separate text"
+    )
+    p_batch.add_argument(
+        "--file",
+        metavar="PATH",
+        type=Path,
+        required=True,
+        help="File where each line is an independent text",
+    )
+    p_batch.add_argument(
+        "--batch-workers",
+        metavar="N",
+        type=int,
+        default=None,
+        dest="batch_workers",
+        help="Number of parallel workers for batch scanning (default: config value)",
+    )
 
     # ── spacy ───────────────────────────────────────────────────────────
     p_spacy = sub.add_parser("spacy", help="SpaCy NER model management")
@@ -92,7 +134,9 @@ def _build_parser() -> argparse.ArgumentParser:
     # spacy list
     p_spacy_list = spacy_sub.add_parser("list", help="List supported SpaCy models")
     p_spacy_list.add_argument(
-        "--lang", metavar="CODE", default="",
+        "--lang",
+        metavar="CODE",
+        default="",
         help="Filter by language code, e.g. tr, en, de, fr, es, it, nl, pt",
     )
 
@@ -112,28 +156,36 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # models list
     p_list = models_sub.add_parser("list", help="List available models")
-    p_list.add_argument("--llm-backend", default="ollama",
-                        choices=["ollama", "openai_compatible", "transformers"], metavar="BACKEND")
+    p_list.add_argument(
+        "--llm-backend",
+        default="ollama",
+        choices=["ollama", "openai_compatible", "transformers"],
+        metavar="BACKEND",
+    )
     p_list.add_argument("--llm-url", default="", metavar="URL")
     p_list.add_argument("--llm-api-key", default="", metavar="KEY")
-    p_list.add_argument("--recommended", action="store_true",
-                        help="List recommended models from catalog (no Ollama connection required)")
+    p_list.add_argument(
+        "--recommended",
+        action="store_true",
+        help="List recommended models from catalog (no Ollama connection required)",
+    )
 
     # models setup
     p_setup = models_sub.add_parser(
         "setup",
         help="Select from recommended models and download",
     )
-    p_setup.add_argument("--llm-url", default="", metavar="URL",
-                         help="Ollama service URL")
-    p_setup.add_argument("--non-interactive", action="store_true",
-                         help="Download default model without prompting for confirmation")
+    p_setup.add_argument("--llm-url", default="", metavar="URL", help="Ollama service URL")
+    p_setup.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Download default model without prompting for confirmation",
+    )
 
     # models pull
     p_pull = models_sub.add_parser("pull", help="Download a model (Ollama)")
     p_pull.add_argument("model_name", help="Model to download, e.g. llama3.1:8b")
-    p_pull.add_argument("--llm-url", default="", metavar="URL",
-                        help="Ollama service URL")
+    p_pull.add_argument("--llm-url", default="", metavar="URL", help="Ollama service URL")
 
     return parser
 
@@ -147,6 +199,7 @@ def _resolve_llm_url(args_url: str) -> str:
 
 def _make_guard(args: argparse.Namespace):
     from ai_guard import LLMGuard
+
     return LLMGuard(
         config_path=args.config,
         salt=args.salt,
@@ -163,18 +216,21 @@ def _make_guard(args: argparse.Namespace):
 
 def _make_backend(args: argparse.Namespace):
     backend = getattr(args, "llm_backend", "ollama")
-    url     = _resolve_llm_url(getattr(args, "llm_url", ""))
+    url = _resolve_llm_url(getattr(args, "llm_url", ""))
     api_key = getattr(args, "llm_api_key", "") or os.environ.get("LLMGUARD_LLM_API_KEY", "")
 
     if backend == "ollama":
         from ai_guard.llm.backends.ollama import OllamaBackend
+
         return OllamaBackend(base_url=url)
     else:
         from ai_guard.llm.backends.openai_compat import OpenAICompatBackend
+
         return OpenAICompatBackend(base_url=url, model="", api_key=api_key)
 
 
 # ── output formatters ───────────────────────────────────────────────────
+
 
 def _result_to_dict(result) -> dict:
     return {
@@ -183,12 +239,12 @@ def _result_to_dict(result) -> dict:
         "violations": [
             {
                 "entity_type": v.entity_type,
-                "original":    v.original,
-                "start":       v.start,
-                "end":         v.end,
-                "action":      v.action.value,
+                "original": v.original,
+                "start": v.start,
+                "end": v.end,
+                "action": v.action.value,
                 "replacement": v.replacement,
-                "confidence":  v.confidence,
+                "confidence": v.confidence,
             }
             for v in result.violations
         ],
@@ -212,18 +268,19 @@ def _print_text(result, label: str | None = None) -> None:
 
 # ── command handlers ────────────────────────────────────────────────────
 
+
 def _read_file(path: Path) -> str:
     """Read file; give a clear error if encoding fails or file is not found."""
     try:
         return path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        raise FileNotFoundError(f"File not found: {path}")
+        raise FileNotFoundError(f"File not found: {path}") from None
     except UnicodeDecodeError as exc:
         raise ValueError(
             f"File could not be read as UTF-8: {path}\n"
             f"Detail: {exc}\n"
             "Hint: Save the file as UTF-8 or convert its encoding."
-        )
+        ) from exc
 
 
 def _warn_if_no_salt(args: argparse.Namespace) -> None:
@@ -241,7 +298,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
     """Handle the ``scan`` sub-command — scan a single text for PII."""
     _warn_if_no_salt(args)
     guard = _make_guard(args)
-    text  = args.text if args.text else _read_file(args.file)
+    text = args.text if args.text else _read_file(args.file)
     result = guard.scan(text)
 
     if args.format == "json":
@@ -262,11 +319,11 @@ def cmd_batch(args: argparse.Namespace) -> None:
     if args.format == "json":
         output = [
             {"line": i + 1, "text": line, **_result_to_dict(r)}
-            for i, (line, r) in enumerate(zip(lines, results))
+            for i, (line, r) in enumerate(zip(lines, results, strict=True))
         ]
         print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
-        for i, (line, result) in enumerate(zip(lines, results), 1):
+        for i, (line, result) in enumerate(zip(lines, results, strict=True), 1):
             _print_text(result, label=f"Line {i}: {line[:60]}{'…' if len(line) > 60 else ''}")
 
 
@@ -284,10 +341,10 @@ def cmd_spacy(args: argparse.Namespace) -> None:
             return
 
         print(f"\n{'Language':<12} {'Model':<30} {'Size':<5} {'RAM':>6}  Description")
-        print(f"{'-'*12} {'-'*30} {'-'*5} {'-'*6}  {'-'*40}")
+        print(f"{'-' * 12} {'-' * 30} {'-' * 5} {'-' * 6}  {'-' * 40}")
         for m in models:
-            tag  = " ←" if m.recommended else ""
-            ram  = f"{m.ram_mb} MB"
+            tag = " ←" if m.recommended else ""
+            ram = f"{m.ram_mb} MB"
             print(f"{m.language:<12} {m.name:<30} {m.size:<5} {ram:>6}  {m.description}{tag}")
         print()
         print("Download a model:  python -m ai_guard spacy download <model>")
@@ -296,6 +353,7 @@ def cmd_spacy(args: argparse.Namespace) -> None:
 
     elif args.spacy_command == "download":
         from ai_guard.ner.spacy_catalog import get_spacy_model
+
         model_name = args.model_name
         info = get_spacy_model(model_name)
         if info is None:
@@ -311,7 +369,7 @@ def cmd_spacy(args: argparse.Namespace) -> None:
             raise ImportError(
                 "spacy is required for NER detection.\n"
                 "Install with: uv add 'ai-guard[ner]'  or  pip install 'ai-guard[ner]'"
-            )
+            ) from None
         import shutil
         import subprocess
 
@@ -329,14 +387,17 @@ def cmd_spacy(args: argparse.Namespace) -> None:
 
         print(f"Downloading SpaCy model: {model_name}", flush=True)
 
-        uv_bin   = shutil.which("uv")
+        uv_bin = shutil.which("uv")
         env_skip = {**os.environ, "UV_SKIP_WHEEL_FILENAME_CHECK": "1"}
 
         # Check pip availability once upfront to avoid noisy "No module named pip" output.
-        _pip_ok = subprocess.run(
-            [sys.executable, "-m", "pip", "--version"],
-            capture_output=True,
-        ).returncode == 0
+        _pip_ok = (
+            subprocess.run(
+                [sys.executable, "-m", "pip", "--version"],
+                capture_output=True,
+            ).returncode
+            == 0
+        )
 
         def _run(cmd: list[str], *, skip_check: bool = False) -> int:
             e = env_skip if skip_check else None
@@ -382,6 +443,7 @@ def cmd_spacy(args: argparse.Namespace) -> None:
             #    using the installed SpaCy minor version (models follow x.y.0 tags).
             if result_code != 0 and uv_bin:
                 import spacy as _spacy
+
                 v = _spacy.__version__.split(".")
                 model_ver = f"{v[0]}.{v[1]}.0"
                 gh_url = (
@@ -398,13 +460,14 @@ def cmd_spacy(args: argparse.Namespace) -> None:
                 "Check available models:  python -m ai_guard spacy list\n"
                 "Check SpaCy version:     python -m spacy info"
             )
-        print(f"\nModel ready. Use it with:")
+        print("\nModel ready. Use it with:")
         print(f"  guard = LLMGuard(spacy_model={model_name!r})")
-        print(f"  python -m ai_guard scan --model {model_name} --text \"...\"")
+        print(f'  python -m ai_guard scan --model {model_name} --text "..."')
 
     elif args.spacy_command == "installed":
         try:
             import spacy.util
+
             installed = list(spacy.util.get_installed_models())
         except ImportError:
             print("SpaCy is not installed. Run: uv add 'ai-guard[ner]'")
@@ -428,8 +491,8 @@ def cmd_models(args: argparse.Namespace) -> None:
             _print_catalog()
             return
         backend = _make_backend(args)
-        mgr     = ModelManager(backend)
-        models  = mgr.list()
+        mgr = ModelManager(backend)
+        models = mgr.list()
         if models:
             print("Models available in Ollama:")
             for m in models:
@@ -443,20 +506,22 @@ def cmd_models(args: argparse.Namespace) -> None:
 
     elif args.models_command == "pull":
         from ai_guard.llm.backends.ollama import OllamaBackend
-        url     = _resolve_llm_url(args.llm_url)
+
+        url = _resolve_llm_url(args.llm_url)
         backend = OllamaBackend(base_url=url)
-        mgr     = ModelManager(backend)
+        mgr = ModelManager(backend)
         mgr.pull(args.model_name, verbose=True)
 
 
 def _print_catalog() -> None:
     """Print the recommended model list to the terminal."""
     from ai_guard.llm.model_catalog import CATALOG
+
     print("Recommended on-prem LLM models:\n")
     print(f"  {'#':<3} {'Model':<20} {'VRAM':<8} Description")
-    print(f"  {'-'*3} {'-'*20} {'-'*8} {'-'*40}")
+    print(f"  {'-' * 3} {'-' * 20} {'-' * 8} {'-' * 40}")
     for i, m in enumerate(CATALOG, 1):
-        tag  = " ← recommended" if m.recommended else ""
+        tag = " ← recommended" if m.recommended else ""
         vram = f"~{m.vram_gb:.1f} GB"
         print(f"  {i:<3} {m.name:<20} {vram:<8} {m.description}{tag}")
     print()
@@ -464,9 +529,9 @@ def _print_catalog() -> None:
 
 def _cmd_setup(args: argparse.Namespace) -> None:
     """Interactive model selection and download flow."""
+    from ai_guard.llm.backends.ollama import OllamaBackend
     from ai_guard.llm.model_catalog import CATALOG, recommended
     from ai_guard.llm.model_manager import ModelManager
-    from ai_guard.llm.backends.ollama import OllamaBackend
 
     _print_catalog()
 
@@ -478,8 +543,7 @@ def _cmd_setup(args: argparse.Namespace) -> None:
     else:
         try:
             raw = input(
-                f"Select model number [1-{len(CATALOG)}, "
-                f"default=1 ({CATALOG[0].name})]: "
+                f"Select model number [1-{len(CATALOG)}, default=1 ({CATALOG[0].name})]: "
             ).strip()
         except (EOFError, KeyboardInterrupt):
             print("\nCancelled.")
@@ -499,17 +563,19 @@ def _cmd_setup(args: argparse.Namespace) -> None:
 
     print(f"\nSelected model: {chosen.name} (~{chosen.vram_gb:.1f} GB VRAM)\n")
 
-    url     = _resolve_llm_url(args.llm_url)
+    url = _resolve_llm_url(args.llm_url)
     backend = OllamaBackend(base_url=url)
-    mgr     = ModelManager(backend)
+    mgr = ModelManager(backend)
 
     ok = mgr.ensure_available(chosen.name, verbose=True)
     if ok:
-        print(f"\nUsage:\n"
-              f"  python -m ai_guard scan --text \"...\" "
-              f"--llm --llm-model {chosen.name}\n"
-              f"\nPython API:\n"
-              f"  guard = LLMGuard(use_llm=True, llm_model=\"{chosen.name}\")")
+        print(
+            f"\nUsage:\n"
+            f'  python -m ai_guard scan --text "..." '
+            f"--llm --llm-model {chosen.name}\n"
+            f"\nPython API:\n"
+            f'  guard = LLMGuard(use_llm=True, llm_model="{chosen.name}")'
+        )
 
 
 # ── main ────────────────────────────────────────────────────────────────

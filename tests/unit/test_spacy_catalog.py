@@ -1,4 +1,5 @@
 """Tests for spacy_catalog.py — catalog lookup functions."""
+
 from __future__ import annotations
 
 import pytest
@@ -33,7 +34,9 @@ class TestSpacyCatalog:
             assert m.name, f"Model has empty name: {m!r}"
             assert m.language, f"Model {m.name} has empty language"
             assert m.lang_code, f"Model {m.name} has empty lang_code"
-            assert m.size in ("sm", "md", "lg", "trf"), f"Model {m.name} has unexpected size: {m.size!r}"
+            assert m.size in ("sm", "md", "lg", "trf"), (
+                f"Model {m.name} has unexpected size: {m.size!r}"
+            )
             assert m.ram_mb > 0, f"Model {m.name} has non-positive ram_mb"
             assert m.description, f"Model {m.name} has empty description"
 

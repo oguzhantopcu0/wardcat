@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
-from typing import Any, List, Set
+from typing import Any
 
 from ai_guard.detectors.base import BaseDetector, DetectedSpan
 
@@ -14,13 +14,13 @@ logger = logging.getLogger(__name__)
 _SPACY_LABEL_MAP: dict[str, str] = {
     # English model labels
     "PERSON": "PERSON",
-    "ORG":    "ORG",
-    "GPE":    "ADDRESS",   # Geopolitical entity
-    "LOC":    "ADDRESS",   # Location
+    "ORG": "ORG",
+    "GPE": "ADDRESS",  # Geopolitical entity
+    "LOC": "ADDRESS",  # Location
     # Turkish model labels (tr_core_news_sm / tr_core_news_md / tr_core_news_lg)
-    "PER":    "PERSON",    # Person name in Turkish model
-    "NORP":   "ORG",       # Nationality, religious group, etc.
-    "FAC":    "ADDRESS",   # Building, bridge, etc.
+    "PER": "PERSON",  # Person name in Turkish model
+    "NORP": "ORG",  # Nationality, religious group, etc.
+    "FAC": "ADDRESS",  # Building, bridge, etc.
 }
 
 # ── PERSON false-positive filters ─────────────────────────────────────────────
@@ -36,8 +36,8 @@ _ADDRESS_KW = re.compile(
     r"Caddesi|Cad\.|Sokağı|Sokak|Sok\.|Mahallesi|Mah\.|Bulvarı|Blv\."
     r"|Apartmanı|Apt\.|Sitesi|No\b"
     r"|Street|St\.|Avenue|Ave\.|Road|Rd\.|Boulevard|Lane|Drive|Court"
-    r"|Stra(?:ss|ß)e|Gasse|Weg|Platz|Allee"               # German
-    r"|Rue|Avenue|Boulevard|Impasse|Allée|Place"           # French
+    r"|Stra(?:ss|ß)e|Gasse|Weg|Platz|Allee"  # German
+    r"|Rue|Avenue|Boulevard|Impasse|Allée|Place"  # French
     r")\b",
     re.IGNORECASE,
 )
@@ -46,28 +46,103 @@ _ADDRESS_KW = re.compile(
 # NER models often mis-label job titles, HR terms, and abbreviations as
 # PERSON/ORG/ADDRESS (e.g. "Senior Backend Engineer", "New hire", "T.C.").
 # A span composed ENTIRELY of these tokens is rejected.
-_NER_STOPWORDS: frozenset[str] = frozenset({
-    # Job-title / seniority words — EN
-    "senior", "junior", "lead", "principal", "staff", "chief", "head",
-    "manager", "director", "engineer", "developer", "analyst", "officer",
-    "consultant", "specialist", "coordinator", "administrator", "assistant",
-    "backend", "frontend", "fullstack", "software", "hardware", "data",
-    "product", "project", "team", "platform", "new", "hire", "candidate",
-    "employee", "employer", "intern", "contractor", "applicant", "onboarding",
-    # German
-    "ingenieur", "entwickler", "leiter", "geschäftsführer", "mitarbeiter",
-    "berater", "manager", "abteilung", "neuer", "neue", "kandidat",
-    # French
-    "ingénieur", "ingenieur", "développeur", "developpeur", "directeur",
-    "responsable", "chef", "consultant", "employé", "employe", "stagiaire",
-    "candidat", "nouveau", "nouvel",
-    # Turkish
-    "müdür", "mudur", "yönetici", "yonetici", "uzman", "danışman", "danisman",
-    "mühendis", "muhendis", "geliştirici", "gelistirici", "temsilci",
-    "müşteri", "musteri", "çalışan", "calisan", "aday", "yeni", "personel",
-    # Abbreviations / non-name tokens
-    "tc", "t.c", "t.c.", "vkn", "mr", "mrs", "ms", "dr", "herr", "frau",
-})
+_NER_STOPWORDS: frozenset[str] = frozenset(
+    {
+        # Job-title / seniority words — EN
+        "senior",
+        "junior",
+        "lead",
+        "principal",
+        "staff",
+        "chief",
+        "head",
+        "manager",
+        "director",
+        "engineer",
+        "developer",
+        "analyst",
+        "officer",
+        "consultant",
+        "specialist",
+        "coordinator",
+        "administrator",
+        "assistant",
+        "backend",
+        "frontend",
+        "fullstack",
+        "software",
+        "hardware",
+        "data",
+        "product",
+        "project",
+        "team",
+        "platform",
+        "new",
+        "hire",
+        "candidate",
+        "employee",
+        "employer",
+        "intern",
+        "contractor",
+        "applicant",
+        "onboarding",
+        # German
+        "ingenieur",
+        "entwickler",
+        "leiter",
+        "geschäftsführer",
+        "mitarbeiter",
+        "berater",
+        "abteilung",
+        "neuer",
+        "neue",
+        "kandidat",
+        # French
+        "ingénieur",
+        "développeur",
+        "developpeur",
+        "directeur",
+        "responsable",
+        "chef",
+        "employé",
+        "employe",
+        "stagiaire",
+        "candidat",
+        "nouveau",
+        "nouvel",
+        # Turkish
+        "müdür",
+        "mudur",
+        "yönetici",
+        "yonetici",
+        "uzman",
+        "danışman",
+        "danisman",
+        "mühendis",
+        "muhendis",
+        "geliştirici",
+        "gelistirici",
+        "temsilci",
+        "müşteri",
+        "musteri",
+        "çalışan",
+        "calisan",
+        "aday",
+        "yeni",
+        "personel",
+        # Abbreviations / non-name tokens
+        "tc",
+        "t.c",
+        "t.c.",
+        "vkn",
+        "mr",
+        "mrs",
+        "ms",
+        "dr",
+        "herr",
+        "frau",
+    }
+)
 
 
 def _is_all_stopwords(text: str) -> bool:
@@ -109,6 +184,7 @@ def _is_valid_person(text: str) -> bool:
         return False
     return True
 
+
 # ── SpaCy model singleton cache ────────────────────────────────────────────
 # The SpaCy nlp object is loaded only once per model name.
 # Thread-safe: protected by _CACHE_LOCK.
@@ -123,6 +199,7 @@ def _load_model(model_name: str) -> Any:
     with _CACHE_LOCK:
         if model_name not in _MODEL_CACHE:
             import spacy  # lazy import — SpaCy is optional
+
             logger.info("Loading SpaCy model: %s", model_name)
             _MODEL_CACHE[model_name] = spacy.load(model_name)
             logger.info("SpaCy model ready: %s", model_name)
@@ -132,14 +209,14 @@ def _load_model(model_name: str) -> Any:
 class NERDetector(BaseDetector):
     """SpaCy-based Named Entity Recognition detector."""
 
-    def __init__(self, enabled_entities: Set[str], model: str = "en_core_web_sm") -> None:
+    def __init__(self, enabled_entities: set[str], model: str = "en_core_web_sm") -> None:
         self.nlp = _load_model(model)
         self.enabled_entities = enabled_entities
 
-    def detect(self, text: str) -> List[DetectedSpan]:
+    def detect(self, text: str) -> list[DetectedSpan]:
         """Return person, organization, and location spans detected by SpaCy NER."""
         doc = self.nlp(text)
-        spans: List[DetectedSpan] = []
+        spans: list[DetectedSpan] = []
         for ent in doc.ents:
             mapped = _SPACY_LABEL_MAP.get(ent.label_)
             if not mapped or mapped not in self.enabled_entities:

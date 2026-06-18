@@ -8,28 +8,29 @@ For good results with small models (3B–8B):
 - Structural constraints and contextual hints are provided
 - Deterministic via temperature=0
 """
+
 from __future__ import annotations
 
 # Entity descriptions: teaches the model what to look for.
 _ENTITY_DESCRIPTIONS: dict[str, str] = {
-    "ORG":           "name of a specific company, institution, or organization that could identify a person in context (e.g. 'Acme Corp', 'İş Bankası', 'Google LLC')",
-    "PERSON":        "full name of a real person (e.g. 'Ali Veli', 'John Smith', 'Mehmet Demir')",
-    "EMAIL":         "email address (e.g. 'user@example.com')",
-    "PHONE":         "phone number including country/area code (e.g. '0532 123 4567', '+90 533 987 6543')",
-    "TC_ID":         "Turkish national ID — exactly 11 digits starting with non-zero (e.g. '12345678901')",
-    "IBAN":          "IBAN bank account number starting with 2-letter country code (e.g. 'TR33 0006 1005 1978 6457 8413 26')",
-    "CREDIT_CARD":   "credit/debit card number, 13–19 digits, may have spaces or dashes (e.g. '4111 1111 1111 1111')",
-    "IP_ADDRESS":    "IPv4 address (e.g. '192.168.1.1')",
-    "POSTAL_CODE":   "postal/ZIP code (e.g. '34100')",
-    "ADDRESS":       "physical street address including street name and number (e.g. 'Atatürk Cad. No:5')",
-    "UUID":          "UUID / GUID identifier (e.g. '550e8400-e29b-41d4-a716-446655440000')",
-    "SSN":           "US Social Security Number — format: 3-2-4 digits with dashes (e.g. '123-45-6789')",
-    "MAC_ADDRESS":   "network hardware (MAC) address — colon or dash separated hex pairs (e.g. '00:1A:2B:3C:4D:5E')",
-    "JWT":           "JSON Web Token — three base64url segments separated by dots, starts with 'eyJ'",
-    "IPv6":          "IPv6 network address (e.g. '2001:db8::8a2e:0370:7334')",
-    "NIN":           "UK National Insurance Number — two letters, 6 digits, one letter A-D (e.g. 'AB123456C')",
+    "ORG": "name of a specific company, institution, or organization that could identify a person in context (e.g. 'Acme Corp', 'İş Bankası', 'Google LLC')",
+    "PERSON": "full name of a real person (e.g. 'Ali Veli', 'John Smith', 'Mehmet Demir')",
+    "EMAIL": "email address (e.g. 'user@example.com')",
+    "PHONE": "phone number including country/area code (e.g. '0532 123 4567', '+90 533 987 6543')",
+    "TC_ID": "Turkish national ID — exactly 11 digits starting with non-zero (e.g. '12345678901')",
+    "IBAN": "IBAN bank account number starting with 2-letter country code (e.g. 'TR33 0006 1005 1978 6457 8413 26')",
+    "CREDIT_CARD": "credit/debit card number, 13–19 digits, may have spaces or dashes (e.g. '4111 1111 1111 1111')",
+    "IP_ADDRESS": "IPv4 address (e.g. '192.168.1.1')",
+    "POSTAL_CODE": "postal/ZIP code (e.g. '34100')",
+    "ADDRESS": "physical street address including street name and number (e.g. 'Atatürk Cad. No:5')",
+    "UUID": "UUID / GUID identifier (e.g. '550e8400-e29b-41d4-a716-446655440000')",
+    "SSN": "US Social Security Number — format: 3-2-4 digits with dashes (e.g. '123-45-6789')",
+    "MAC_ADDRESS": "network hardware (MAC) address — colon or dash separated hex pairs (e.g. '00:1A:2B:3C:4D:5E')",
+    "JWT": "JSON Web Token — three base64url segments separated by dots, starts with 'eyJ'",
+    "IPv6": "IPv6 network address (e.g. '2001:db8::8a2e:0370:7334')",
+    "NIN": "UK National Insurance Number — two letters, 6 digits, one letter A-D (e.g. 'AB123456C')",
     "UK_POSTAL_CODE": "British postcode — area code + space + sector + unit letters (e.g. 'SW1A 1AA', 'EC1A 1BB', 'GU21 6TH')",
-    "US_ZIP_CODE":   "US ZIP+4 postal code — 5 digits, dash, 4 digits (e.g. '10001-1234', '90210-3456')",
+    "US_ZIP_CODE": "US ZIP+4 postal code — 5 digits, dash, 4 digits (e.g. '10001-1234', '90210-3456')",
     "EU_NATIONAL_ID": (
         "European national identity number — "
         "Spanish DNI: 8 digits + check letter (e.g. '12345678Z'), "
@@ -37,7 +38,7 @@ _ENTITY_DESCRIPTIONS: dict[str, str] = {
         "French INSEE: 15-digit social security number, "
         "German Personalausweis or Steuer-ID"
     ),
-    "PASSPORT":      (
+    "PASSPORT": (
         "passport number of any country — typically 1-2 capital letters followed by 6-9 digits "
         "(e.g. US: 'A12345678', UK: '123456789', German: 'C01X00T47', French: '06AB12345'). "
         "Only extract when clearly labeled as a passport number."
@@ -280,10 +281,10 @@ def build_messages(
         entity_definitions=entity_definitions,
         adjudication=_format_candidates(candidates),
     )
-    user   = _USER_TEMPLATE.format(text=text)
+    user = _USER_TEMPLATE.format(text=text)
     return [
         {"role": "system", "content": system},
-        {"role": "user",   "content": user},
+        {"role": "user", "content": user},
     ]
 
 
@@ -312,5 +313,5 @@ def build_prompt(
         entity_definitions=entity_definitions,
         adjudication=_format_candidates(candidates),
     )
-    user   = _USER_TEMPLATE.format(text=text)
+    user = _USER_TEMPLATE.format(text=text)
     return f"{system}\n\n{user}"

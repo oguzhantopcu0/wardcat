@@ -2,10 +2,11 @@
 LLM backend units: backend creation, error handling,
 model_manager interface — no real HTTP calls are made.
 """
+
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -14,16 +15,16 @@ from ai_guard.llm.backends.ollama import OllamaBackend
 from ai_guard.llm.backends.openai_compat import OpenAICompatBackend
 from ai_guard.llm.model_manager import ModelManager
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # OllamaBackend
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestOllamaBackend:
     def test_default_url_and_model(self):
         b = OllamaBackend()
         assert b.base_url == "http://localhost:11434"
-        assert b.model    == "llama3.2"
+        assert b.model == "llama3.2"
 
     def test_trailing_slash_stripped(self):
         b = OllamaBackend(base_url="http://localhost:11434/")
@@ -40,29 +41,28 @@ class TestOllamaBackend:
 
         assert result == "test output"
         payload = mock_post.call_args[1]["json"]
-        assert payload["model"]  == "llama3.2:3b"
+        assert payload["model"] == "llama3.2:3b"
         assert payload["prompt"] == "merhaba"
         assert payload["stream"] is False
         assert payload["options"]["temperature"] == 0
 
     def test_complete_connection_error_raises(self):
         import httpx
+
         with patch("httpx.post", side_effect=httpx.ConnectError("refused")):
             with pytest.raises(ConnectionError, match="Ollama"):
                 OllamaBackend().complete("test")
 
     def test_list_models_parses_response(self):
         mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "models": [{"name": "llama3.2"}, {"name": "mistral"}]
-        }
+        mock_response.json.return_value = {"models": [{"name": "llama3.2"}, {"name": "mistral"}]}
         mock_response.raise_for_status = MagicMock()
 
         with patch("httpx.get", return_value=mock_response):
             models = OllamaBackend().list_models()
 
         assert "llama3.2" in models
-        assert "mistral"  in models
+        assert "mistral" in models
 
     def test_list_models_empty_server(self):
         mock_response = MagicMock()
@@ -96,7 +96,7 @@ class TestOllamaBackend:
         ]
         mock_stream = MagicMock()
         mock_stream.__enter__ = MagicMock(return_value=mock_stream)
-        mock_stream.__exit__  = MagicMock(return_value=False)
+        mock_stream.__exit__ = MagicMock(return_value=False)
         mock_stream.iter_lines = MagicMock(return_value=iter(progress_lines))
         mock_stream.raise_for_status = MagicMock()
 
@@ -107,7 +107,7 @@ class TestOllamaBackend:
 
         assert len(collected) == 3
         assert collected[1].completed == 50
-        assert collected[1].total     == 100
+        assert collected[1].total == 100
         assert abs(collected[1].percent - 50.0) < 0.1
 
 
@@ -115,12 +115,11 @@ class TestOllamaBackend:
 # OpenAICompatBackend
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestOpenAICompatBackend:
     def test_complete_sends_chat_format(self):
         mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "choices": [{"message": {"content": "result"}}]
-        }
+        mock_response.json.return_value = {"choices": [{"message": {"content": "result"}}]}
         mock_response.raise_for_status = MagicMock()
 
         with patch("httpx.post", return_value=mock_response) as mock_post:
@@ -129,8 +128,8 @@ class TestOpenAICompatBackend:
 
         assert result == "result"
         payload = mock_post.call_args[1]["json"]
-        assert payload["model"]      == "llama3"
-        assert payload["messages"][0]["role"]    == "user"
+        assert payload["model"] == "llama3"
+        assert payload["messages"][0]["role"] == "user"
         assert payload["messages"][0]["content"] == "prompt"
         assert payload["temperature"] == 0
 
@@ -165,22 +164,21 @@ class TestOpenAICompatBackend:
 
     def test_list_models_parses_openai_format(self):
         mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": [{"id": "llama3"}, {"id": "mistral"}]
-        }
+        mock_response.json.return_value = {"data": [{"id": "llama3"}, {"id": "mistral"}]}
         mock_response.raise_for_status = MagicMock()
 
         with patch("httpx.get", return_value=mock_response):
             b = OpenAICompatBackend(base_url="http://localhost", model="m")
             models = b.list_models()
 
-        assert "llama3"  in models
+        assert "llama3" in models
         assert "mistral" in models
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ModelManager
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestModelManager:
     def _mgr(self, models: list[str] | None = None) -> ModelManager:
@@ -192,7 +190,7 @@ class TestModelManager:
     def test_list_delegates_to_backend(self):
         mgr = self._mgr(["llama3.2", "mistral"])
         assert "llama3.2" in mgr.list()
-        assert "mistral"  in mgr.list()
+        assert "mistral" in mgr.list()
 
     def test_is_available_true(self):
         mgr = self._mgr(["llama3.2"])
@@ -217,6 +215,7 @@ class TestModelManager:
 
     def test_pull_verbose_true_prints_progress(self, capsys, caplog):
         import logging
+
         backend = MagicMock(spec=BaseLLMBackend)
 
         def fake_pull(model, *, on_progress=None):
@@ -228,31 +227,35 @@ class TestModelManager:
         with caplog.at_level(logging.INFO, logger="ai_guard.llm.model_manager"):
             ModelManager(backend).pull("llama3.2", verbose=True)
         assert "llama3.2" in caplog.text
-        assert capsys.readouterr().out != ""   # progress bar still printed
+        assert capsys.readouterr().out != ""  # progress bar still printed
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # httpx ImportError
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestHttpxImportError:
     def test_ollama_httpx_missing_raises(self):
         import sys
         from unittest.mock import patch
+
         with patch.dict(sys.modules, {"httpx": None}):
-            from ai_guard.llm.backends import ollama as _ollama_mod
-            import importlib
             # _httpx() is called on use, not import — call complete() to trigger it
             backend = OllamaBackend.__new__(OllamaBackend)
             backend.base_url = "http://localhost:11434"
             backend.model = "llama3.2"
             # Patch _httpx directly
-            with patch("ai_guard.llm.backends.ollama._httpx", side_effect=ImportError("httpx missing")):
+            with patch(
+                "ai_guard.llm.backends.ollama._httpx", side_effect=ImportError("httpx missing")
+            ):
                 with pytest.raises(ImportError, match="httpx"):
                     backend.complete("test")
 
     def test_openai_compat_httpx_missing_raises(self):
-        with patch("ai_guard.llm.backends.openai_compat._httpx", side_effect=ImportError("httpx missing")):
+        with patch(
+            "ai_guard.llm.backends.openai_compat._httpx", side_effect=ImportError("httpx missing")
+        ):
             backend = OpenAICompatBackend.__new__(OpenAICompatBackend)
             backend.base_url = "http://localhost"
             backend.model = "m"
@@ -264,12 +267,14 @@ class TestHttpxImportError:
 class TestOllamaConnectErrors:
     def test_list_models_connect_error(self):
         import httpx
+
         with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
             with pytest.raises(ConnectionError, match="Ollama"):
                 OllamaBackend().list_models()
 
     def test_pull_model_connect_error(self):
         import httpx
+
         with patch("httpx.stream", side_effect=httpx.ConnectError("refused")):
             with pytest.raises(ConnectionError, match="Ollama"):
                 OllamaBackend().pull_model("llama3.2")
@@ -304,12 +309,14 @@ class TestOllamaConnectErrors:
 class TestOpenAICompatConnectErrors:
     def test_complete_connect_error(self):
         import httpx
+
         with patch("httpx.post", side_effect=httpx.ConnectError("refused")):
             with pytest.raises(ConnectionError, match="LLM service"):
                 OpenAICompatBackend(base_url="http://localhost", model="m").complete("test")
 
     def test_list_models_connect_error(self):
         import httpx
+
         with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
             with pytest.raises(ConnectionError, match="LLM service"):
                 OpenAICompatBackend(base_url="http://localhost", model="m").list_models()
@@ -351,6 +358,7 @@ class TestOllamaBackendAsync:
 
     def test_complete_async_connect_error_raises(self):
         import httpx
+
         mock_client = MagicMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -398,6 +406,7 @@ class TestOpenAICompatBackendAsync:
 
     def test_complete_async_connect_error_raises(self):
         import httpx
+
         mock_client = MagicMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -422,18 +431,25 @@ class TestBaseLLMBackendAsyncDefault:
 
     def test_base_complete_async_calls_sync_complete(self):
         from unittest.mock import MagicMock
+
         # Create a minimal concrete subclass
         mock_backend = MagicMock(spec=["complete"])
         mock_backend.complete.return_value = "sync result"
 
         # Patch asyncio.to_thread to just call the function
         import asyncio
+
         from ai_guard.llm.backends.base import BaseLLMBackend
 
         class _Concrete(BaseLLMBackend):
-            def complete(self, prompt, *, timeout=60): return "sync result"
-            def list_models(self): return []
-            def pull_model(self, model, *, on_progress=None): pass
+            def complete(self, prompt, *, timeout=60):
+                return "sync result"
+
+            def list_models(self):
+                return []
+
+            def pull_model(self, model, *, on_progress=None):
+                pass
 
         result = asyncio.run(_Concrete().complete_async("hi"))
         assert result == "sync result"

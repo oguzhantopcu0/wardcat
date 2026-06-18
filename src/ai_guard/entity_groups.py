@@ -19,6 +19,7 @@ Available groups:
     identity_entities()     — PASSPORT, NIN, SSN, TC_ID, EU_NATIONAL_ID, CODICE_FISCALE
     all_entities()          — all known entity types
 """
+
 from __future__ import annotations
 
 from ai_guard.core.models import KNOWN_ENTITY_TYPES
@@ -41,10 +42,15 @@ def turkish_entities() -> frozenset[str]:
 
 def european_entities() -> frozenset[str]:
     """EU/European entities: EU_NATIONAL_ID, CODICE_FISCALE, NIN, IBAN, PASSPORT."""
-    return core_entities() | frozenset({
-        "EU_NATIONAL_ID", "CODICE_FISCALE", "NIN", "PASSPORT",
-        "UK_POSTAL_CODE",
-    })
+    return core_entities() | frozenset(
+        {
+            "EU_NATIONAL_ID",
+            "CODICE_FISCALE",
+            "NIN",
+            "PASSPORT",
+            "UK_POSTAL_CODE",
+        }
+    )
 
 
 def uk_entities() -> frozenset[str]:
@@ -64,10 +70,16 @@ def network_entities() -> frozenset[str]:
 
 def identity_entities() -> frozenset[str]:
     """Government-issued identity documents and numbers."""
-    return frozenset({
-        "PASSPORT", "NIN", "SSN", "TC_ID",
-        "EU_NATIONAL_ID", "CODICE_FISCALE",
-    })
+    return frozenset(
+        {
+            "PASSPORT",
+            "NIN",
+            "SSN",
+            "TC_ID",
+            "EU_NATIONAL_ID",
+            "CODICE_FISCALE",
+        }
+    )
 
 
 def all_entities() -> frozenset[str]:

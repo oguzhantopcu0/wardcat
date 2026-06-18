@@ -23,7 +23,7 @@ def test_batch_detects_independently():
         "temiz metin",
     ]
     results = guard().scan_batch(texts)
-    assert any(v.entity_type == "EMAIL"       for v in results[0].violations)
+    assert any(v.entity_type == "EMAIL" for v in results[0].violations)
     assert any(v.entity_type == "CREDIT_CARD" for v in results[1].violations)
     assert results[2].is_clean
 
