@@ -9,3 +9,8 @@ wheels/
 # Virtual environments
 .venv
 .coverage
+
+# Generated test/scan outputs (manual harness runs)
+*_results.txt
+filter_coverage_results.txt
+live_test_results.txt

@@ -234,7 +234,7 @@ Runnable scripts in [`examples/`](examples/):
 | `demo.py` | Programmatic + YAML APIs |
 | `batch_and_async.py` | `scan_batch` and the async API (regex-only, no services) |
 | `llm_hybrid.py` | regex + NER + LLM with ensemble adjudication (needs Ollama) |
-| `fastapi_middleware.py` | ASGI middleware that scans request bodies |
+| `asgi_middleware.py` | Copy-paste ASGI middleware (FastAPI/Starlette) that scans request bodies — ai-guard ships no web-framework code; this is a self-contained example |
 
 ---
 
