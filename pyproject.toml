@@ -95,6 +95,35 @@ dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "pytest-timeout>=2.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "types-PyYAML>=6.0",
     "spacy>=3.8.0,<4",
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I isort, B bugbear, UP pyupgrade, C4 comprehensions
+select = ["E", "W", "F", "I", "B", "UP", "C4"]
+ignore = [
+    "E501",  # line length — handled by the formatter; long regex strings are fine
+    "B008",  # function call in default arg — used intentionally (e.g. {} defaults)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests deliberately import internals mid-file and assert on broad exceptions.
+"tests/**" = ["B011", "E402", "B017"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src/ai_guard"]
+ignore_missing_imports = true   # spacy/torch/transformers ship no/partial stubs
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true
