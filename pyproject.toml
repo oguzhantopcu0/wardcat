@@ -3,7 +3,7 @@ name = "ai-guard"
 version = "0.2.0b1"
 description = "PII detection and anonymization for LLM inputs — regex, NER and on-prem LLM hybrid engine"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [
     { name = "ai-guard contributors" },
@@ -104,15 +104,16 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
 # E/W pycodestyle, F pyflakes, I isort, B bugbear, UP pyupgrade, C4 comprehensions
 select = ["E", "W", "F", "I", "B", "UP", "C4"]
 ignore = [
-    "E501",  # line length — handled by the formatter; long regex strings are fine
-    "B008",  # function call in default arg — used intentionally (e.g. {} defaults)
+    "E501",   # line length — handled by the formatter; long regex strings are fine
+    "B008",   # function call in default arg — used intentionally (e.g. {} defaults)
+    "UP042",  # keep `class Action(str, Enum)` — switching to StrEnum changes str() output
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -120,7 +121,7 @@ ignore = [
 "tests/**" = ["B011", "E402", "B017"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 files = ["src/ai_guard"]
 ignore_missing_imports = true   # spacy/torch/transformers ship no/partial stubs
 warn_unused_ignores = true

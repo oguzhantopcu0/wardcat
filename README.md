@@ -225,6 +225,19 @@ guard = LLMGuard(
 
 ---
 
+### Examples
+
+Runnable scripts in [`examples/`](examples/):
+
+| File | Shows |
+|---|---|
+| `demo.py` | Programmatic + YAML APIs |
+| `batch_and_async.py` | `scan_batch` and the async API (regex-only, no services) |
+| `llm_hybrid.py` | regex + NER + LLM with ensemble adjudication (needs Ollama) |
+| `fastapi_middleware.py` | ASGI middleware that scans request bodies |
+
+---
+
 ## CLI
 
 ### Scanning
