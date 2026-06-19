@@ -28,12 +28,9 @@ def main() -> None:
         llm_adjudicate=True,  # LLM acts as detector + arbiter in one call
         salt="example-salt",
     )
-    # db_pass=... has no known prefix → only the LLM can flag it. Enable it.
-    guard._config["llm_detector"]["entities"]["CUSTOM_SECRET"] = {
-        "enabled": True,
-        "action": "hash",
-    }
-    guard._rebuild()
+    # db_pass=... has no known prefix → only the LLM can flag it. Target the
+    # LLM layer explicitly so it is not also enabled for regex.
+    guard.configure_entity("CUSTOM_SECRET", action="hash", layers=["llm"])
 
     result = guard.scan(TEXT)
     print("Sanitized:\n" + result.sanitized_text)

@@ -123,6 +123,48 @@ for v in result.violations:
 # [warn] EMAIL: 'ali.veli@example.com'
 ```
 
+### Choosing which filters run, and on which layer
+
+Each entity can be detected by one or more of three layers — `regex`
+(deterministic), `ner` (SpaCy), and `llm` (contextual/semantic). By default an
+entity is enabled on every layer that supports it. Use `layers=[...]` to target
+a specific layer — for example, keep a semantic-only entity off the regex/NER
+path:
+
+```python
+# Detect EMAIL with regex only; leave SPECIAL_CATEGORY (GDPR Art. 9) to the LLM
+guard.configure_entity("EMAIL", action="redact", layers=["regex"])
+guard.configure_entity("SPECIAL_CATEGORY", action="redact", layers=["llm"])
+```
+
+To turn on many filters at once, use `configure_entities()`. It accepts a list,
+a `{name: action}` mapping, or a `{name: {...}}` mapping for per-entity control,
+and applies them in a single rebuild:
+
+```python
+from ai_guard import LLMGuard, turkish_entities
+
+guard = LLMGuard(use_ner=False)
+
+# a) a whole predefined group with one action
+guard.configure_entities(turkish_entities(), action="hash")
+
+# b) an explicit list
+guard.configure_entities(["EMAIL", "CREDIT_CARD", "IBAN"], action="redact")
+
+# c) per-entity actions and layers in one call
+guard.configure_entities({
+    "CREDIT_CARD":      "hash",
+    "EMAIL":            {"action": "mask"},
+    "SPECIAL_CATEGORY": {"action": "redact", "layers": ["llm"]},
+})
+```
+
+Predefined groups (`core_entities`, `financial_entities`, `turkish_entities`,
+`european_entities`, `uk_entities`, `us_entities`, `network_entities`,
+`identity_entities`, `all_entities`) are importable from `ai_guard` and pair
+naturally with `configure_entities()`.
+
 ### Declarative API (YAML)
 
 ```python

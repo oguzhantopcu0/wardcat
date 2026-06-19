@@ -95,6 +95,17 @@ _REGEX_ENTITIES = {
 }
 _NER_ENTITIES = {"PERSON", "ORG", "ADDRESS"}
 
+# Entity types the LLM layer can be asked to detect (those with prompt guidance).
+from ai_guard.llm.prompt import SUPPORTED_ENTITIES as _LLM_ENTITIES  # noqa: E402
+
+# Detector layers a filter can be applied to, and which entities each supports.
+_LAYER_ENTITIES: dict[str, frozenset[str]] = {
+    "regex": frozenset(_REGEX_ENTITIES),
+    "ner": frozenset(_NER_ENTITIES),
+    "llm": _LLM_ENTITIES,
+}
+_VALID_LAYERS = frozenset(_LAYER_ENTITIES)
+
 
 class LLMGuard:
     """
@@ -309,14 +320,91 @@ class LLMGuard:
         entity_type: str,
         enabled: bool = True,
         action: str = "warn",
+        layers: list[str] | None = None,
     ) -> LLMGuard:
         """
         Configure a single entity type. Supports method chaining.
 
         :param entity_type: E.g. "EMAIL", "PERSON", "CREDIT_CARD"
         :param enabled:     Include this entity in the scan engine
-        :param action:      "warn" or "hash"
+        :param action:      "warn", "hash", "redact", or "mask"
+        :param layers:      Which detector layers should look for this entity —
+                            any of ``"regex"``, ``"ner"``, ``"llm"``. When
+                            ``None`` (default), every layer that supports the
+                            entity is used. Use this to target one layer, e.g.
+                            ``layers=["llm"]`` for contextual/semantic entities.
         """
+        self._set_entity(entity_type, enabled=enabled, action=action, layers=layers)
+        self._rebuild()
+        return self
+
+    def configure_entities(
+        self,
+        entities,
+        *,
+        enabled: bool = True,
+        action: str = "warn",
+        layers: list[str] | None = None,
+    ) -> LLMGuard:
+        """
+        Configure many entity types at once (single rebuild). Supports chaining.
+
+        ``entities`` may be:
+
+        * an iterable of names — applied with the given ``action``/``layers``::
+
+              from ai_guard import turkish_entities
+              guard.configure_entities(turkish_entities(), action="hash")
+              guard.configure_entities(["EMAIL", "CREDIT_CARD"], action="hash")
+
+        * a mapping ``{name: action}``::
+
+              guard.configure_entities({"EMAIL": "warn", "CREDIT_CARD": "hash"})
+
+        * a mapping ``{name: {"action": ..., "layers": ..., "enabled": ...}}``
+          for per-entity control::
+
+              guard.configure_entities({
+                  "CREDIT_CARD":      "hash",
+                  "SPECIAL_CATEGORY": {"action": "redact", "layers": ["llm"]},
+              })
+
+        The top-level ``enabled``/``action``/``layers`` act as defaults for any
+        entry that does not specify its own.
+        """
+        if isinstance(entities, dict):
+            specs = entities
+        else:
+            specs = dict.fromkeys(entities, {})
+
+        for name, spec in specs.items():
+            if isinstance(spec, str):
+                spec = {"action": spec}
+            elif spec is None:
+                spec = {}
+            elif not isinstance(spec, dict):
+                raise ValueError(
+                    f"Invalid spec for {name!r}: expected str, dict, or None, "
+                    f"got {type(spec).__name__}."
+                )
+            self._set_entity(
+                name,
+                enabled=spec.get("enabled", enabled),
+                action=spec.get("action", action),
+                layers=spec.get("layers", layers),
+            )
+        self._rebuild()
+        return self
+
+    def _set_entity(
+        self,
+        entity_type: str,
+        *,
+        enabled: bool,
+        action: str,
+        layers: list[str] | None,
+    ) -> None:
+        """Mutate config for one entity across the chosen layers (no rebuild)."""
         custom_patterns = self._config.get("custom_patterns", {})
         if entity_type not in custom_patterns:
             warn_unknown_entity(entity_type)
@@ -324,12 +412,30 @@ class LLMGuard:
             raise ValueError(
                 f"Invalid action {action!r}. Valid values: 'warn', 'hash', 'mask', 'redact'"
             )
+
+        if layers is None:
+            target = [lyr for lyr, ents in _LAYER_ENTITIES.items() if entity_type in ents]
+            if not target:  # unknown / custom entity → default to regex
+                target = ["regex"]
+        else:
+            invalid = set(layers) - _VALID_LAYERS
+            if invalid:
+                raise ValueError(
+                    f"Invalid layer(s) {sorted(invalid)}. Valid: {sorted(_VALID_LAYERS)}"
+                )
+            target = list(layers)
+
+        # config["entities"] holds the action (always, so the engine can apply it)
+        # and the regex/NER enabled flag.
+        non_llm = ("regex" in target) or ("ner" in target)
         self._config.setdefault("entities", {})[entity_type] = {
-            "enabled": enabled,
+            "enabled": enabled and non_llm,
             "action": action,
         }
-        self._rebuild()
-        return self
+        # The LLM layer keeps its own enabled set.
+        if "llm" in target:
+            llm_entities = self._config.setdefault("llm_detector", {}).setdefault("entities", {})
+            llm_entities[entity_type] = {"enabled": enabled, "action": action}
 
     def set_salt(self, salt: str) -> LLMGuard:
         """Update the hash salt."""
