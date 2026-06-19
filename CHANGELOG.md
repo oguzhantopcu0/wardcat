@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Layer-aware filter selection:** `configure_entity(entity, layers=[...])` targets a specific detector layer (`"regex"`, `"ner"`, `"llm"`); when omitted, every layer that supports the entity is used. Lets you keep semantic-only entities (e.g. `SPECIAL_CATEGORY`) off the regex/NER path.
+- **Batch filter configuration:** `configure_entities()` enables many entity types in one call (single rebuild). Accepts a list, a `{name: action}` mapping, or a `{name: {action, layers, enabled}}` mapping, and pairs with the predefined entity groups (`turkish_entities()`, `european_entities()`, …).
+- **NER model selection by language:** `LLMGuard(language="de", spacy_size="md")` resolves the SpaCy model from the catalog by language code and size tier (`sm`/`md`/`lg`/`trf`); supported languages are `en`, `de`, `fr`, `es`, `it`, `nl`, `pt`, `tr`. Selecting a language implies auto-download of the model if it is missing (disable with `spacy_auto_download=False`).
+- **Multilingual NER:** `LLMGuard(language=["en", "de", "fr"])` loads one NER detector per language; the engine merges their spans. Each model loads independently (one failure skips only that model). Explicit by design — ai-guard does not auto-detect the input language.
+- **Reusable SpaCy installer:** new `ai_guard.ner.downloader` module (`ensure_model`, `download_model`) shared by the CLI and the auto-download path; `ai_guard.ner.spacy_catalog.resolve_model()` resolves a language + size to a catalog model.
+- **CLI language flags:** `--lang`, `--spacy-size`, and `--spacy-auto-download` on `ai-guard scan` / `ai-guard batch`.
+- **Ensemble adjudication:** opt-in `LLMGuard(llm_adjudicate=True)` / `llm_detector.adjudicate` — the LLM verifies, relabels, drops, and supplements regex/NER candidates in a single call. Deterministic regex matches are always kept; LLM-only mode is unaffected.
+- **GDPR Article 9 detection:** new `SPECIAL_CATEGORY` entity (health, religion, ethnicity, political opinion, sexual orientation, trade-union, genetic/biometric). LLM-only and **off by default** (semantic, subjective); enable under `llm_detector.entities`.
+- **`VAT_NUMBER` entity:** EU-prefixed VAT IDs (DE/FR/GB/IT/ES/AT/NL) and the Turkish *Vergi No* keyword form.
+- **Multilingual filters:** `DATE_OF_BIRTH` (DE/FR month names and keywords), `PHONE` (French national, German mobile), and LLM prompt + few-shot examples extended to EN/DE/FR/TR.
+- **Expanded `CUSTOM_SECRET`:** Stripe (`sk_live_`, `rk_live_`), Anthropic (`sk-ant-`), Google (`AIza`), GitLab (`glpat-`), SendGrid (`SG.`), Twilio (`SK`/`AC`), npm, Slack webhook URLs, and PEM private-key blocks.
+- **Connection-string credential detection:** passwords in `scheme://user:pass@host` URIs are flagged as `CUSTOM_SECRET` (and the spurious EMAIL match they used to trigger is suppressed).
+- **Tooling:** `ruff` (lint + format) and `mypy` configured in `pyproject.toml`, with a "Lint & type-check" CI job that the test job depends on.
+- **Live LLM integration tests:** `tests/integration/test_llm_live.py` runs against a real Ollama model (`@pytest.mark.slow`, auto-skips when Ollama is unavailable).
+- **Docs & examples:** `CONTRIBUTING.md`; `examples/` (`asgi_middleware.py`, `batch_and_async.py`, `llm_hybrid.py`, `demo.py`).
+
+### Changed
+
+- **`CREDIT_CARD` validation:** now Luhn-checked via a table-driven `_VALIDATORS` registry (alongside TC_ID and IBAN checksums).
+- **`requires-python`:** aligned to `>=3.11`.
+
+### Removed
+
+- **BREAKING — shipped ASGI/FastAPI middleware:** the `ai_guard.integrations` package was removed; the core is now a pure detection library (deps stay `pyyaml` + `httpx` only). A self-contained, copy-paste ASGI middleware now lives in `examples/asgi_middleware.py`.
+
+### Fixed
+
+- **`US_ZIP_CODE` ZIP+4 leak:** a labeled branch grabbed only the first 5 digits of a ZIP+4; fixed with a negative lookahead.
+- **`FINANCIAL_AMOUNT`:** wired into the guard's regex entity set (previously dead code); remains opt-in/off by default.
+
 ---
 
 ## [0.2.0b1] - 2026-03-20
