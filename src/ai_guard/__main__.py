@@ -58,6 +58,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="SpaCy model (default: en_core_web_sm)",
     )
     common.add_argument(
+        "--lang",
+        default=None,
+        metavar="CODE",
+        help="NER language code (en/de/fr/es/it/nl/pt/tr) — picks the SpaCy model automatically",
+    )
+    common.add_argument(
+        "--spacy-size",
+        default="sm",
+        choices=["sm", "md", "lg", "trf"],
+        dest="spacy_size",
+        help="SpaCy model size tier when --lang is used (default: sm)",
+    )
+    common.add_argument(
+        "--spacy-auto-download",
+        action="store_true",
+        dest="spacy_auto_download",
+        help="Download the SpaCy model automatically if it is missing",
+    )
+    common.add_argument(
         "--format", choices=["text", "json"], default="text", help="Output format (default: text)"
     )
     common.add_argument(
@@ -205,6 +224,9 @@ def _make_guard(args: argparse.Namespace):
         salt=args.salt,
         use_ner=not args.no_ner,
         spacy_model=args.model,
+        language=getattr(args, "lang", None),
+        spacy_size=getattr(args, "spacy_size", "sm"),
+        spacy_auto_download=getattr(args, "spacy_auto_download", False) or None,
         use_llm=args.llm,
         llm_backend=args.llm_backend,
         llm_model=args.llm_model,
@@ -352,11 +374,11 @@ def cmd_spacy(args: argparse.Namespace) -> None:
         print()
 
     elif args.spacy_command == "download":
+        from ai_guard.ner.downloader import download_model
         from ai_guard.ner.spacy_catalog import get_spacy_model
 
         model_name = args.model_name
-        info = get_spacy_model(model_name)
-        if info is None:
+        if get_spacy_model(model_name) is None:
             print(
                 f"Warning: {model_name!r} is not in the ai-guard catalog.\n"
                 "Download will proceed but compatibility is not guaranteed.\n"
@@ -364,102 +386,10 @@ def cmd_spacy(args: argparse.Namespace) -> None:
                 file=sys.stderr,
             )
         try:
-            import spacy  # noqa: F401
-        except ImportError:
-            raise ImportError(
-                "spacy is required for NER detection.\n"
-                "Install with: uv add 'ai-guard[ner]'  or  pip install 'ai-guard[ner]'"
-            ) from None
-        import shutil
-        import subprocess
-
-        # Hard incompatibility check — model cannot be loaded regardless of --no-deps.
-        if info and info.incompatible:
-            print(
-                f"ERROR: {model_name!r} is not compatible with SpaCy {spacy.__version__}.\n"
-                f"{info.note}",
-                file=sys.stderr,
-            )
+            download_model(model_name, verbose=True)
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
-
-        if info and info.note:
-            print(f"Note: {info.note}", flush=True)
-
-        print(f"Downloading SpaCy model: {model_name}", flush=True)
-
-        uv_bin = shutil.which("uv")
-        env_skip = {**os.environ, "UV_SKIP_WHEEL_FILENAME_CHECK": "1"}
-
-        # Check pip availability once upfront to avoid noisy "No module named pip" output.
-        _pip_ok = (
-            subprocess.run(
-                [sys.executable, "-m", "pip", "--version"],
-                capture_output=True,
-            ).returncode
-            == 0
-        )
-
-        def _run(cmd: list[str], *, skip_check: bool = False) -> int:
-            e = env_skip if skip_check else None
-            return subprocess.run(cmd, check=False, env=e).returncode
-
-        def _install(packages: list[str], *, no_deps: bool = False) -> int:
-            """Install packages using pip if available, otherwise fall back to uv."""
-            cmd_suffix = ["--no-deps"] if no_deps else []
-            if _pip_ok:
-                rc = _run([sys.executable, "-m", "pip", "install"] + packages + cmd_suffix)
-                if rc == 0:
-                    return 0
-            if uv_bin:
-                print("Using uv pip install…", flush=True)
-                return _run(
-                    [uv_bin, "pip", "install"] + packages + cmd_suffix,
-                    skip_check=True,
-                )
-            return 1
-
-        result_code = 1
-
-        if info and info.wheel_url:
-            # Models with explicit wheel URL (e.g. Turkish / HuggingFace).
-            # Installed with --no-deps because the wheel metadata may pin an old
-            # SpaCy version that conflicts with what is currently installed.
-            result_code = _install([info.wheel_url], no_deps=True)
-
-            # Install extra packages declared by this model (e.g. spacy-transformers for trf).
-            if result_code == 0 and info.extra_packages:
-                print(
-                    f"Installing extra dependencies: {', '.join(info.extra_packages)}",
-                    flush=True,
-                )
-                result_code = _install(list(info.extra_packages))
-        else:
-            # Standard SpaCy models (explosion/spacy-models GitHub releases).
-            # 1. Try `python -m spacy download` (works in pip-based virtualenvs).
-            if _pip_ok:
-                result_code = _run([sys.executable, "-m", "spacy", "download", model_name])
-
-            # 2. In uv environments pip is absent — construct the GitHub wheel URL
-            #    using the installed SpaCy minor version (models follow x.y.0 tags).
-            if result_code != 0 and uv_bin:
-                import spacy as _spacy
-
-                v = _spacy.__version__.split(".")
-                model_ver = f"{v[0]}.{v[1]}.0"
-                gh_url = (
-                    f"https://github.com/explosion/spacy-models/releases/download/"
-                    f"{model_name}-{model_ver}/{model_name}-{model_ver}-py3-none-any.whl"
-                )
-                print(f"Using uv pip install from GitHub ({model_ver})…", flush=True)
-                result_code = _run([uv_bin, "pip", "install", gh_url])
-
-        if result_code != 0:
-            raise ValueError(
-                f"SpaCy model download failed: {model_name!r}\n"
-                "The model may not be compatible with your installed SpaCy version.\n"
-                "Check available models:  python -m ai_guard spacy list\n"
-                "Check SpaCy version:     python -m spacy info"
-            )
         print("\nModel ready. Use it with:")
         print(f"  guard = LLMGuard(spacy_model={model_name!r})")
         print(f'  python -m ai_guard scan --model {model_name} --text "..."')

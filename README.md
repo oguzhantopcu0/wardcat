@@ -404,6 +404,23 @@ ai-guard models pull llama3.1:8b
 
 > **Language & NER models:** the regex and LLM layers are multilingual by design. The SpaCy layer detects names with the model you load — set `spacy_model` to match your text (`en_core_web_sm`, `de_core_news_sm`, `fr_core_news_sm`, `tr_core_news_md`, …). Running, say, the Turkish model on German text produces noisy results, so pick the model per language (or rely on the LLM layer for cross-language names). A multilingual gazetteer filters out job titles, HR terms, and abbreviations (EN/DE/FR/TR) that NER models commonly mislabel.
 
+**Pick a language, not a model name.** Instead of remembering exact SpaCy package names, pass a language code and (optionally) a size tier — ai-guard resolves the right model from its catalog and **downloads it automatically if it is missing**:
+
+```python
+from ai_guard import LLMGuard
+
+# Selecting a language implies auto-download (turn off with spacy_auto_download=False)
+guard = LLMGuard(language="de")                 # → de_core_news_sm
+guard = LLMGuard(language="fr", spacy_size="md") # → fr_core_news_md (sm/md/lg/trf)
+guard = LLMGuard(language="tr", spacy_size="lg") # → tr_core_news_lg
+```
+
+Supported languages: `en`, `de`, `fr`, `es`, `it`, `nl`, `pt`, `tr`. If the requested size is unavailable for a language, the recommended model is used. The same works from the CLI:
+
+```bash
+ai-guard scan --lang de --spacy-size md --spacy-auto-download --text "..."
+```
+
 ### LLM (requires on-prem LLM backend)
 
 | Entity | Default Action | Description |

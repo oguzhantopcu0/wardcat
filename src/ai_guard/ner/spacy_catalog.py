@@ -311,3 +311,32 @@ def recommended_for_language(lang_code: str) -> SpacyModelInfo | None:
         if m.lang_code == lang_code and m.recommended:
             return m
     return None
+
+
+def resolve_model(lang_code: str, size: str = "sm") -> SpacyModelInfo | None:
+    """Resolve a language code (+ size tier) to a concrete catalog model.
+
+    Picks the compatible model matching ``size`` (``"sm"``/``"md"``/``"lg"``/
+    ``"trf"``). If that exact size is unavailable for the language, falls back
+    to the recommended model, then to any other compatible model. Returns
+    ``None`` if the language is not supported at all.
+
+    :param lang_code: ISO 639-1 code, e.g. ``"en"``, ``"de"``, ``"tr"``.
+    :param size:      Desired size tier; defaults to ``"sm"``.
+    """
+    candidates = get_models_by_language(lang_code)
+    if not candidates:
+        return None
+
+    for m in candidates:
+        if m.size == size and not m.incompatible:
+            return m
+
+    rec = recommended_for_language(lang_code)
+    if rec and not rec.incompatible:
+        return rec
+
+    for m in candidates:
+        if not m.incompatible:
+            return m
+    return None

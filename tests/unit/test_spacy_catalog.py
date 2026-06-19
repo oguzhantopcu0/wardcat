@@ -10,6 +10,7 @@ from ai_guard.ner.spacy_catalog import (
     get_models_by_language,
     get_spacy_model,
     recommended_for_language,
+    resolve_model,
 )
 
 
@@ -205,3 +206,32 @@ class TestRecommendedForLanguage:
                 f"Language {lang!r} has multiple recommended models: "
                 f"{[m.name for m in recommended_models]}"
             )
+
+
+class TestResolveModel:
+    def test_exact_size_match(self):
+        assert resolve_model("en", "sm").name == "en_core_web_sm"
+        assert resolve_model("de", "md").name == "de_core_news_md"
+        assert resolve_model("fr", "lg").name == "fr_core_news_lg"
+
+    def test_default_size_is_sm(self):
+        assert resolve_model("en").name == "en_core_web_sm"
+
+    def test_falls_back_to_recommended_when_size_missing(self):
+        # Turkish has no "sm" model → falls back to the recommended (md)
+        m = resolve_model("tr", "sm")
+        assert m is not None
+        assert m.lang_code == "tr"
+        assert m.recommended
+
+    def test_never_returns_incompatible_model(self):
+        # tr_core_news_trf is marked incompatible → must fall back to a usable one
+        m = resolve_model("tr", "trf")
+        assert m is not None
+        assert not m.incompatible
+
+    def test_unsupported_language_returns_none(self):
+        assert resolve_model("xx", "sm") is None
+
+    def test_returns_catalog_member(self):
+        assert resolve_model("es", "md") in SPACY_CATALOG

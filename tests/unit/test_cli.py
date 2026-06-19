@@ -302,7 +302,7 @@ class TestCmdSpacyDownload:
         err = capsys.readouterr().err
         assert "not in the ai-guard catalog" in err
 
-    def test_download_failure_raises_value_error(self, capsys):
+    def test_download_failure_exits_nonzero(self, capsys):
         from ai_guard.__main__ import _build_parser, cmd_spacy
 
         args = _build_parser().parse_args(["spacy", "download", "en_core_web_sm"])
@@ -310,8 +310,10 @@ class TestCmdSpacyDownload:
             patch("subprocess.run", return_value=MagicMock(returncode=1)),
             patch("shutil.which", return_value=None),
         ):
-            with pytest.raises(ValueError, match="download failed"):
+            with pytest.raises(SystemExit) as exc:
                 cmd_spacy(args)
+        assert exc.value.code == 1
+        assert "download failed" in capsys.readouterr().err
 
     def test_download_with_wheel_url_model(self, capsys):
         from ai_guard.__main__ import _build_parser, cmd_spacy

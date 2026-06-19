@@ -143,6 +143,12 @@ class LLMGuard:
             llm_base_url="http://localhost:11434",
         )
         result = guard.scan(text)
+
+    NER by language (auto-resolves and downloads the SpaCy model)::
+
+        guard = LLMGuard(language="de", spacy_size="md")  # → de_core_news_md
+        # Supported: en, de, fr, es, it, nl, pt, tr; sizes sm/md/lg/trf.
+        # Selecting a language implies auto-download (spacy_auto_download=False to disable).
     """
 
     def __init__(
@@ -151,6 +157,9 @@ class LLMGuard:
         salt: str = "",
         use_ner: bool = True,
         spacy_model: str = "en_core_web_sm",
+        language: str | None = None,  # NER: pick the model by language code (en/de/fr/...)
+        spacy_size: str = "sm",  # NER: model size tier when language is given (sm/md/lg/trf)
+        spacy_auto_download: bool | None = None,  # download the SpaCy model if missing
         use_llm: bool = False,
         llm_backend: str = "ollama",  # "ollama" | "openai_compatible" | "transformers"
         llm_model: str = "llama3.2",
@@ -173,6 +182,34 @@ class LLMGuard:
             self._config["use_ner"] = False
         if spacy_model != "en_core_web_sm":
             self._config["spacy_model"] = spacy_model
+
+        # Language selection: resolve a supported language (+ size tier) to a
+        # concrete SpaCy model. Selecting a language implies auto-download unless
+        # the caller explicitly turned it off.
+        if language:
+            from ai_guard.ner.spacy_catalog import (
+                SPACY_CATALOG,
+                get_models_by_language,
+                resolve_model,
+            )
+
+            info = resolve_model(language.lower(), spacy_size)
+            if info is None:
+                if get_models_by_language(language.lower()):
+                    raise ValueError(
+                        f"No compatible SpaCy model for language {language!r} "
+                        f"at size {spacy_size!r}. Try a different size (sm/md/lg)."
+                    )
+                supported = sorted({m.lang_code for m in SPACY_CATALOG})
+                raise ValueError(
+                    f"Unsupported language {language!r}. Supported: {supported}. "
+                    "See: python -m ai_guard spacy list"
+                )
+            self._config["spacy_model"] = info.name
+            if spacy_auto_download is None:
+                spacy_auto_download = True
+        if spacy_auto_download:
+            self._config["spacy_auto_download"] = True
 
         # LLM detector overrides
         llm_cfg = self._config.setdefault("llm_detector", {})
@@ -515,6 +552,10 @@ class LLMGuard:
                     from ai_guard.detectors.ner_detector import NERDetector
 
                     model = self._config.get("spacy_model", "en_core_web_sm")
+                    if self._config.get("spacy_auto_download", False):
+                        from ai_guard.ner.downloader import ensure_model
+
+                        ensure_model(model, auto_download=True)
                     model = _resolve_spacy_model(model)
                     self._detectors.append(NERDetector(enabled_ner, model))
                 except Exception as exc:
