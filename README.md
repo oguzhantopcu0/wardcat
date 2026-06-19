@@ -421,6 +421,24 @@ Supported languages: `en`, `de`, `fr`, `es`, `it`, `nl`, `pt`, `tr`. If the requ
 ai-guard scan --lang de --spacy-size md --spacy-auto-download --text "..."
 ```
 
+#### Multi-language text
+
+For text that mixes several languages you have two options:
+
+1. **LLM layer (recommended, no extra models).** The LLM prompt is multilingual, so a single LLM-enabled guard detects names across languages without loading any SpaCy model:
+
+   ```python
+   guard = LLMGuard(use_llm=True, llm_model="llama3.1:8b")  # handles EN+DE+FR+TR in one call
+   ```
+
+2. **Multiple SpaCy models.** Pass a list of languages — ai-guard loads one NER model per language and the engine merges their results. Each model adds RAM and roughly multiplies NER scan time, so this is opt-in:
+
+   ```python
+   guard = LLMGuard(language=["en", "de", "fr"])  # 3 NER models, auto-downloaded if missing
+   ```
+
+   This is **explicit** — you list the languages; ai-guard does not guess the language of the input. The regex layer is multilingual regardless of these choices.
+
 ### LLM (requires on-prem LLM backend)
 
 | Entity | Default Action | Description |

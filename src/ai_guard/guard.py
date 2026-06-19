@@ -146,9 +146,12 @@ class LLMGuard:
 
     NER by language (auto-resolves and downloads the SpaCy model)::
 
-        guard = LLMGuard(language="de", spacy_size="md")  # → de_core_news_md
+        guard = LLMGuard(language="de", spacy_size="md")     # → de_core_news_md
+        guard = LLMGuard(language=["de", "fr"])              # one NER model per language
         # Supported: en, de, fr, es, it, nl, pt, tr; sizes sm/md/lg/trf.
         # Selecting a language implies auto-download (spacy_auto_download=False to disable).
+        # For mixed-language text without extra models, use the LLM layer (use_llm=True),
+        # whose prompt is multilingual.
     """
 
     def __init__(
@@ -157,7 +160,7 @@ class LLMGuard:
         salt: str = "",
         use_ner: bool = True,
         spacy_model: str = "en_core_web_sm",
-        language: str | None = None,  # NER: pick the model by language code (en/de/fr/...)
+        language: str | list[str] | None = None,  # NER: pick model(s) by language code(s)
         spacy_size: str = "sm",  # NER: model size tier when language is given (sm/md/lg/trf)
         spacy_auto_download: bool | None = None,  # download the SpaCy model if missing
         use_llm: bool = False,
@@ -183,8 +186,9 @@ class LLMGuard:
         if spacy_model != "en_core_web_sm":
             self._config["spacy_model"] = spacy_model
 
-        # Language selection: resolve a supported language (+ size tier) to a
-        # concrete SpaCy model. Selecting a language implies auto-download unless
+        # Language selection: resolve one or more supported languages (+ size
+        # tier) to concrete SpaCy models. A list loads one NER model per language
+        # (multilingual NER). Selecting a language implies auto-download unless
         # the caller explicitly turned it off.
         if language:
             from ai_guard.ner.spacy_catalog import (
@@ -193,19 +197,28 @@ class LLMGuard:
                 resolve_model,
             )
 
-            info = resolve_model(language.lower(), spacy_size)
-            if info is None:
-                if get_models_by_language(language.lower()):
+            langs = [language] if isinstance(language, str) else list(language)
+            models: list[str] = []
+            for lang in langs:
+                info = resolve_model(lang.lower(), spacy_size)
+                if info is None:
+                    if get_models_by_language(lang.lower()):
+                        raise ValueError(
+                            f"No compatible SpaCy model for language {lang!r} "
+                            f"at size {spacy_size!r}. Try a different size (sm/md/lg)."
+                        )
+                    supported = sorted({m.lang_code for m in SPACY_CATALOG})
                     raise ValueError(
-                        f"No compatible SpaCy model for language {language!r} "
-                        f"at size {spacy_size!r}. Try a different size (sm/md/lg)."
+                        f"Unsupported language {lang!r}. Supported: {supported}. "
+                        "See: python -m ai_guard spacy list"
                     )
-                supported = sorted({m.lang_code for m in SPACY_CATALOG})
-                raise ValueError(
-                    f"Unsupported language {language!r}. Supported: {supported}. "
-                    "See: python -m ai_guard spacy list"
-                )
-            self._config["spacy_model"] = info.name
+                models.append(info.name)
+
+            # Dedupe while preserving order; expose both the canonical list and a
+            # single primary model (back-compat with config["spacy_model"]).
+            models = list(dict.fromkeys(models))
+            self._config["spacy_models"] = models
+            self._config["spacy_model"] = models[0]
             if spacy_auto_download is None:
                 spacy_auto_download = True
         if spacy_auto_download:
@@ -544,24 +557,37 @@ class LLMGuard:
         if enabled_regex or custom_patterns:
             self._detectors.append(RegexDetector(enabled_regex, custom_patterns=custom_patterns))
 
-        # SpaCy NER detector (optional)
+        # SpaCy NER detector(s) (optional). A list of models loads one detector
+        # per language (multilingual NER); the engine merges their spans.
         if self._config.get("use_ner", True):
             enabled_ner = {e for e in _NER_ENTITIES if entity_cfg.get(e, {}).get("enabled", True)}
             if enabled_ner:
-                try:
-                    from ai_guard.detectors.ner_detector import NERDetector
+                models = self._config.get("spacy_models") or [
+                    self._config.get("spacy_model", "en_core_web_sm")
+                ]
+                auto_download = self._config.get("spacy_auto_download", False)
+                loaded: set[str] = set()
+                for model in models:
+                    # Each model is loaded independently — one failure must not
+                    # disable the others.
+                    try:
+                        from ai_guard.detectors.ner_detector import NERDetector
 
-                    model = self._config.get("spacy_model", "en_core_web_sm")
-                    if self._config.get("spacy_auto_download", False):
-                        from ai_guard.ner.downloader import ensure_model
+                        if auto_download:
+                            from ai_guard.ner.downloader import ensure_model
 
-                        ensure_model(model, auto_download=True)
-                    model = _resolve_spacy_model(model)
-                    self._detectors.append(NERDetector(enabled_ner, model))
-                except Exception as exc:
-                    logger.warning(
-                        "SpaCy NER could not be loaded, using regex only. Error: %s", exc
-                    )
+                            ensure_model(model, auto_download=True)
+                        resolved = _resolve_spacy_model(model)
+                        if resolved in loaded:  # avoid duplicate detectors
+                            continue
+                        loaded.add(resolved)
+                        self._detectors.append(NERDetector(enabled_ner, resolved))
+                    except Exception as exc:
+                        logger.warning(
+                            "SpaCy NER model %r could not be loaded, skipping it. Error: %s",
+                            model,
+                            exc,
+                        )
 
         # LLM detector (optional)
         llm_cfg = self._config.get("llm_detector", {})

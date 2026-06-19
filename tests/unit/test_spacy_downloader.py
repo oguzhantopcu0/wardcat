@@ -90,3 +90,52 @@ class TestGuardLanguageSelection:
         LLMGuard(language="de", spacy_size="md", use_ner=True)
         assert seen["model"] == "de_core_news_md"
         assert seen["auto"] is True
+
+
+class TestGuardMultiLanguage:
+    def test_list_resolves_one_model_per_language(self):
+        g = LLMGuard(language=["de", "fr"], use_ner=False)
+        assert g._config["spacy_models"] == ["de_core_news_sm", "fr_core_news_sm"]
+        # primary model stays consistent with the single-model field
+        assert g._config["spacy_model"] == "de_core_news_sm"
+
+    def test_single_str_still_populates_models_list(self):
+        g = LLMGuard(language="de", use_ner=False)
+        assert g._config["spacy_models"] == ["de_core_news_sm"]
+
+    def test_duplicate_languages_deduped(self):
+        g = LLMGuard(language=["de", "de"], use_ner=False)
+        assert g._config["spacy_models"] == ["de_core_news_sm"]
+
+    def test_size_applies_to_all_languages(self):
+        g = LLMGuard(language=["de", "fr"], spacy_size="md", use_ner=False)
+        assert g._config["spacy_models"] == ["de_core_news_md", "fr_core_news_md"]
+
+    def test_unsupported_language_in_list_raises(self):
+        with pytest.raises(ValueError, match="Unsupported language"):
+            LLMGuard(language=["de", "zz"], use_ner=False)
+
+    def test_list_implies_auto_download(self):
+        g = LLMGuard(language=["de", "fr"], use_ner=False)
+        assert g._config.get("spacy_auto_download") is True
+
+    def test_loads_one_detector_per_installed_model(self):
+        """End-to-end: each language with an installed model yields its own detector."""
+        pytest.importorskip("spacy")
+        import spacy.util
+
+        from ai_guard.detectors.ner_detector import NERDetector
+
+        installed = set(spacy.util.get_installed_models())
+        if not {"en_core_web_sm", "tr_core_news_md"} <= installed:
+            pytest.skip("en_core_web_sm and tr_core_news_md must be installed")
+
+        g = LLMGuard(language=["en", "tr"], spacy_auto_download=False)
+        ner_detectors = [d for d in g._detectors if isinstance(d, NERDetector)]
+        assert len(ner_detectors) == 2
+
+        g.configure_entity("PERSON", action="redact")
+        result = g.scan("John Smith ve Ahmet Yılmaz toplantıdaydı.")
+        persons = {v.original for v in result.violations if v.entity_type == "PERSON"}
+        assert "John Smith" in persons  # English model
+        assert "Ahmet Yılmaz" in persons  # Turkish model
