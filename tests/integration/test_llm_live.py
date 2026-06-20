@@ -23,7 +23,7 @@ import os
 
 import pytest
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 from ai_guard.llm.backends.ollama import OllamaBackend
 
 pytestmark = pytest.mark.slow
@@ -70,9 +70,9 @@ needs_ollama = pytest.mark.skipif(
 
 
 @pytest.fixture(scope="module")
-def llm_guard() -> LLMGuard:
+def llm_guard() -> AIGuard:
     """LLM-only guard (NER off) — so PERSON detection proves the LLM ran."""
-    return LLMGuard(
+    return AIGuard(
         use_ner=False,
         use_llm=True,
         llm_model=_MODEL,
@@ -92,7 +92,7 @@ class TestLiveLLMDetection:
 
     def test_detects_contextual_secret(self):
         # db_pass=VALUE has no known prefix → regex can't catch it; only the LLM can.
-        guard = LLMGuard(use_ner=False, use_llm=True, llm_model=_MODEL, llm_timeout=120, salt="s")
+        guard = AIGuard(use_ner=False, use_llm=True, llm_model=_MODEL, llm_timeout=120, salt="s")
         guard._config["llm_detector"]["entities"]["CUSTOM_SECRET"] = {
             "enabled": True,
             "action": "hash",
@@ -113,7 +113,7 @@ class TestLiveAdjudication:
     def test_deterministic_kept_and_pipeline_runs(self):
         # Full stack (regex + NER + LLM adjudication). spaCy is required here.
         pytest.importorskip("spacy")
-        guard = LLMGuard(
+        guard = AIGuard(
             use_ner=True,
             spacy_model="en_core_web_sm",
             use_llm=True,

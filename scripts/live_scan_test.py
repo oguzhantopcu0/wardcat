@@ -17,7 +17,7 @@ from __future__ import annotations
 import sys
 import time
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 from ai_guard.core.engine import DetectionEngine
 from ai_guard.detectors.llm_detector import LLMDetector
 from ai_guard.llm.backends.ollama import OllamaBackend
@@ -37,7 +37,7 @@ WARN = f"{YELLOW}⚠ WARN{RESET}"
 # ── Guard fabrikası ───────────────────────────────────────────────────────────
 
 
-def make_guard(entities: set[str] | None = None, use_ner: bool = False) -> LLMGuard:
+def make_guard(entities: set[str] | None = None, use_ner: bool = False) -> AIGuard:
     enabled = entities or {
         "CREDIT_CARD",
         "EMAIL",
@@ -48,7 +48,7 @@ def make_guard(entities: set[str] | None = None, use_ner: bool = False) -> LLMGu
         "IP_ADDRESS",
         "CUSTOM_SECRET",
     }
-    guard = LLMGuard(use_ner=use_ner, use_llm=False)
+    guard = AIGuard(use_ner=use_ner, use_llm=False)
     for e in enabled:
         guard._config["entities"].setdefault(e, {"enabled": True, "action": "warn"})
     guard._config["entities"]["PERSON"] = {"enabled": True, "action": "hash"}
@@ -84,7 +84,7 @@ def section(title: str) -> None:
     print(f"{BOLD}{CYAN}{'═' * 60}{RESET}")
 
 
-def run(label: str, guard: LLMGuard, text: str) -> object:
+def run(label: str, guard: AIGuard, text: str) -> object:
     t0 = time.time()
     result = guard.scan(text)
     elapsed = time.time() - t0
@@ -248,7 +248,7 @@ check(
 # ── 8. Batch tarama ──────────────────────────────────────────────────────────
 section("8 · Batch Tarama")
 
-batch_guard = LLMGuard(
+batch_guard = AIGuard(
     use_ner=False,
     use_llm=True,
     llm_model="gemma3:12b",

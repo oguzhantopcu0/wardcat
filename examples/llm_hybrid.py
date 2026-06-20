@@ -9,7 +9,7 @@ Requires:
     ollama pull gemma3:12b   # or any chat model; set the name below
 """
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 
 TEXT = """\
 Müşteri Ali Veli (ali.veli@firma.com) ile görüşüldü.
@@ -19,7 +19,7 @@ Kredi kartı 4111 1111 1111 1111 ile ödeme yapıldı.
 
 
 def main() -> None:
-    guard = LLMGuard(
+    guard = AIGuard(
         use_ner=True,
         spacy_model="en_core_web_sm",
         use_llm=True,
@@ -30,7 +30,7 @@ def main() -> None:
     )
     # db_pass=... has no known prefix → only the LLM can flag it. Target the
     # LLM layer explicitly so it is not also enabled for regex.
-    guard.configure_entity("CUSTOM_SECRET", action="hash", layers=["llm"])
+    guard.add_entity("CUSTOM_SECRET", action="hash", layers=["llm"])
 
     result = guard.scan(TEXT)
     print("Sanitized:\n" + result.sanitized_text)

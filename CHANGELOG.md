@@ -11,17 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.3.1] — 2026-06-21
+## [0.4.0] — 2026-06-21
+
+> Includes **breaking changes** (class and method renames). Deprecated aliases are kept for one release cycle.
+
+### Breaking
+
+- **`LLMGuard` → `AIGuard`:** the main class is renamed. `LLMGuard` remains as a deprecated subclass alias that emits a `DeprecationWarning`; it will be removed in a future release.
+- **`configure_entity()` → `add_entity()`** and **`configure_entities()` → `add_entities()`.** The old names remain as deprecated aliases (with a `DeprecationWarning`) and forward to the new methods.
 
 ### Added
 
-- **`Entity` constants:** a new `Entity` enum exposes every known entity type as a constant (`Entity.CREDIT_CARD`, `Entity.EMAIL`, …) for IDE autocomplete and typo-proof configuration. Use it anywhere a string entity type was accepted — `guard.configure_entity(Entity.CREDIT_CARD, Action.HASH)`. Bare strings still work; `Entity` *is* its string value (`Entity.EMAIL == "EMAIL"`).
-- `Entity` and `Action` are now first-class, type-hinted arguments to `configure_entity()` / `configure_entities()` (`entity_type: str | Entity`, `action: str | Action`). Static type checkers flag an invalid action or entity at edit time instead of at runtime.
+- **`Entity` constants:** a new `Entity` enum exposes every known entity type as a constant (`Entity.CREDIT_CARD`, `Entity.EMAIL`, …) for IDE autocomplete and typo-proof configuration. Use it anywhere a string entity type was accepted — `guard.add_entity(Entity.CREDIT_CARD, action=Action.HASH)`. Bare strings still work; `Entity` *is* its string value (`Entity.EMAIL == "EMAIL"`).
+- **`Entity.All` sentinel:** `add_entity(Entity.All)` enables **every** known entity type in one call (and `add_entities([Entity.All, ...])` expands it inline). It is excluded from `KNOWN_ENTITY_TYPES`.
+- **`remove_entity()` / `remove_entities()`:** disable one or many entity types (across all detector layers). `remove_entity(Entity.All)` disables everything. The natural pattern is "enable all, then prune": `guard.add_entity(Entity.All, action="hash").remove_entity(Entity.ORG)`. Removing an entity that was never enabled is a no-op.
+- `Entity` and `Action` are first-class, type-hinted arguments (`entity_type: str | Entity`, `action: str | Action`). Static type checkers flag an invalid action or entity at edit time instead of at runtime.
 
 ### Changed
 
-- `KNOWN_ENTITY_TYPES` is now derived from the `Entity` enum — the enum is the single source of truth, so the two can no longer drift apart.
-- `configure_entity()` / `configure_entities()` normalize `Entity`/`Action` enum arguments to their canonical string form before storing them in the config.
+- `KNOWN_ENTITY_TYPES` is now derived from the `Entity` enum (excluding the `Entity.All` sentinel) — the enum is the single source of truth, so the two can no longer drift apart.
+- `add_entity()` / `add_entities()` normalize `Entity`/`Action` enum arguments to their canonical string form before storing them in the config.
+- **Error handling:** the entity-configuration API now raises `ConfigError` for a non-`str`/`Entity` entity argument, an invalid action, an unknown layer, or a malformed `add_entities()` argument (e.g. passing a bare string). Unknown *entity names* still warn (not raise) so custom entity types keep working.
 
 ---
 

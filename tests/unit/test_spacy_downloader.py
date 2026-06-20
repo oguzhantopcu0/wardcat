@@ -1,10 +1,10 @@
-"""Tests for ner/downloader.py and LLMGuard language selection / auto-download."""
+"""Tests for ner/downloader.py and AIGuard language selection / auto-download."""
 
 from __future__ import annotations
 
 import pytest
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 from ai_guard.ner import downloader
 
 
@@ -48,31 +48,31 @@ class TestDownloadModelGuards:
 
 class TestGuardLanguageSelection:
     def test_language_resolves_model_name(self):
-        g = LLMGuard(language="de", spacy_size="md", use_ner=False)
+        g = AIGuard(language="de", spacy_size="md", use_ner=False)
         assert g._config["spacy_model"] == "de_core_news_md"
 
     def test_language_default_size_sm(self):
-        g = LLMGuard(language="fr", use_ner=False)
+        g = AIGuard(language="fr", use_ner=False)
         assert g._config["spacy_model"] == "fr_core_news_sm"
 
     def test_language_implies_auto_download(self):
-        g = LLMGuard(language="en", use_ner=False)
+        g = AIGuard(language="en", use_ner=False)
         assert g._config.get("spacy_auto_download") is True
 
     def test_explicit_auto_download_off(self):
-        g = LLMGuard(language="en", use_ner=False, spacy_auto_download=False)
+        g = AIGuard(language="en", use_ner=False, spacy_auto_download=False)
         assert g._config.get("spacy_auto_download") is None
 
     def test_uppercase_language_code(self):
-        g = LLMGuard(language="DE", use_ner=False)
+        g = AIGuard(language="DE", use_ner=False)
         assert g._config["spacy_model"].startswith("de_")
 
     def test_unsupported_language_raises(self):
         with pytest.raises(ValueError, match="Unsupported language"):
-            LLMGuard(language="zz", use_ner=False)
+            AIGuard(language="zz", use_ner=False)
 
     def test_no_language_keeps_default_model(self):
-        g = LLMGuard(use_ner=False)
+        g = AIGuard(use_ner=False)
         assert g._config.get("spacy_model", "en_core_web_sm") == "en_core_web_sm"
         assert g._config.get("spacy_auto_download") is None
 
@@ -87,36 +87,36 @@ class TestGuardLanguageSelection:
 
         monkeypatch.setattr(downloader, "ensure_model", fake_ensure)
         # use_ner True triggers the NER branch; ensure_model is called there
-        LLMGuard(language="de", spacy_size="md", use_ner=True)
+        AIGuard(language="de", spacy_size="md", use_ner=True)
         assert seen["model"] == "de_core_news_md"
         assert seen["auto"] is True
 
 
 class TestGuardMultiLanguage:
     def test_list_resolves_one_model_per_language(self):
-        g = LLMGuard(language=["de", "fr"], use_ner=False)
+        g = AIGuard(language=["de", "fr"], use_ner=False)
         assert g._config["spacy_models"] == ["de_core_news_sm", "fr_core_news_sm"]
         # primary model stays consistent with the single-model field
         assert g._config["spacy_model"] == "de_core_news_sm"
 
     def test_single_str_still_populates_models_list(self):
-        g = LLMGuard(language="de", use_ner=False)
+        g = AIGuard(language="de", use_ner=False)
         assert g._config["spacy_models"] == ["de_core_news_sm"]
 
     def test_duplicate_languages_deduped(self):
-        g = LLMGuard(language=["de", "de"], use_ner=False)
+        g = AIGuard(language=["de", "de"], use_ner=False)
         assert g._config["spacy_models"] == ["de_core_news_sm"]
 
     def test_size_applies_to_all_languages(self):
-        g = LLMGuard(language=["de", "fr"], spacy_size="md", use_ner=False)
+        g = AIGuard(language=["de", "fr"], spacy_size="md", use_ner=False)
         assert g._config["spacy_models"] == ["de_core_news_md", "fr_core_news_md"]
 
     def test_unsupported_language_in_list_raises(self):
         with pytest.raises(ValueError, match="Unsupported language"):
-            LLMGuard(language=["de", "zz"], use_ner=False)
+            AIGuard(language=["de", "zz"], use_ner=False)
 
     def test_list_implies_auto_download(self):
-        g = LLMGuard(language=["de", "fr"], use_ner=False)
+        g = AIGuard(language=["de", "fr"], use_ner=False)
         assert g._config.get("spacy_auto_download") is True
 
     def test_loads_one_detector_per_installed_model(self):
@@ -130,11 +130,11 @@ class TestGuardMultiLanguage:
         if not {"en_core_web_sm", "tr_core_news_md"} <= installed:
             pytest.skip("en_core_web_sm and tr_core_news_md must be installed")
 
-        g = LLMGuard(language=["en", "tr"], spacy_auto_download=False)
+        g = AIGuard(language=["en", "tr"], spacy_auto_download=False)
         ner_detectors = [d for d in g._detectors if isinstance(d, NERDetector)]
         assert len(ner_detectors) == 2
 
-        g.configure_entity("PERSON", action="redact")
+        g.add_entity("PERSON", action="redact")
         result = g.scan("John Smith ve Ahmet Yılmaz toplantıdaydı.")
         persons = {v.original for v in result.violations if v.entity_type == "PERSON"}
         assert "John Smith" in persons  # English model

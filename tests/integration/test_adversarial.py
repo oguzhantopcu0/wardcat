@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import pytest
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 
 
 @pytest.fixture
 def g():
-    return LLMGuard(use_ner=False)
+    return AIGuard(use_ner=False)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -222,8 +222,8 @@ class TestSanitizedIntegrity:
                 )
 
     def test_sanitized_text_length_accounts_for_replacements(self, g):
-        g2 = LLMGuard(use_ner=False)
-        g2.configure_entity("EMAIL", enabled=True, action="hash")
+        g2 = AIGuard(use_ner=False)
+        g2.add_entity("EMAIL", enabled=True, action="hash")
         text = "prefix a@b.com suffix"
         result = g2.scan(text)
         v = next(v for v in result.violations if v.entity_type == "EMAIL")

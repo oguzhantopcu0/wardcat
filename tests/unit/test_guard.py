@@ -1,13 +1,13 @@
 import pytest
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 from ai_guard.core.models import Action
 
 
 @pytest.fixture
 def guard():
     # NER disabled → tests run even without SpaCy installed
-    return LLMGuard(use_ner=False)
+    return AIGuard(use_ner=False)
 
 
 def test_clean_text_returns_no_violations(guard):
@@ -22,14 +22,14 @@ def test_email_detected(guard):
 
 
 def test_hash_action_replaces_text(guard):
-    guard.configure_entity("EMAIL", enabled=True, action="hash")
+    guard.add_entity("EMAIL", enabled=True, action="hash")
     result = guard.scan("Mail: admin@secret.com")
     assert "admin@secret.com" not in result.sanitized_text
     assert "[EMAIL:" in result.sanitized_text
 
 
 def test_warn_action_preserves_text(guard):
-    guard.configure_entity("EMAIL", enabled=True, action="warn")
+    guard.add_entity("EMAIL", enabled=True, action="warn")
     result = guard.scan("Mail: admin@secret.com")
     # warn → original text should not change
     assert "admin@secret.com" in result.sanitized_text
@@ -38,7 +38,7 @@ def test_warn_action_preserves_text(guard):
 
 def test_salt_changes_hash(guard):
     text = "kart: 4111111111111111"
-    guard.configure_entity("CREDIT_CARD", enabled=True, action="hash")
+    guard.add_entity("CREDIT_CARD", enabled=True, action="hash")
 
     guard.set_salt("tuz-a")
     result_a = guard.scan(text)
@@ -51,10 +51,10 @@ def test_salt_changes_hash(guard):
 
 def test_method_chaining():
     guard = (
-        LLMGuard(use_ner=False, salt="x")
-        .configure_entity("EMAIL", enabled=True, action="hash")
-        .configure_entity("CREDIT_CARD", enabled=True, action="hash")
-        .configure_entity("PHONE", enabled=False)
+        AIGuard(use_ner=False, salt="x")
+        .add_entity("EMAIL", enabled=True, action="hash")
+        .add_entity("CREDIT_CARD", enabled=True, action="hash")
+        .add_entity("PHONE", enabled=False)
     )
     result = guard.scan("email: a@b.com kart: 4111111111111111 tel: 0532 123 45 67")
     types = {v.entity_type for v in result.violations}
@@ -79,7 +79,7 @@ def test_scan_result_repr(guard):
 
 
 def test_scan_result_redacted_contains_confidence(guard):
-    guard.configure_entity("TC_ID", enabled=True, action="hash")
+    guard.add_entity("TC_ID", enabled=True, action="hash")
     result = guard.scan("TC: 12345678950")
     d = result.redacted()
     assert "violations" in d
@@ -118,35 +118,35 @@ def test_redacted_convenience_wrapper(guard):
 
 class TestRedactAction:
     def test_redact_replaces_with_label(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("EMAIL", enabled=True, action="redact")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("EMAIL", enabled=True, action="redact")
         result = guard.scan("Mail: admin@secret.com")
         assert "admin@secret.com" not in result.sanitized_text
         assert "[EMAIL]" in result.sanitized_text
 
     def test_redact_replacement_has_no_hash(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("EMAIL", enabled=True, action="redact")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("EMAIL", enabled=True, action="redact")
         result = guard.scan("a@b.com")
         v = result.violations[0]
         assert v.replacement == "[EMAIL]"
         assert ":" not in v.replacement  # no hash suffix
 
     def test_redact_action_enum(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("EMAIL", enabled=True, action="redact")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("EMAIL", enabled=True, action="redact")
         result = guard.scan("a@b.com")
         assert result.violations[0].action == Action.REDACT
 
     def test_redact_multiple_occurrences(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("EMAIL", enabled=True, action="redact")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("EMAIL", enabled=True, action="redact")
         result = guard.scan("a@b.com and c@d.com")
         assert result.sanitized_text.count("[EMAIL]") == 2
 
-    def test_configure_entity_accepts_redact(self):
-        guard = LLMGuard(use_ner=False)
-        returned = guard.configure_entity("EMAIL", enabled=True, action="redact")
+    def test_add_entity_accepts_redact(self):
+        guard = AIGuard(use_ner=False)
+        returned = guard.add_entity("EMAIL", enabled=True, action="redact")
         assert returned is guard  # method chaining
 
 
@@ -155,8 +155,8 @@ class TestRedactAction:
 
 class TestMaskAction:
     def test_mask_hides_middle_chars(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("CREDIT_CARD", enabled=True, action="mask")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("CREDIT_CARD", enabled=True, action="mask")
         result = guard.scan("kart: 4111111111111111")
         assert "4111111111111111" not in result.sanitized_text
         # entity-aware: credit card shows last 4 digits
@@ -164,8 +164,8 @@ class TestMaskAction:
         assert "*" in result.sanitized_text
 
     def test_mask_uses_stars(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("EMAIL", enabled=True, action="mask")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("EMAIL", enabled=True, action="mask")
         result = guard.scan("a@b.com")
         replacement = result.violations[0].replacement
         assert "*" in replacement
@@ -192,14 +192,14 @@ class TestMaskAction:
         assert result.violations[0].replacement == "**"
 
     def test_mask_action_enum(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("CREDIT_CARD", enabled=True, action="mask")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("CREDIT_CARD", enabled=True, action="mask")
         result = guard.scan("4111111111111111")
         assert result.violations[0].action == Action.MASK
 
-    def test_configure_entity_accepts_mask(self):
-        guard = LLMGuard(use_ner=False)
-        returned = guard.configure_entity("EMAIL", enabled=True, action="mask")
+    def test_add_entity_accepts_mask(self):
+        guard = AIGuard(use_ner=False)
+        returned = guard.add_entity("EMAIL", enabled=True, action="mask")
         assert returned is guard
 
 
@@ -208,37 +208,37 @@ class TestMaskAction:
 
 class TestAllowlist:
     def test_allowlisted_email_not_flagged(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("EMAIL", enabled=True, action="warn")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("EMAIL", enabled=True, action="warn")
         guard.add_allowlist(["no-reply@company.com"])
         result = guard.scan("Contact: no-reply@company.com")
         assert result.is_clean
 
     def test_non_allowlisted_email_still_flagged(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("EMAIL", enabled=True, action="warn")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("EMAIL", enabled=True, action="warn")
         guard.add_allowlist(["no-reply@company.com"])
         result = guard.scan("Contact: user@other.com")
         assert any(v.entity_type == "EMAIL" for v in result.violations)
 
     def test_add_allowlist_method_chaining(self):
         guard = (
-            LLMGuard(use_ner=False)
-            .configure_entity("EMAIL", enabled=True, action="warn")
+            AIGuard(use_ner=False)
+            .add_entity("EMAIL", enabled=True, action="warn")
             .add_allowlist(["safe@example.com"])
         )
         result = guard.scan("safe@example.com")
         assert result.is_clean
 
     def test_add_allowlist_idempotent(self):
-        guard = LLMGuard(use_ner=False)
+        guard = AIGuard(use_ner=False)
         guard.add_allowlist(["safe@example.com"])
         guard.add_allowlist(["safe@example.com"])  # duplicate
         assert guard._config["allowlist"].count("safe@example.com") == 1
 
     def test_add_allowlist_multiple_values(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("EMAIL", enabled=True, action="warn")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("EMAIL", enabled=True, action="warn")
         guard.add_allowlist(["a@b.com", "c@d.com"])
         result = guard.scan("a@b.com and c@d.com")
         assert result.is_clean
@@ -249,15 +249,15 @@ class TestAllowlist:
 
 class TestDenylist:
     def test_denylist_value_always_flagged(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("PERSON", enabled=True, action="warn")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("PERSON", enabled=True, action="warn")
         guard.add_denylist([{"value": "John Smith", "entity_type": "PERSON"}])
         result = guard.scan("Request from John Smith.")
         assert any(v.entity_type == "PERSON" for v in result.violations)
 
     def test_denylist_hash_action_applied(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("PERSON", enabled=True, action="hash")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("PERSON", enabled=True, action="hash")
         guard.add_denylist([{"value": "Jane Doe", "entity_type": "PERSON"}])
         result = guard.scan("User: Jane Doe")
         assert "Jane Doe" not in result.sanitized_text
@@ -265,21 +265,21 @@ class TestDenylist:
 
     def test_denylist_method_chaining(self):
         guard = (
-            LLMGuard(use_ner=False)
-            .configure_entity("CUSTOM_SECRET", enabled=True, action="warn")
+            AIGuard(use_ner=False)
+            .add_entity("CUSTOM_SECRET", enabled=True, action="warn")
             .add_denylist([{"value": "ProjectX", "entity_type": "CUSTOM_SECRET"}])
         )
         result = guard.scan("deploying ProjectX today")
         assert any(v.entity_type == "CUSTOM_SECRET" for v in result.violations)
 
     def test_add_denylist_invalid_entry_raises(self):
-        guard = LLMGuard(use_ner=False)
+        guard = AIGuard(use_ner=False)
         with pytest.raises(ValueError, match="'value' or a 'pattern' key"):
             guard.add_denylist([{"entity_type": "PERSON"}])
 
     def test_denylist_multiple_occurrences_all_flagged(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("PERSON", enabled=True, action="warn")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("PERSON", enabled=True, action="warn")
         guard.add_denylist([{"value": "John", "entity_type": "PERSON"}])
         result = guard.scan("John and John again")
         john_violations = [v for v in result.violations if v.original == "John"]
@@ -291,15 +291,15 @@ class TestDenylist:
 
 class TestDenylistRegex:
     def test_pattern_denylist_matches(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("PERSON", enabled=True, action="warn")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("PERSON", enabled=True, action="warn")
         guard.add_denylist([{"pattern": r"\b(CEO|CTO|CFO)\b", "entity_type": "PERSON"}])
         result = guard.scan("Request from CEO John.")
         assert any(v.entity_type == "PERSON" and v.original == "CEO" for v in result.violations)
 
     def test_pattern_denylist_multiple_matches(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("PERSON", enabled=True, action="warn")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("PERSON", enabled=True, action="warn")
         guard.add_denylist([{"pattern": r"\b(CEO|CTO)\b", "entity_type": "PERSON"}])
         result = guard.scan("CEO and CTO attended.")
         titles = {v.original for v in result.violations if v.entity_type == "PERSON"}
@@ -307,8 +307,8 @@ class TestDenylistRegex:
         assert "CTO" in titles
 
     def test_pattern_denylist_with_hash_action(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("CUSTOM_SECRET", enabled=True, action="hash")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("CUSTOM_SECRET", enabled=True, action="hash")
         guard.add_denylist([{"pattern": r"\bPROJECT-\d{4}\b", "entity_type": "CUSTOM_SECRET"}])
         result = guard.scan("Working on PROJECT-1234 today.")
         assert "PROJECT-1234" not in result.sanitized_text
@@ -328,14 +328,14 @@ class TestDenylistRegex:
             load_config(cfg_path)
 
     def test_add_denylist_accepts_pattern_entry(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("PERSON", enabled=True, action="warn")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("PERSON", enabled=True, action="warn")
         guard.add_denylist([{"pattern": r"\bJohn\b", "entity_type": "PERSON"}])
         result = guard.scan("Hello John")
         assert any(v.entity_type == "PERSON" for v in result.violations)
 
     def test_add_denylist_no_value_or_pattern_raises(self):
-        guard = LLMGuard(use_ner=False)
+        guard = AIGuard(use_ner=False)
         with pytest.raises(ValueError, match="'value' or a 'pattern' key"):
             guard.add_denylist([{"entity_type": "PERSON"}])
 
@@ -345,8 +345,8 @@ class TestDenylistRegex:
 
 class TestEntityAwareMask:
     def test_email_mask_preserves_domain(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("EMAIL", enabled=True, action="mask")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("EMAIL", enabled=True, action="mask")
         result = guard.scan("user@example.com")
         replacement = result.violations[0].replacement
         # domain (@example.com) must be preserved
@@ -354,8 +354,8 @@ class TestEntityAwareMask:
         assert "user" not in replacement
 
     def test_credit_card_mask_shows_last_4(self):
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("CREDIT_CARD", enabled=True, action="mask")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("CREDIT_CARD", enabled=True, action="mask")
         result = guard.scan("4111111111111111")
         replacement = result.violations[0].replacement
         assert replacement.endswith("1111")

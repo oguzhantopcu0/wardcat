@@ -32,13 +32,21 @@ class Entity(str, Enum):
 
         from ai_guard import Entity, Action
 
-        guard.configure_entity(Entity.CREDIT_CARD, Action.HASH)
+        guard.add_entity(Entity.CREDIT_CARD, action=Action.HASH)
 
     Each member *is* its string value (``Entity.EMAIL == "EMAIL"``), so it can be
     used anywhere a plain entity-type string is accepted. Note: because this is a
     ``(str, Enum)``, use ``.value`` to get the canonical string — ``str(Entity.EMAIL)``
     returns ``"Entity.EMAIL"``, not ``"EMAIL"``.
+
+    The special member :attr:`Entity.All` is a sentinel, **not** a real entity
+    type: passing it to :meth:`~ai_guard.AIGuard.add_entity` /
+    :meth:`~ai_guard.AIGuard.remove_entity` enables/disables every known entity
+    in one call. It is excluded from :data:`KNOWN_ENTITY_TYPES`.
     """
+
+    All = "__ALL__"
+    """Sentinel selecting *every* known entity type (not a real entity)."""
 
     PERSON = "PERSON"
     ORG = "ORG"
@@ -70,9 +78,9 @@ class Entity(str, Enum):
 
 
 # Known entity types — for typo checking and IDE support.
-# Derived from Entity so the enum is the single source of truth: a warning is
-# issued if a type not in this set is configured.
-KNOWN_ENTITY_TYPES: frozenset[str] = frozenset(e.value for e in Entity)
+# Derived from Entity so the enum is the single source of truth (excluding the
+# Entity.All sentinel): a warning is issued if a type not in this set is configured.
+KNOWN_ENTITY_TYPES: frozenset[str] = frozenset(e.value for e in Entity if e is not Entity.All)
 
 
 def warn_unknown_entity(entity_type: str) -> None:
@@ -133,7 +141,7 @@ class ScanResult:
     violations: list[Violation] = field(default_factory=list)
     """List of all detected violations. The ``original`` fields contain raw PII."""
     scan_error: str | None = None
-    """Set when this item failed during :meth:`~ai_guard.LLMGuard.scan_batch`.
+    """Set when this item failed during :meth:`~ai_guard.AIGuard.scan_batch`.
     The original text is returned unchanged. Non-None means the scan result
     is incomplete — callers should not treat the text as clean."""
 

@@ -425,10 +425,10 @@ class TestVehiclePlate:
         assert not any(s.entity_type == "VEHICLE_PLATE" for s in spans), f"falsely detected: {text}"
 
     def test_vehicle_plate_in_guard(self):
-        from ai_guard import LLMGuard
+        from ai_guard import AIGuard
 
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("VEHICLE_PLATE", enabled=True, action="warn")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("VEHICLE_PLATE", enabled=True, action="warn")
         result = guard.scan("Araç plakası: 34 ABC 123")
         assert any(v.entity_type == "VEHICLE_PLATE" for v in result.violations)
 
@@ -486,10 +486,10 @@ class TestFinancialAmount:
     def test_financial_amount_wired_into_guard(self):
         # Regression: the pattern existed but was missing from the guard's
         # _REGEX_ENTITIES set, so enabling it had no effect.
-        from ai_guard import LLMGuard
+        from ai_guard import AIGuard
 
-        guard = LLMGuard(use_ner=False)
-        guard.configure_entity("FINANCIAL_AMOUNT", enabled=True, action="redact")
+        guard = AIGuard(use_ner=False)
+        guard.add_entity("FINANCIAL_AMOUNT", enabled=True, action="redact")
         result = guard.scan("Sözleşme bedeli 2.1 milyon TL olarak belirlendi.")
         assert any(v.entity_type == "FINANCIAL_AMOUNT" for v in result.violations)
 
@@ -651,9 +651,9 @@ class TestVatNumber:
         assert not any(s.entity_type == "VAT_NUMBER" for s in spans)
 
     def test_vat_in_guard(self):
-        from ai_guard import LLMGuard
+        from ai_guard import AIGuard
 
-        guard = LLMGuard(use_ner=False)
+        guard = AIGuard(use_ner=False)
         result = guard.scan("Firma USt-IdNr DE123456789 ile kayıtlı.")
         assert any(v.entity_type == "VAT_NUMBER" for v in result.violations)
 

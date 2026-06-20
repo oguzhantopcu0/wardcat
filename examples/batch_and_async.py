@@ -7,7 +7,7 @@ Batch and async scanning — regex-only (no external services required).
 
 import asyncio
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 
 TEXTS = [
     "Email me at ali@example.com",
@@ -18,7 +18,7 @@ TEXTS = [
 
 
 def batch_demo() -> None:
-    guard = LLMGuard(use_ner=False, salt="example-salt")
+    guard = AIGuard(use_ner=False, salt="example-salt")
     results = guard.scan_batch(TEXTS)
     print("== scan_batch ==")
     for text, r in zip(TEXTS, results, strict=True):
@@ -27,7 +27,7 @@ def batch_demo() -> None:
 
 
 async def async_demo() -> None:
-    guard = LLMGuard(use_ner=False, salt="example-salt")
+    guard = AIGuard(use_ner=False, salt="example-salt")
     results = await guard.scan_batch_async(TEXTS)
     print("\n== scan_batch_async ==")
     for text, r in zip(TEXTS, results, strict=True):

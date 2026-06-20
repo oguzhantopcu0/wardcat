@@ -31,7 +31,7 @@ import time
 
 import pytest
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 from ai_guard.__main__ import _build_parser, cmd_scan
 from ai_guard.core.models import Action
 
@@ -46,8 +46,8 @@ def _originals(result) -> list[str]:
     return [v.original for v in result.violations]
 
 
-def _guard(**kw) -> LLMGuard:
-    return LLMGuard(use_ner=False, **kw)
+def _guard(**kw) -> AIGuard:
+    return AIGuard(use_ner=False, **kw)
 
 
 # ── S01: Realistic customer support prompt ───────────────────────────────────
@@ -264,10 +264,10 @@ class TestS08WarnOnlyMode:
     def test_sanitized_text_unchanged_when_all_warn(self):
         guard = (
             _guard()
-            .configure_entity("CREDIT_CARD", enabled=True, action="warn")
-            .configure_entity("EMAIL", enabled=True, action="warn")
-            .configure_entity("TC_ID", enabled=True, action="warn")
-            .configure_entity("IBAN", enabled=True, action="warn")
+            .add_entity("CREDIT_CARD", enabled=True, action="warn")
+            .add_entity("EMAIL", enabled=True, action="warn")
+            .add_entity("TC_ID", enabled=True, action="warn")
+            .add_entity("IBAN", enabled=True, action="warn")
         )
         text = "kart: 4111111111111111 mail: a@b.com TC: 12345678950"
         result = guard.scan(text)
@@ -302,7 +302,7 @@ class TestS09HashConsistency:
     def test_hash_placeholder_length_stable(self):
         # Placeholder format: [TYPE:8hexchars]
         guard = _guard(salt="tuz")
-        guard.configure_entity("EMAIL", enabled=True, action="hash")
+        guard.add_entity("EMAIL", enabled=True, action="hash")
         result = guard.scan("a@b.com")
         v = next(v for v in result.violations if v.entity_type == "EMAIL")
         # [EMAIL:xxxxxxxx] → 8 hex characters

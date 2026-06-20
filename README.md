@@ -11,13 +11,13 @@
 `ai-guard` scans text for personally identifiable information (PII) before it reaches an LLM, and either warns about or replaces the sensitive data with salted SHA-256 hashes. It supports Turkish, English, German, and French out of the box.
 
 ```python
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 
 guard = (
-    LLMGuard(salt="my-secret-salt")
-    .configure_entity("CREDIT_CARD", enabled=True, action="hash")
-    .configure_entity("EMAIL",       enabled=True, action="warn")
-    .configure_entity("TC_ID",       enabled=True, action="hash")
+    AIGuard(salt="my-secret-salt")
+    .add_entity("CREDIT_CARD", enabled=True, action="hash")
+    .add_entity("EMAIL",       enabled=True, action="warn")
+    .add_entity("TC_ID",       enabled=True, action="hash")
 )
 
 result = guard.scan("Name: Ali Veli, card: 4532 0151 1283 0366, email: ali@example.com")
@@ -96,16 +96,21 @@ uv run python -m ai_guard spacy installed
 
 ## Quick Start
 
+> **Migrating from 0.3.x:** the main class is now `AIGuard` (was `LLMGuard`), and
+> `configure_entity()` / `configure_entities()` are now `add_entity()` /
+> `add_entities()`. The old names still work as deprecated aliases (they emit a
+> `DeprecationWarning`) and will be removed in a future release.
+
 ### Programmatic API
 
 ```python
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 
 guard = (
-    LLMGuard(salt="my-secret-salt")
-    .configure_entity("CREDIT_CARD", enabled=True, action="hash")
-    .configure_entity("EMAIL",       enabled=True, action="warn")
-    .configure_entity("TC_ID",       enabled=True, action="hash")
+    AIGuard(salt="my-secret-salt")
+    .add_entity("CREDIT_CARD", enabled=True, action="hash")
+    .add_entity("EMAIL",       enabled=True, action="warn")
+    .add_entity("TC_ID",       enabled=True, action="hash")
 )
 
 result = guard.scan("""
@@ -133,17 +138,17 @@ caught at edit time instead of becoming a silent runtime warning. They are fully
 interchangeable with the string forms (`Entity.EMAIL == "EMAIL"`):
 
 ```python
-from ai_guard import LLMGuard, Entity, Action
+from ai_guard import AIGuard, Entity, Action
 
 guard = (
-    LLMGuard(salt="my-secret-salt")
-    .configure_entity(Entity.CREDIT_CARD, action=Action.HASH)
-    .configure_entity(Entity.EMAIL,       action=Action.REDACT)
-    .configure_entity(Entity.PHONE,       action=Action.MASK)
+    AIGuard(salt="my-secret-salt")
+    .add_entity(Entity.CREDIT_CARD, action=Action.HASH)
+    .add_entity(Entity.EMAIL,       action=Action.REDACT)
+    .add_entity(Entity.PHONE,       action=Action.MASK)
 )
 
 # Batch form — also accepts Entity keys and Action values:
-guard.configure_entities({
+guard.add_entities({
     Entity.CREDIT_CARD: Action.HASH,
     Entity.EMAIL:       Action.REDACT,
 })
@@ -159,27 +164,27 @@ path:
 
 ```python
 # Detect EMAIL with regex only; leave SPECIAL_CATEGORY (GDPR Art. 9) to the LLM
-guard.configure_entity("EMAIL", action="redact", layers=["regex"])
-guard.configure_entity("SPECIAL_CATEGORY", action="redact", layers=["llm"])
+guard.add_entity("EMAIL", action="redact", layers=["regex"])
+guard.add_entity("SPECIAL_CATEGORY", action="redact", layers=["llm"])
 ```
 
-To turn on many filters at once, use `configure_entities()`. It accepts a list,
+To turn on many filters at once, use `add_entities()`. It accepts a list,
 a `{name: action}` mapping, or a `{name: {...}}` mapping for per-entity control,
 and applies them in a single rebuild:
 
 ```python
-from ai_guard import LLMGuard, turkish_entities
+from ai_guard import AIGuard, turkish_entities
 
-guard = LLMGuard(use_ner=False)
+guard = AIGuard(use_ner=False)
 
 # a) a whole predefined group with one action
-guard.configure_entities(turkish_entities(), action="hash")
+guard.add_entities(turkish_entities(), action="hash")
 
 # b) an explicit list
-guard.configure_entities(["EMAIL", "CREDIT_CARD", "IBAN"], action="redact")
+guard.add_entities(["EMAIL", "CREDIT_CARD", "IBAN"], action="redact")
 
 # c) per-entity actions and layers in one call
-guard.configure_entities({
+guard.add_entities({
     "CREDIT_CARD":      "hash",
     "EMAIL":            {"action": "mask"},
     "SPECIAL_CATEGORY": {"action": "redact", "layers": ["llm"]},
@@ -189,14 +194,37 @@ guard.configure_entities({
 Predefined groups (`core_entities`, `financial_entities`, `turkish_entities`,
 `european_entities`, `uk_entities`, `us_entities`, `network_entities`,
 `identity_entities`, `all_entities`) are importable from `ai_guard` and pair
-naturally with `configure_entities()`.
+naturally with `add_entities()`.
+
+#### Enable everything, then prune
+
+`Entity.All` turns on **every** known entity in one call; `remove_entity()` (and
+`remove_entities()`) then disables the ones you do not want. This "allow-list by
+exclusion" pattern is often the quickest way to a strict policy:
+
+```python
+from ai_guard import AIGuard, Entity
+
+guard = (
+    AIGuard(salt="my-secret-salt", use_ner=False)
+    .add_entity(Entity.All, action="hash")   # everything on, hashed
+    .remove_entity(Entity.ORG)               # …except organisation names
+    .remove_entities([Entity.UUID, Entity.MAC_ADDRESS])
+)
+
+# remove_entity(Entity.All) disables everything again.
+```
+
+> Removing an entity that was never enabled is a no-op. Passing a bare string to
+> `add_entities()` / `remove_entities()` (instead of a list) raises `ConfigError` —
+> use the singular `add_entity()` / `remove_entity()` for one entity.
 
 ### Declarative API (YAML)
 
 ```python
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 
-guard = LLMGuard(config_path="config/my_policy.yaml")
+guard = AIGuard(config_path="config/my_policy.yaml")
 result = guard.scan(text)
 ```
 
@@ -243,7 +271,7 @@ ollama pull llama3.2
 ```
 
 ```python
-guard = LLMGuard(
+guard = AIGuard(
     use_llm=True,
     llm_backend="ollama",
     llm_model="llama3.2",
@@ -254,7 +282,7 @@ guard = LLMGuard(
 **Option 2 — Connect to an existing endpoint (vLLM, LM Studio, LocalAI):**
 
 ```python
-guard = LLMGuard(
+guard = AIGuard(
     use_llm=True,
     llm_backend="openai_compatible",
     llm_base_url="http://10.0.0.5:8000",
@@ -265,7 +293,7 @@ guard = LLMGuard(
 **Option 3 — HuggingFace Transformers (GPU/CPU):**
 
 ```python
-guard = LLMGuard(
+guard = AIGuard(
     use_llm=True,
     llm_backend="transformers",
     llm_model="meta-llama/Llama-3.1-8B-Instruct",
@@ -280,7 +308,7 @@ guard = LLMGuard(
 By default the three layers run independently and their findings are merged (union). With `llm_adjudicate=True`, the engine instead sends the regex/NER candidates to the LLM, which — in a **single call** — verifies each one (keep / relabel / drop) and adds any PII the other layers missed. Deterministic, checksum-validated regex spans are always kept regardless of the LLM verdict. This sharply reduces NER noise (e.g. job titles mislabeled as names, or a model run on the wrong language):
 
 ```python
-guard = LLMGuard(
+guard = AIGuard(
     use_ner=True,
     spacy_model="de_core_news_sm",
     use_llm=True,
@@ -433,12 +461,12 @@ ai-guard models pull llama3.1:8b
 **Pick a language, not a model name.** Instead of remembering exact SpaCy package names, pass a language code and (optionally) a size tier — ai-guard resolves the right model from its catalog and **downloads it automatically if it is missing**:
 
 ```python
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 
 # Selecting a language implies auto-download (turn off with spacy_auto_download=False)
-guard = LLMGuard(language="de")                 # → de_core_news_sm
-guard = LLMGuard(language="fr", spacy_size="md") # → fr_core_news_md (sm/md/lg/trf)
-guard = LLMGuard(language="tr", spacy_size="lg") # → tr_core_news_lg
+guard = AIGuard(language="de")                 # → de_core_news_sm
+guard = AIGuard(language="fr", spacy_size="md") # → fr_core_news_md (sm/md/lg/trf)
+guard = AIGuard(language="tr", spacy_size="lg") # → tr_core_news_lg
 ```
 
 Supported languages: `en`, `de`, `fr`, `es`, `it`, `nl`, `pt`, `tr`. If the requested size is unavailable for a language, the recommended model is used. The same works from the CLI:
@@ -454,13 +482,13 @@ For text that mixes several languages you have two options:
 1. **LLM layer (recommended, no extra models).** The LLM prompt is multilingual, so a single LLM-enabled guard detects names across languages without loading any SpaCy model:
 
    ```python
-   guard = LLMGuard(use_llm=True, llm_model="llama3.1:8b")  # handles EN+DE+FR+TR in one call
+   guard = AIGuard(use_llm=True, llm_model="llama3.1:8b")  # handles EN+DE+FR+TR in one call
    ```
 
 2. **Multiple SpaCy models.** Pass a list of languages — ai-guard loads one NER model per language and the engine merges their results. Each model adds RAM and roughly multiplies NER scan time, so this is opt-in:
 
    ```python
-   guard = LLMGuard(language=["en", "de", "fr"])  # 3 NER models, auto-downloaded if missing
+   guard = AIGuard(language=["en", "de", "fr"])  # 3 NER models, auto-downloaded if missing
    ```
 
    This is **explicit** — you list the languages; ai-guard does not guess the language of the input. The regex layer is multilingual regardless of these choices.
@@ -528,7 +556,7 @@ Salt prevents rainbow table attacks. Set it via environment variable in producti
 
 ```python
 import os
-guard = LLMGuard(salt=os.environ["LLMGUARD_SALT"])
+guard = AIGuard(salt=os.environ["LLMGUARD_SALT"])
 ```
 
 > Never hardcode the salt in source code or config files.
@@ -571,7 +599,7 @@ Inputs exceeding **500 KB** raise a `ValueError`. Split large documents into sma
 ```
 ai-guard/
 ├── src/ai_guard/
-│   ├── guard.py              # LLMGuard — main interface
+│   ├── guard.py              # AIGuard — main interface
 │   ├── __main__.py           # CLI entry point
 │   ├── core/
 │   │   ├── engine.py         # DetectionEngine — overlap resolution, action application

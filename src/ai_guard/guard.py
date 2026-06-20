@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
 from ai_guard.config.loader import load_config
 from ai_guard.core.engine import DetectionEngine
-from ai_guard.core.models import Action, Entity, ScanResult, warn_unknown_entity
+from ai_guard.core.models import (
+    KNOWN_ENTITY_TYPES,
+    Action,
+    Entity,
+    ScanResult,
+    warn_unknown_entity,
+)
 from ai_guard.detectors.base import BaseDetector
 from ai_guard.detectors.regex_detector import RegexDetector
 from ai_guard.exceptions import ConfigError, UnsupportedLanguageError
@@ -108,23 +115,30 @@ _LAYER_ENTITIES: dict[str, frozenset[str]] = {
 _VALID_LAYERS = frozenset(_LAYER_ENTITIES)
 
 
-class LLMGuard:
+class AIGuard:
     """
     The main interface exposed to users.
 
     Programmatic API (method chaining)::
 
+        from ai_guard import AIGuard, Entity, Action
+
         guard = (
-            LLMGuard(salt=os.environ["LLMGUARD_SALT"])
-            .configure_entity("EMAIL",       enabled=True,  action="hash")
-            .configure_entity("CREDIT_CARD", enabled=True,  action="hash")
-            .configure_entity("ORG",         enabled=False)
+            AIGuard(salt=os.environ["LLMGUARD_SALT"])
+            .add_entity(Entity.EMAIL,       action=Action.HASH)
+            .add_entity(Entity.CREDIT_CARD, action=Action.HASH)
+            .remove_entity(Entity.ORG)
         )
         result = guard.scan(text)
 
+    Enable everything, then prune::
+
+        guard = AIGuard(salt="...").add_entity(Entity.All, action="hash")
+        guard.remove_entity(Entity.ORG)
+
     Declarative API (YAML)::
 
-        guard = LLMGuard(config_path="config/my_policy.yaml")
+        guard = AIGuard(config_path="config/my_policy.yaml")
         result = guard.scan(text)
 
     Environment variables (override YAML and constructor arguments)::
@@ -138,7 +152,7 @@ class LLMGuard:
 
     LLM detector (Ollama)::
 
-        guard = LLMGuard(
+        guard = AIGuard(
             use_llm=True,
             llm_model="llama3.1:8b",
             llm_base_url="http://localhost:11434",
@@ -147,8 +161,8 @@ class LLMGuard:
 
     NER by language (auto-resolves and downloads the SpaCy model)::
 
-        guard = LLMGuard(language="de", spacy_size="md")     # → de_core_news_md
-        guard = LLMGuard(language=["de", "fr"])              # one NER model per language
+        guard = AIGuard(language="de", spacy_size="md")     # → de_core_news_md
+        guard = AIGuard(language=["de", "fr"])              # one NER model per language
         # Supported: en, de, fr, es, it, nl, pt, tr; sizes sm/md/lg/trf.
         # Selecting a language implies auto-download (spacy_auto_download=False to disable).
         # For mixed-language text without extra models, use the LLM layer (use_llm=True),
@@ -366,69 +380,96 @@ class LLMGuard:
     # Programmatic API
     # ------------------------------------------------------------------
 
-    def configure_entity(
+    def add_entity(
         self,
         entity_type: str | Entity,
         enabled: bool = True,
         action: str | Action = "warn",
         layers: list[str] | None = None,
-    ) -> LLMGuard:
+    ) -> AIGuard:
         """
-        Configure a single entity type. Supports method chaining.
+        Enable a single entity type (or every type via :attr:`Entity.All`).
+
+        Supports method chaining.
 
         :param entity_type: An :class:`~ai_guard.Entity` constant (recommended,
                             e.g. ``Entity.EMAIL``) or its string form (``"EMAIL"``).
-        :param enabled:     Include this entity in the scan engine
+                            Pass :attr:`Entity.All` to enable **every** known
+                            entity in one call, then prune with
+                            :meth:`remove_entity`.
+        :param enabled:     Include this entity in the scan engine.
         :param action:      An :class:`~ai_guard.Action` constant (e.g. ``Action.HASH``)
-                            or its string form: ``"warn"``, ``"hash"``, ``"redact"``, ``"mask"``
+                            or its string form: ``"warn"``, ``"hash"``, ``"redact"``, ``"mask"``.
         :param layers:      Which detector layers should look for this entity —
                             any of ``"regex"``, ``"ner"``, ``"llm"``. When
                             ``None`` (default), every layer that supports the
                             entity is used. Use this to target one layer, e.g.
                             ``layers=["llm"]`` for contextual/semantic entities.
+        :raises ConfigError: if ``entity_type`` is not a ``str``/``Entity``, the
+                            ``action`` is invalid, or a ``layer`` is unknown.
         """
-        self._set_entity(entity_type, enabled=enabled, action=action, layers=layers)
+        if self._is_all(entity_type):
+            for name in sorted(KNOWN_ENTITY_TYPES):
+                self._set_entity(name, enabled=enabled, action=action, layers=layers)
+        else:
+            self._set_entity(entity_type, enabled=enabled, action=action, layers=layers)
         self._rebuild()
         return self
 
-    def configure_entities(
+    def add_entities(
         self,
         entities,
         *,
         enabled: bool = True,
         action: str | Action = "warn",
         layers: list[str] | None = None,
-    ) -> LLMGuard:
+    ) -> AIGuard:
         """
-        Configure many entity types at once (single rebuild). Supports chaining.
+        Enable many entity types at once (single rebuild). Supports chaining.
 
         ``entities`` may be:
 
         * an iterable of names — applied with the given ``action``/``layers``::
 
               from ai_guard import turkish_entities
-              guard.configure_entities(turkish_entities(), action="hash")
-              guard.configure_entities(["EMAIL", "CREDIT_CARD"], action="hash")
+              guard.add_entities(turkish_entities(), action="hash")
+              guard.add_entities(["EMAIL", "CREDIT_CARD"], action="hash")
 
         * a mapping ``{name: action}``::
 
-              guard.configure_entities({"EMAIL": "warn", "CREDIT_CARD": "hash"})
+              guard.add_entities({"EMAIL": "warn", "CREDIT_CARD": "hash"})
 
         * a mapping ``{name: {"action": ..., "layers": ..., "enabled": ...}}``
           for per-entity control::
 
-              guard.configure_entities({
+              guard.add_entities({
                   "CREDIT_CARD":      "hash",
                   "SPECIAL_CATEGORY": {"action": "redact", "layers": ["llm"]},
               })
 
-        The top-level ``enabled``/``action``/``layers`` act as defaults for any
-        entry that does not specify its own.
+        :attr:`Entity.All` may appear as an entry to expand to every known
+        entity. The top-level ``enabled``/``action``/``layers`` act as defaults
+        for any entry that does not specify its own.
+
+        :raises ConfigError: if ``entities`` is not a mapping or iterable, or any
+                            spec/action/entity is invalid.
         """
         if isinstance(entities, dict):
             specs = entities
+        elif isinstance(entities, str | Entity):
+            # A bare string/Entity is a common mistake — it would iterate chars.
+            raise ConfigError(
+                f"add_entities() expects a mapping or an iterable of entity types, "
+                f"not a single {type(entities).__name__}. Use add_entity() for one entity."
+            )
         else:
-            specs = dict.fromkeys(entities, {})
+            try:
+                specs = dict.fromkeys(entities, {})
+            except TypeError as exc:
+                raise ConfigError(
+                    f"add_entities() expects a mapping or an iterable of entity types, "
+                    f"got {type(entities).__name__}."
+                ) from exc
 
         for name, spec in specs.items():
             if isinstance(spec, str):
@@ -440,14 +481,123 @@ class LLMGuard:
                     f"Invalid spec for {name!r}: expected str, dict, or None, "
                     f"got {type(spec).__name__}."
                 )
-            self._set_entity(
-                name,
-                enabled=spec.get("enabled", enabled),
-                action=spec.get("action", action),
-                layers=spec.get("layers", layers),
-            )
+            entity_action = spec.get("action", action)
+            entity_layers = spec.get("layers", layers)
+            entity_enabled = spec.get("enabled", enabled)
+            names = sorted(KNOWN_ENTITY_TYPES) if self._is_all(name) else [name]
+            for n in names:
+                self._set_entity(
+                    n, enabled=entity_enabled, action=entity_action, layers=entity_layers
+                )
         self._rebuild()
         return self
+
+    def remove_entity(self, entity_type: str | Entity) -> AIGuard:
+        """
+        Disable a single entity type (or every type via :attr:`Entity.All`).
+
+        Pairs with :meth:`add_entity` — a common pattern is to enable everything
+        and prune what you do not need::
+
+            guard.add_entity(Entity.All, action="hash").remove_entity(Entity.ORG)
+
+        Removing an entity that was never enabled is a no-op. Supports chaining.
+
+        :raises ConfigError: if ``entity_type`` is not a ``str`` or ``Entity``.
+        """
+        if self._is_all(entity_type):
+            for name in list(self._config.get("entities", {})):
+                self._disable_entity(name)
+            for name in list(self._config.get("llm_detector", {}).get("entities", {})):
+                self._disable_entity(name)
+        else:
+            self._disable_entity(self._normalize_entity(entity_type))
+        self._rebuild()
+        return self
+
+    def remove_entities(self, entities) -> AIGuard:
+        """
+        Disable many entity types at once (single rebuild). Supports chaining.
+
+        ``entities`` is an iterable of entity names/constants (``Entity.All`` is
+        accepted and expands to every enabled entity).
+
+        :raises ConfigError: if ``entities`` is not an iterable of entity types.
+        """
+        if isinstance(entities, str | Entity):
+            raise ConfigError(
+                f"remove_entities() expects an iterable of entity types, not a single "
+                f"{type(entities).__name__}. Use remove_entity() for one entity."
+            )
+        try:
+            items = list(entities)
+        except TypeError as exc:
+            raise ConfigError(
+                f"remove_entities() expects an iterable of entity types, "
+                f"got {type(entities).__name__}."
+            ) from exc
+
+        for entity_type in items:
+            if self._is_all(entity_type):
+                for name in list(self._config.get("entities", {})):
+                    self._disable_entity(name)
+                for name in list(self._config.get("llm_detector", {}).get("entities", {})):
+                    self._disable_entity(name)
+            else:
+                self._disable_entity(self._normalize_entity(entity_type))
+        self._rebuild()
+        return self
+
+    # ----- Deprecated aliases (kept for backward compatibility) ---------------
+
+    def configure_entity(self, *args: Any, **kwargs: Any) -> AIGuard:
+        """Deprecated alias for :meth:`add_entity`."""
+        warnings.warn(
+            "configure_entity() is deprecated; use add_entity() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.add_entity(*args, **kwargs)
+
+    def configure_entities(self, *args: Any, **kwargs: Any) -> AIGuard:
+        """Deprecated alias for :meth:`add_entities`."""
+        warnings.warn(
+            "configure_entities() is deprecated; use add_entities() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.add_entities(*args, **kwargs)
+
+    # ------------------------------------------------------------------
+    # Internal entity helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_all(entity_type: object) -> bool:
+        """True if *entity_type* is the :attr:`Entity.All` sentinel."""
+        return entity_type is Entity.All or entity_type == Entity.All.value
+
+    @staticmethod
+    def _normalize_entity(entity_type: str | Entity) -> str:
+        """Coerce an Entity/str to its canonical string value, validating the type.
+
+        Note: ``str(Entity.EMAIL) == "Entity.EMAIL"``, so we read ``.value`` rather
+        than calling ``str()``.
+        """
+        if isinstance(entity_type, Entity):
+            return entity_type.value
+        if isinstance(entity_type, str):
+            return entity_type
+        raise ConfigError(f"entity_type must be a str or Entity, got {type(entity_type).__name__}.")
+
+    def _disable_entity(self, entity_type: str) -> None:
+        """Set an entity's ``enabled`` flag to False on every layer (no rebuild)."""
+        entities = self._config.get("entities", {})
+        if entity_type in entities:
+            entities[entity_type]["enabled"] = False
+        llm_entities = self._config.get("llm_detector", {}).get("entities", {})
+        if entity_type in llm_entities:
+            llm_entities[entity_type]["enabled"] = False
 
     def _set_entity(
         self,
@@ -458,9 +608,14 @@ class LLMGuard:
         layers: list[str] | None,
     ) -> None:
         """Mutate config for one entity across the chosen layers (no rebuild)."""
-        # Normalize Entity/Action enums to their canonical string value. Note:
-        # str(Entity.EMAIL) == "Entity.EMAIL", so we must read `.value`, not str().
-        entity_type = entity_type.value if isinstance(entity_type, Entity) else entity_type
+        # Normalize the entity type to its canonical string, validating the
+        # argument type. (Entity.All must be expanded by the caller, never reach here.)
+        if self._is_all(entity_type):
+            raise ConfigError(
+                "Entity.All cannot be set directly — it is expanded by add_entity()/"
+                "add_entities() into the individual known entity types."
+            )
+        entity_type = self._normalize_entity(entity_type)
         try:
             action = Action(action).value
         except ValueError:
@@ -496,13 +651,13 @@ class LLMGuard:
             llm_entities = self._config.setdefault("llm_detector", {}).setdefault("entities", {})
             llm_entities[entity_type] = {"enabled": enabled, "action": action}
 
-    def set_salt(self, salt: str) -> LLMGuard:
+    def set_salt(self, salt: str) -> AIGuard:
         """Update the hash salt."""
         self._config["salt"] = salt
         self._rebuild()
         return self
 
-    def add_allowlist(self, values: list[str]) -> LLMGuard:
+    def add_allowlist(self, values: list[str]) -> AIGuard:
         """Add exact values that should never be flagged as PII.
 
         Supports method chaining::
@@ -518,7 +673,7 @@ class LLMGuard:
         self._rebuild()
         return self
 
-    def add_denylist(self, entries: list[dict[str, str]]) -> LLMGuard:
+    def add_denylist(self, entries: list[dict[str, str]]) -> AIGuard:
         """Add values that should always be flagged as PII.
 
         Each entry must have a ``value`` key and an ``entity_type`` key.
@@ -656,3 +811,21 @@ class LLMGuard:
         return LLMDetector(
             backend=backend, enabled_entities=enabled, timeout=timeout, cache_ttl=cache_ttl
         )
+
+
+class LLMGuard(AIGuard):
+    """Deprecated alias for :class:`AIGuard`.
+
+    Retained for backward compatibility; emits a :class:`DeprecationWarning` on
+    construction. Use :class:`AIGuard` instead — it will be removed in a future
+    release.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        warnings.warn(
+            "LLMGuard has been renamed to AIGuard; the LLMGuard alias is deprecated "
+            "and will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)

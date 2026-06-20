@@ -1,7 +1,7 @@
 """
 LLM detector integration tests.
 
-Tests the cooperation of LLMGuard + LLMDetector via a mock backend,
+Tests the cooperation of AIGuard + LLMDetector via a mock backend,
 without a real Ollama service.
 """
 
@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 from ai_guard.core.models import Action
 from ai_guard.detectors.llm_detector import LLMDetector
 from ai_guard.llm.backends.base import BaseLLMBackend
@@ -26,13 +26,13 @@ def _mock_backend(response: str) -> BaseLLMBackend:
     return b
 
 
-def _guard_with_llm(response: str, entities: set[str] | None = None) -> LLMGuard:
+def _guard_with_llm(response: str, entities: set[str] | None = None) -> AIGuard:
     """
-    Returns an LLMGuard with a mocked LLM backend.
-    Instead of patching LLMGuard's _build_llm_detector directly,
+    Returns an AIGuard with a mocked LLM backend.
+    Instead of patching AIGuard's _build_llm_detector directly,
     we inject the detector afterwards.
     """
-    guard = LLMGuard(use_ner=False, use_llm=False)  # build without LLM first
+    guard = AIGuard(use_ner=False, use_llm=False)  # build without LLM first
     enabled = entities or {
         "CREDIT_CARD",
         "EMAIL",
@@ -123,7 +123,7 @@ class TestLLMPlusRegex:
         llm_response = json.dumps([{"type": "CUSTOM_SECRET", "text": secret}])
         guard = _guard_with_llm(llm_response, {"CUSTOM_SECRET"})
         # Verify regex does not catch this first
-        regex_only = LLMGuard(use_ner=False)
+        regex_only = AIGuard(use_ner=False)
         assert regex_only.scan(f"kod: {secret}").is_clean
 
         # LLM should catch it
@@ -177,7 +177,7 @@ class TestLLMFaultTolerance:
         failing_backend.complete.side_effect = ConnectionError("Ollama çevrimdışı")
         failing_backend.complete_messages.side_effect = ConnectionError("Ollama çevrimdışı")
 
-        guard = LLMGuard(use_ner=False)
+        guard = AIGuard(use_ner=False)
         llm_det = LLMDetector(backend=failing_backend, enabled_entities={"PERSON"})
         guard._detectors.append(llm_det)
         from ai_guard.core.engine import DetectionEngine
@@ -204,19 +204,19 @@ class TestLLMFaultTolerance:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# LLMGuard configuration — use_llm flag
+# AIGuard configuration — use_llm flag
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class TestLLMGuardConfig:
+class TestAIGuardConfig:
     def test_use_llm_false_no_llm_detector(self):
-        guard = LLMGuard(use_ner=False, use_llm=False)
+        guard = AIGuard(use_ner=False, use_llm=False)
         from ai_guard.detectors.llm_detector import LLMDetector
 
         assert not any(isinstance(d, LLMDetector) for d in guard._detectors)
 
     def test_llm_config_stored_correctly(self):
-        guard = LLMGuard(
+        guard = AIGuard(
             use_ner=False,
             use_llm=False,  # test without service; check config
             llm_model="mistral",
@@ -227,7 +227,7 @@ class TestLLMGuardConfig:
         assert cfg["base_url"] == "http://10.0.0.5:11434"
 
     def test_invalid_backend_raises(self):
-        guard = LLMGuard(use_ner=False)
+        guard = AIGuard(use_ner=False)
         guard._config["llm_detector"]["enabled"] = True
         guard._config["llm_detector"]["backend"] = "bilinmeyen_backend"
         with pytest.raises(ValueError, match="bilinmeyen_backend"):

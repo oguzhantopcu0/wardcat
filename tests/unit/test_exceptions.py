@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from ai_guard import (
+    AIGuard,
     AIGuardError,
     ConfigError,
-    LLMGuard,
     ModelDownloadError,
     UnsupportedLanguageError,
 )
@@ -44,21 +44,21 @@ class TestConfigErrorRaised:
     def test_still_catchable_as_value_error(self):
         # Existing `except ValueError` code must keep working.
         with pytest.raises(ValueError):
-            LLMGuard(use_ner=False).configure_entity("EMAIL", action="nope")
+            AIGuard(use_ner=False).add_entity("EMAIL", action="nope")
 
     def test_catchable_as_aiguard_error(self):
         with pytest.raises(AIGuardError):
-            LLMGuard(use_ner=False).configure_entity("EMAIL", layers=["bogus"])
+            AIGuard(use_ner=False).add_entity("EMAIL", layers=["bogus"])
 
 
 class TestUnsupportedLanguage:
     def test_unsupported_language_raises_specific_type(self):
         with pytest.raises(UnsupportedLanguageError):
-            LLMGuard(language="zz", use_ner=False)
+            AIGuard(language="zz", use_ner=False)
 
     def test_still_catchable_as_value_error(self):
         with pytest.raises(ValueError):
-            LLMGuard(language="zz", use_ner=False)
+            AIGuard(language="zz", use_ner=False)
 
 
 class TestModelDownloadError:

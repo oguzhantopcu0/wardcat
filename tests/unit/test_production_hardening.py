@@ -24,7 +24,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ai_guard import LLMGuard, __version__
+from ai_guard import AIGuard, __version__
 from ai_guard.config.loader import load_config, validate_config
 from ai_guard.core.models import KNOWN_ENTITY_TYPES, warn_unknown_entity
 from ai_guard.detectors.regex_detector import RegexDetector
@@ -91,7 +91,7 @@ class TestReDoS:
 
 class TestLargeInput:
     def _guard(self):
-        return LLMGuard(use_ner=False)
+        return AIGuard(use_ner=False)
 
     def test_100kb_clean_text(self):
         """100 KB of clean text should be processable."""
@@ -118,7 +118,7 @@ class TestLargeInput:
         """Performance check: batch of 10 items each 10 KB."""
         texts = [("temiz metin " * 500) for _ in range(10)]
         t0 = time.perf_counter()
-        results = LLMGuard(use_ner=False).scan_batch(texts)
+        results = AIGuard(use_ner=False).scan_batch(texts)
         elapsed = time.perf_counter() - t0
         assert len(results) == 10
         assert elapsed < 10.0, f"Batch too slow: {elapsed:.2f}s"
@@ -130,10 +130,10 @@ class TestLargeInput:
 class TestThreadSafety:
     def test_concurrent_scan_no_crash(self):
         """
-        The same LLMGuard instance should be callable from 10 concurrent threads.
+        The same AIGuard instance should be callable from 10 concurrent threads.
         Results should be consistent and no exceptions should occur.
         """
-        guard = LLMGuard(use_ner=False)
+        guard = AIGuard(use_ner=False)
         texts = [
             "email: test@example.com",
             "kart: 4111111111111111",
@@ -164,7 +164,7 @@ class TestThreadSafety:
 
     def test_concurrent_scan_batch(self):
         """scan_batch should be callable concurrently."""
-        guard = LLMGuard(use_ner=False)
+        guard = AIGuard(use_ner=False)
         batch = ["a@b.com", "temiz", "4111111111111111"] * 10
         errors: list[Exception] = []
 
@@ -191,7 +191,7 @@ class TestScanBatchIsolation:
         """
         Even if an unexpected error occurs in one item, the others should be scanned successfully.
         """
-        guard = LLMGuard(use_ner=False)
+        guard = AIGuard(use_ner=False)
 
         original_scan = guard._engine.scan
 
@@ -215,7 +215,7 @@ class TestScanBatchIsolation:
         assert any(v.entity_type == "EMAIL" for v in results[2].violations)
 
     def test_empty_batch_returns_empty(self):
-        assert LLMGuard(use_ner=False).scan_batch([]) == []
+        assert AIGuard(use_ner=False).scan_batch([]) == []
 
 
 # ── Environment Variable Configuration ───────────────────────────────────────
@@ -298,10 +298,10 @@ class TestConfigValidation:
         with pytest.raises(ValueError, match="Invalid.*timeout"):
             validate_config(cfg)
 
-    def test_configure_entity_invalid_action_raises(self):
-        guard = LLMGuard(use_ner=False)
+    def test_add_entity_invalid_action_raises(self):
+        guard = AIGuard(use_ner=False)
         with pytest.raises(ValueError, match="Invalid action"):
-            guard.configure_entity("EMAIL", action="delete")
+            guard.add_entity("EMAIL", action="delete")
 
 
 # ── Entity Type Warning ───────────────────────────────────────────────────────
@@ -320,9 +320,9 @@ class TestEntityTypeWarning:
         assert "CREIDT_CARD" in caplog.text
 
     def test_configure_unknown_entity_warns(self, caplog):
-        guard = LLMGuard(use_ner=False)
+        guard = AIGuard(use_ner=False)
         with caplog.at_level(logging.WARNING, logger="ai_guard.core.models"):
-            guard.configure_entity("TYPO_ENTITY", action="warn")
+            guard.add_entity("TYPO_ENTITY", action="warn")
         assert "TYPO_ENTITY" in caplog.text
 
 
@@ -332,12 +332,12 @@ class TestEntityTypeWarning:
 class TestSaltWarning:
     def test_empty_salt_with_hash_action_logs_warning(self, caplog):
         with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
-            LLMGuard(use_ner=False, salt="")
+            AIGuard(use_ner=False, salt="")
         assert "LLMGUARD_SALT" in caplog.text
 
     def test_nonempty_salt_no_warning(self, caplog):
         with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
-            LLMGuard(use_ner=False, salt="my-secret-salt")
+            AIGuard(use_ner=False, salt="my-secret-salt")
         assert "LLMGUARD_SALT" not in caplog.text
 
 

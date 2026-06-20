@@ -1,7 +1,7 @@
 """
 Model setup flow integration tests.
 
-Tests LLMGuard auto_pull + CLI models setup + models list --recommended
+Tests AIGuard auto_pull + CLI models setup + models list --recommended
 flows with a mock Ollama backend.
 """
 
@@ -30,10 +30,10 @@ def _mock_ollama(available: list[str]):
     return backend
 
 
-# ── LLMGuard auto_pull ───────────────────────────────────────────────────────
+# ── AIGuard auto_pull ───────────────────────────────────────────────────────
 
 
-class TestLLMGuardAutoPull:
+class TestAIGuardAutoPull:
     def test_auto_pull_true_model_missing_user_confirms(self):
         """
         auto_pull=True + model missing + user says 'y' → pull is called.
@@ -44,9 +44,9 @@ class TestLLMGuardAutoPull:
             patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
             patch("builtins.input", return_value="y"),
         ):
-            from ai_guard import LLMGuard
+            from ai_guard import AIGuard
 
-            LLMGuard(
+            AIGuard(
                 use_ner=False,
                 use_llm=True,
                 llm_model="llama3.1:8b",
@@ -68,9 +68,9 @@ class TestLLMGuardAutoPull:
             patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
             patch("builtins.input", return_value="n"),
         ):
-            from ai_guard import LLMGuard
+            from ai_guard import AIGuard
 
-            LLMGuard(
+            AIGuard(
                 use_ner=False,
                 use_llm=True,
                 llm_model="llama3.1:8b",
@@ -86,9 +86,9 @@ class TestLLMGuardAutoPull:
         mock_backend = _mock_ollama(["llama3.1:8b"])
 
         with patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend):
-            from ai_guard import LLMGuard
+            from ai_guard import AIGuard
 
-            LLMGuard(
+            AIGuard(
                 use_ner=False,
                 use_llm=True,
                 llm_model="llama3.1:8b",
@@ -102,9 +102,9 @@ class TestLLMGuardAutoPull:
         mock_backend = _mock_ollama(["llama3.1:8b"])
 
         with patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend):
-            from ai_guard import LLMGuard
+            from ai_guard import AIGuard
 
-            LLMGuard(
+            AIGuard(
                 use_ner=False,
                 use_llm=True,
                 llm_model="llama3.1:8b",
@@ -276,7 +276,7 @@ class TestCLIModelsSetup:
 
 class TestCLIScanAutoPull:
     def test_auto_pull_flag_passed_to_guard(self):
-        """--auto-pull flag should result in LLMGuard(auto_pull=True) being called."""
+        """--auto-pull flag should result in AIGuard(auto_pull=True) being called."""
         from ai_guard.__main__ import _build_parser
 
         parser = _build_parser()

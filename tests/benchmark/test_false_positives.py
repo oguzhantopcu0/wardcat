@@ -7,7 +7,7 @@ These tests catch regex patterns that are too broad and produce noise in product
 
 from __future__ import annotations
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 from ai_guard.detectors.regex_detector import RegexDetector
 
 
@@ -159,7 +159,7 @@ class TestFullPipelineFalsePositives:
     ]
 
     def test_clean_prose_no_violations(self):
-        guard = LLMGuard(use_ner=False)
+        guard = AIGuard(use_ner=False)
         for text in self.CLEAN_TEXTS:
             result = guard.scan(text)
             assert result.is_clean, (
@@ -209,7 +209,7 @@ class TestScanBatchWorkersConfig:
         assert cfg["scan_batch_workers"] == 4
 
     def test_explicit_max_workers_override(self):
-        guard = LLMGuard(use_ner=False)
+        guard = AIGuard(use_ner=False)
         texts = ["a@b.com"] * 8
         results = guard.scan_batch(texts, max_workers=2)
         assert len(results) == 8

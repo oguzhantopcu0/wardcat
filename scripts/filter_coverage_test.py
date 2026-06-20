@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import time
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 
 # ── Renk kodları ──────────────────────────────────────────────────────────────
 GREEN, RED, YELLOW, CYAN, BOLD, DIM, RESET = (
@@ -360,7 +360,7 @@ def detector_of(confidence: float) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 print(f"{BOLD}{CYAN}Guard kuruluyor: Regex + NER(tr_core_news_lg) + LLM(gemma3:12b)…{RESET}")
-guard = LLMGuard(
+guard = AIGuard(
     use_ner=True,
     spacy_model="tr_core_news_lg",
     use_llm=True,

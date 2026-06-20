@@ -188,7 +188,7 @@ def _is_valid_person(text: str) -> bool:
 # ── SpaCy model singleton cache ────────────────────────────────────────────
 # The SpaCy nlp object is loaded only once per model name.
 # Thread-safe: protected by _CACHE_LOCK.
-# Effect: even if multiple LLMGuard instances are created, SpaCy is kept
+# Effect: even if multiple AIGuard instances are created, SpaCy is kept
 # in memory only once (~300–500 MB savings per instance).
 _MODEL_CACHE: dict[str, Any] = {}
 _CACHE_LOCK = threading.Lock()

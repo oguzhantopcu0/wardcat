@@ -13,9 +13,9 @@ Installation::
 
 Usage::
 
-    from ai_guard import LLMGuard
+    from ai_guard import AIGuard
 
-    guard = LLMGuard(
+    guard = AIGuard(
         use_llm=True,
         llm_backend="transformers",
         llm_model="meta-llama/Llama-3.1-8B-Instruct",
@@ -23,7 +23,7 @@ Usage::
 
 8-bit / 4-bit quantization (VRAM savings)::
 
-    guard = LLMGuard(
+    guard = AIGuard(
         use_llm=True,
         llm_backend="transformers",
         llm_model="meta-llama/Llama-3.1-8B-Instruct",

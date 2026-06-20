@@ -2,7 +2,7 @@
 ai-guard kullanım örnekleri.
 """
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 
 SAMPLE = """
 Merhaba, ben Ahmet Yılmaz. Şirketimizin sunucu IP'si 10.0.0.42.
@@ -18,11 +18,11 @@ def demo_programmatic_api():
     print("=" * 60)
 
     guard = (
-        LLMGuard(use_ner=False, salt="gizli-tuz-123")
-        .configure_entity("EMAIL", enabled=True, action="warn")
-        .configure_entity("CREDIT_CARD", enabled=True, action="hash")
-        .configure_entity("IBAN", enabled=True, action="hash")
-        .configure_entity("TC_ID", enabled=True, action="hash")
+        AIGuard(use_ner=False, salt="gizli-tuz-123")
+        .add_entity("EMAIL", enabled=True, action="warn")
+        .add_entity("CREDIT_CARD", enabled=True, action="hash")
+        .add_entity("IBAN", enabled=True, action="hash")
+        .add_entity("TC_ID", enabled=True, action="hash")
     )
 
     result = guard.scan(SAMPLE)
@@ -41,7 +41,7 @@ def demo_yaml_api():
     print("Declarative (YAML) API")
     print("=" * 60)
 
-    guard = LLMGuard(config_path="config/default.yaml", use_ner=False)
+    guard = AIGuard(config_path="config/default.yaml", use_ner=False)
     result = guard.scan(SAMPLE)
 
     print(f"\nTemizlenmiş metin:\n{result.sanitized_text}")

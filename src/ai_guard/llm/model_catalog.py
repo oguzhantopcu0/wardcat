@@ -2,7 +2,7 @@
 Catalog of recommended on-prem LLM models.
 
 The options presented to the user via the ``models setup`` command or
-``LLMGuard(use_llm=True)`` are defined here.
+``AIGuard(use_llm=True)`` are defined here.
 """
 
 from __future__ import annotations

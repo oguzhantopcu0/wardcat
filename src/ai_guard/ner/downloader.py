@@ -2,7 +2,7 @@
 Programmatic SpaCy model installation.
 
 Shared by the ``ai-guard spacy download`` CLI command and by
-:class:`~ai_guard.guard.LLMGuard`'s auto-download path (when a language is
+:class:`~ai_guard.guard.AIGuard`'s auto-download path (when a language is
 selected). Handles the awkward cases:
 
 * models hosted on HuggingFace via an explicit wheel URL (e.g. Turkish),

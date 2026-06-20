@@ -82,7 +82,7 @@ _ENTITY_DESCRIPTIONS: dict[str, str] = {
     ),
 }
 
-# Entity types the LLM layer has explicit guidance for (used by LLMGuard to
+# Entity types the LLM layer has explicit guidance for (used by AIGuard to
 # decide which entities the "llm" layer can target).
 SUPPORTED_ENTITIES: frozenset[str] = frozenset(_ENTITY_DESCRIPTIONS)
 

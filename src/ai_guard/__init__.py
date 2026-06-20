@@ -19,15 +19,16 @@ from ai_guard.exceptions import (
     ModelDownloadError,
     UnsupportedLanguageError,
 )
-from ai_guard.guard import LLMGuard
+from ai_guard.guard import AIGuard, LLMGuard
 
 try:
     __version__: str = version("ai-guard")
 except PackageNotFoundError:
-    __version__ = "0.3.1"  # development environment fallback
+    __version__ = "0.4.0"  # development environment fallback
 
 __all__ = [
-    "LLMGuard",
+    "AIGuard",
+    "LLMGuard",  # deprecated alias for AIGuard
     "ScanResult",
     "Violation",
     "Action",

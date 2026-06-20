@@ -7,8 +7,8 @@
 # Bu dosyayı kopyalayarak projenize özel politika oluşturabilirsiniz.
 #
 # Kullanım:
-#   from ai_guard import LLMGuard
-#   guard = LLMGuard(config_path="config/default.yaml")
+#   from ai_guard import AIGuard
+#   guard = AIGuard(config_path="config/default.yaml")
 
 # Hash tuzlama değeri. Boş bırakılırsa salt kullanılmaz.
 # Üretim ortamında ortam değişkeninden okuyun, buraya yazmayın.

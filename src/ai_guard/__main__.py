@@ -217,9 +217,9 @@ def _resolve_llm_url(args_url: str) -> str:
 
 
 def _make_guard(args: argparse.Namespace):
-    from ai_guard import LLMGuard
+    from ai_guard import AIGuard
 
-    return LLMGuard(
+    return AIGuard(
         config_path=args.config,
         salt=args.salt,
         use_ner=not args.no_ner,
@@ -391,7 +391,7 @@ def cmd_spacy(args: argparse.Namespace) -> None:
             print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
         print("\nModel ready. Use it with:")
-        print(f"  guard = LLMGuard(spacy_model={model_name!r})")
+        print(f"  guard = AIGuard(spacy_model={model_name!r})")
         print(f'  python -m ai_guard scan --model {model_name} --text "..."')
 
     elif args.spacy_command == "installed":
@@ -504,7 +504,7 @@ def _cmd_setup(args: argparse.Namespace) -> None:
             f'  python -m ai_guard scan --text "..." '
             f"--llm --llm-model {chosen.name}\n"
             f"\nPython API:\n"
-            f'  guard = LLMGuard(use_llm=True, llm_model="{chosen.name}")'
+            f'  guard = AIGuard(use_llm=True, llm_model="{chosen.name}")'
         )
 
 

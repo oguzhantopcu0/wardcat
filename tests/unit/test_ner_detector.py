@@ -12,7 +12,7 @@ import logging
 import pytest
 import spacy.util
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 from ai_guard.detectors.ner_detector import NERDetector, _is_valid_person
 
 pytestmark = pytest.mark.ner  # tag: uv run pytest -m ner
@@ -39,13 +39,13 @@ def ner_tr():
 
 @pytest.fixture(scope="module")
 def guard_with_ner():
-    return LLMGuard(use_ner=True, spacy_model="en_core_web_sm")
+    return AIGuard(use_ner=True, spacy_model="en_core_web_sm")
 
 
 @pytest.fixture(scope="module")
 def guard_tr():
     tr_model = next((m for m in sorted(_INSTALLED) if m.startswith("tr_")), "en_core_web_sm")
-    return LLMGuard(use_ner=True, spacy_model=tr_model)
+    return AIGuard(use_ner=True, spacy_model=tr_model)
 
 
 # ── PERSON detection ─────────────────────────────────────────────────────────
@@ -126,7 +126,7 @@ class TestUnknownSpacyLabel:
         assert "DATE" not in types
 
 
-# ── NER + Regex hybrid (via LLMGuard) ───────────────────────────────────────
+# ── NER + Regex hybrid (via AIGuard) ───────────────────────────────────────
 
 
 class TestNERPlusRegex:
@@ -245,7 +245,7 @@ class TestTurkishNER:
         """Guard must log which SpaCy model is actually loaded (info level)."""
         tr_model = next(m for m in sorted(_INSTALLED) if m.startswith("tr_"))
         with caplog.at_level(logging.INFO, logger="ai_guard.guard"):
-            LLMGuard(use_ner=True, spacy_model=tr_model)
+            AIGuard(use_ner=True, spacy_model=tr_model)
         loaded = [r.message for r in caplog.records if "SpaCy model loaded" in r.message]
         assert loaded, "Expected 'SpaCy model loaded' info log"
         assert any("tr_" in msg for msg in loaded), (
@@ -275,7 +275,7 @@ class TestModelFallback:
     def test_fallback_logged_when_model_not_installed(self, caplog):
         """Requesting a non-installed model must log a WARNING with fallback info."""
         with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
-            LLMGuard(use_ner=True, spacy_model="xx_fake_model_xyz")
+            AIGuard(use_ner=True, spacy_model="xx_fake_model_xyz")
         # Either fallback warning OR "not installed" warning should appear
         assert any(
             "falling back" in r.message.lower() or "not installed" in r.message.lower()
@@ -285,7 +285,7 @@ class TestModelFallback:
     def test_correct_model_logged_at_info(self, caplog):
         """When model is installed, INFO log must show the exact model name."""
         with caplog.at_level(logging.INFO, logger="ai_guard.guard"):
-            LLMGuard(use_ner=True, spacy_model="en_core_web_sm").scan("test")
+            AIGuard(use_ner=True, spacy_model="en_core_web_sm").scan("test")
         assert any(
             "en_core_web_sm" in r.message for r in caplog.records if r.levelno == logging.INFO
         )
@@ -339,7 +339,7 @@ class TestNERErrorHandling:
         import logging
 
         with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
-            guard = LLMGuard(use_ner=True, spacy_model="nonexistent_model_xyz")
+            guard = AIGuard(use_ner=True, spacy_model="nonexistent_model_xyz")
 
         assert any(
             "NER" in r.message or "could not be loaded" in r.message or "not installed" in r.message

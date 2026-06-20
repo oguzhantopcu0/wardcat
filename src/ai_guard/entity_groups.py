@@ -4,9 +4,9 @@ Predefined entity group sets for common use cases.
 Groups entities by language/region or purpose so users don't have to
 enumerate individual entity types:
 
-    guard = LLMGuard(use_ner=False)
+    guard = AIGuard(use_ner=False)
     for entity in european_entities():
-        guard.configure_entity(entity, action="hash")
+        guard.add_entity(entity, action="hash")
 
 Available groups:
     core_entities()         — universal PII (email, phone, credit card, IBAN)

@@ -1,8 +1,8 @@
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 
 
 def guard():
-    return LLMGuard(use_ner=False)
+    return AIGuard(use_ner=False)
 
 
 def test_batch_returns_correct_count():

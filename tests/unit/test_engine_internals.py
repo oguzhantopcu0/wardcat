@@ -246,9 +246,9 @@ class TestViolationOrdering:
         assert entity_order == ["A", "B", "C"]
 
     def test_violation_start_positions_ascending(self):
-        from ai_guard import LLMGuard
+        from ai_guard import AIGuard
 
-        guard = LLMGuard(use_ner=False)
+        guard = AIGuard(use_ner=False)
         text = "a@a.com 0532 111 22 33 b@b.com"
         result = guard.scan(text)
         starts = [v.start for v in result.violations]

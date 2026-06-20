@@ -25,7 +25,7 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from ai_guard import LLMGuard
+from ai_guard import AIGuard
 from ai_guard.core.models import ScanResult
 
 logger = logging.getLogger(__name__)
@@ -34,13 +34,13 @@ _DEFAULT_CONTENT_TYPES: tuple[str, ...] = ("application/json", "text/plain", "te
 
 
 class AIGuardMiddleware:
-    """ASGI middleware that scans HTTP request bodies for PII with an LLMGuard."""
+    """ASGI middleware that scans HTTP request bodies for PII with an AIGuard."""
 
     def __init__(
         self,
         app,
         *,
-        guard: LLMGuard,
+        guard: AIGuard,
         on_pii_detected: str = "sanitize",
         scan_path_prefix: str | None = None,
         content_types: Sequence[str] = _DEFAULT_CONTENT_TYPES,
@@ -180,9 +180,9 @@ try:
     from fastapi import FastAPI, Request
 
     guard = (
-        LLMGuard(use_ner=False, salt="example-salt")
-        .configure_entity("EMAIL", enabled=True, action="warn")
-        .configure_entity("CREDIT_CARD", enabled=True, action="hash")
+        AIGuard(use_ner=False, salt="example-salt")
+        .add_entity("EMAIL", enabled=True, action="warn")
+        .add_entity("CREDIT_CARD", enabled=True, action="hash")
     )
 
     app = FastAPI()
