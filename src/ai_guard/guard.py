@@ -11,6 +11,7 @@ from ai_guard.core.engine import DetectionEngine
 from ai_guard.core.models import ScanResult, warn_unknown_entity
 from ai_guard.detectors.base import BaseDetector
 from ai_guard.detectors.regex_detector import RegexDetector
+from ai_guard.exceptions import ConfigError, UnsupportedLanguageError
 
 logger = logging.getLogger(__name__)
 
@@ -203,12 +204,12 @@ class LLMGuard:
                 info = resolve_model(lang.lower(), spacy_size)
                 if info is None:
                     if get_models_by_language(lang.lower()):
-                        raise ValueError(
+                        raise UnsupportedLanguageError(
                             f"No compatible SpaCy model for language {lang!r} "
                             f"at size {spacy_size!r}. Try a different size (sm/md/lg)."
                         )
                     supported = sorted({m.lang_code for m in SPACY_CATALOG})
-                    raise ValueError(
+                    raise UnsupportedLanguageError(
                         f"Unsupported language {lang!r}. Supported: {supported}. "
                         "See: python -m ai_guard spacy list"
                     )
@@ -433,7 +434,7 @@ class LLMGuard:
             elif spec is None:
                 spec = {}
             elif not isinstance(spec, dict):
-                raise ValueError(
+                raise ConfigError(
                     f"Invalid spec for {name!r}: expected str, dict, or None, "
                     f"got {type(spec).__name__}."
                 )
@@ -459,7 +460,7 @@ class LLMGuard:
         if entity_type not in custom_patterns:
             warn_unknown_entity(entity_type)
         if action not in ("warn", "hash", "mask", "redact"):
-            raise ValueError(
+            raise ConfigError(
                 f"Invalid action {action!r}. Valid values: 'warn', 'hash', 'mask', 'redact'"
             )
 
@@ -470,7 +471,7 @@ class LLMGuard:
         else:
             invalid = set(layers) - _VALID_LAYERS
             if invalid:
-                raise ValueError(
+                raise ConfigError(
                     f"Invalid layer(s) {sorted(invalid)}. Valid: {sorted(_VALID_LAYERS)}"
                 )
             target = list(layers)
@@ -526,11 +527,11 @@ class LLMGuard:
         existing: list[dict[str, str]] = self._config.setdefault("denylist", [])
         for entry in entries:
             if not isinstance(entry, dict):
-                raise ValueError(
+                raise ConfigError(
                     f"Each denylist entry must be a dict with a 'value' or 'pattern' key: {entry!r}"
                 )
             if "value" not in entry and "pattern" not in entry:
-                raise ValueError(
+                raise ConfigError(
                     f"Each denylist entry must have either a 'value' or a 'pattern' key: {entry!r}"
                 )
             existing.append(entry)
@@ -631,7 +632,7 @@ class LLMGuard:
                 load_in_4bit=llm_cfg.get("load_in_4bit", False),
             )
         else:
-            raise ValueError(
+            raise ConfigError(
                 f"Unknown LLM backend: {backend_name!r}. "
                 "Valid values: 'ollama', 'openai_compatible', 'transformers'"
             )

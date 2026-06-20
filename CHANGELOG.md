@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> Includes a **breaking change** (removal of the shipped ASGI/FastAPI middleware).
+> The next published release should therefore bump the minor version (≥ 0.3.0).
+
 ### Added
 
 - **Layer-aware filter selection:** `configure_entity(entity, layers=[...])` targets a specific detector layer (`"regex"`, `"ner"`, `"llm"`); when omitted, every layer that supports the entity is used. Lets you keep semantic-only entities (e.g. `SPECIAL_CATEGORY`) off the regex/NER path.
@@ -72,7 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
-[0.2.0b1]: https://github.com/ai-guard/ai-guard/compare/v0.2.0...v0.2.0b1
+[Unreleased]: https://github.com/oguzhantopcu0/ai-guard/compare/v0.2.0b1...HEAD
+[0.2.0b1]: https://github.com/oguzhantopcu0/ai-guard/releases/tag/v0.2.0b1
 
 ---
 
@@ -122,4 +126,4 @@ Initial release.
 - **ReDoS protection** — adversarial input tests with 30-second timeout guardrails
 - **Thread-safety** — concurrent scan tests validating shared-state safety
 
-[0.1.0]: https://github.com/ai-guard/ai-guard/releases/tag/v0.1.0
+[0.1.0]: https://github.com/oguzhantopcu0/ai-guard/releases/tag/v0.1.0

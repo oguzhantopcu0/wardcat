@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [
-    { name = "ai-guard contributors" },
+    { name = "Oğuzhan Topçu", email = "oguzhantopcu000@gmail.com" },
 ]
 keywords = [
     "pii", "privacy", "anonymization", "llm", "nlp",
@@ -57,11 +57,10 @@ all = [
     "sentencepiece>=0.1.99",
     "protobuf>=3.20",
 ]
-dev = [
-    "pytest>=8.0",
-    "pytest-cov>=5.0",
-    "pytest-timeout>=2.0",
-]
+
+# Development tooling lives in the PEP 735 [dependency-groups] table below
+# (install with `uv sync --dev`), not as a project extra — there is a single
+# source of truth for dev dependencies.
 
 [project.scripts]
 ai-guard = "ai_guard.__main__:main"

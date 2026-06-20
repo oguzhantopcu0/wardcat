@@ -44,11 +44,6 @@ all = [
     { name = "torch" },
     { name = "transformers" },
 ]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-timeout" },
-]
 ner = [
     { name = "spacy" },
 ]
@@ -82,9 +77,6 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1,<1" },
     { name = "protobuf", marker = "extra == 'all'", specifier = ">=3.20" },
     { name = "protobuf", marker = "extra == 'transformers'", specifier = ">=3.20" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
     { name = "sentencepiece", marker = "extra == 'all'", specifier = ">=0.1.99" },
     { name = "sentencepiece", marker = "extra == 'transformers'", specifier = ">=0.1.99" },
@@ -95,7 +87,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'all'", specifier = ">=4.40,<5" },
     { name = "transformers", marker = "extra == 'transformers'", specifier = ">=4.40,<5" },
 ]
-provides-extras = ["ner", "transformers", "all", "dev"]
+provides-extras = ["ner", "transformers", "all"]
 
 [package.metadata.requires-dev]
 dev = [

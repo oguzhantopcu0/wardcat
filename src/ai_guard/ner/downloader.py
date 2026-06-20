@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 
+from ai_guard.exceptions import ModelDownloadError
 from ai_guard.ner.spacy_catalog import get_spacy_model
 
 logger = logging.getLogger(__name__)
@@ -52,8 +53,9 @@ def ensure_model(model_name: str, *, auto_download: bool = False, verbose: bool 
 def download_model(model_name: str, *, verbose: bool = False) -> None:
     """Download and install a SpaCy model. Raises on failure.
 
-    :raises ImportError:  if SpaCy itself is not installed.
-    :raises RuntimeError: if the model is incompatible or the install fails.
+    :raises ImportError:        if SpaCy itself is not installed.
+    :raises ModelDownloadError: if the model is incompatible or the install fails
+                                (subclass of ``RuntimeError``).
     """
 
     def _say(msg: str) -> None:
@@ -74,7 +76,7 @@ def download_model(model_name: str, *, verbose: bool = False) -> None:
 
     # Hard incompatibility — model cannot be loaded regardless of --no-deps.
     if info and info.incompatible:
-        raise RuntimeError(
+        raise ModelDownloadError(
             f"{model_name!r} is not compatible with SpaCy {spacy.__version__}.\n{info.note}"
         )
 
@@ -144,7 +146,7 @@ def download_model(model_name: str, *, verbose: bool = False) -> None:
             result_code = _run([uv_bin, "pip", "install", gh_url])
 
     if result_code != 0:
-        raise RuntimeError(
+        raise ModelDownloadError(
             f"SpaCy model download failed: {model_name!r}\n"
             "The model may not be compatible with your installed SpaCy version.\n"
             "Check available models:  python -m ai_guard spacy list\n"

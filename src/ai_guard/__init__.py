@@ -1,7 +1,7 @@
 import logging
 from importlib.metadata import PackageNotFoundError, version
 
-from ai_guard.core.models import Action, ScanResult, Violation
+from ai_guard.core.models import KNOWN_ENTITY_TYPES, Action, ScanResult, Violation
 from ai_guard.entity_groups import (
     all_entities,
     core_entities,
@@ -12,6 +12,12 @@ from ai_guard.entity_groups import (
     turkish_entities,
     uk_entities,
     us_entities,
+)
+from ai_guard.exceptions import (
+    AIGuardError,
+    ConfigError,
+    ModelDownloadError,
+    UnsupportedLanguageError,
 )
 from ai_guard.guard import LLMGuard
 
@@ -25,8 +31,14 @@ __all__ = [
     "ScanResult",
     "Violation",
     "Action",
+    "KNOWN_ENTITY_TYPES",
     "__version__",
     "redacted",
+    # Exceptions
+    "AIGuardError",
+    "ConfigError",
+    "ModelDownloadError",
+    "UnsupportedLanguageError",
     # Entity group helpers
     "core_entities",
     "financial_entities",

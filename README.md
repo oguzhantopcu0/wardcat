@@ -46,26 +46,29 @@ print(result.sanitized_text)
 
 ## Installation
 
-```bash
-# Base install — regex detection + Ollama/OpenAI-compatible LLM backend
-pip install ai-guard
+> **Not yet published to PyPI.** Install from source until the first release.
 
-# + SpaCy NER (PERSON, ORG, ADDRESS detection)
-pip install "ai-guard[ner]"
-
-# + HuggingFace Transformers backend (local GPU/CPU inference)
-pip install "ai-guard[transformers]"
-
-# Everything at once
-pip install "ai-guard[all]"
-```
-
-Or clone and install with [uv](https://github.com/astral-sh/uv):
+With [uv](https://github.com/astral-sh/uv) (recommended):
 
 ```bash
 git clone https://github.com/oguzhantopcu0/ai-guard.git
 cd ai-guard
-uv sync
+uv sync                 # base: regex + Ollama/OpenAI-compatible LLM backend
+uv sync --extra ner     # + SpaCy NER (PERSON, ORG, ADDRESS)
+uv sync --extra all     # + HuggingFace Transformers backend
+```
+
+Or with pip, straight from Git:
+
+```bash
+# Base install — regex detection + Ollama/OpenAI-compatible LLM backend
+pip install "git+https://github.com/oguzhantopcu0/ai-guard.git"
+
+# + SpaCy NER (PERSON, ORG, ADDRESS detection)
+pip install "ai-guard[ner] @ git+https://github.com/oguzhantopcu0/ai-guard.git"
+
+# Everything at once (SpaCy + Transformers)
+pip install "ai-guard[all] @ git+https://github.com/oguzhantopcu0/ai-guard.git"
 ```
 
 To use SpaCy NER (PERSON, ORG, ADDRESS detection):
@@ -493,6 +496,8 @@ Sensitive values are replaced in the sanitized text using the format `[TYPE:16he
 4532 0151 1283 0366  →  [CREDIT_CARD:ea782818c5a992a8]
 12345678950          →  [TC_ID:86349f34a1bc2d5e]
 ```
+
+> **Limitation — deterministic hashing is not anonymization.** The same value always hashes to the same token (this is intentional: it lets you correlate records). But because the hash is deterministic and SHA-256 is fast, **low-entropy PII (phone numbers, SSNs, TC IDs) can be recovered by brute force** by anyone who has the salt and knows the value format. Treat hashed output as *pseudonymized*, not anonymized: keep the salt secret, and use `redact`/`mask` when you need values that cannot be reversed.
 
 ### Salt
 

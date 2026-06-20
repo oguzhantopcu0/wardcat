@@ -9,6 +9,8 @@ from typing import Any
 
 import yaml
 
+from ai_guard.exceptions import ConfigError
+
 logger = logging.getLogger(__name__)
 
 # Library-internal default configuration.
@@ -115,6 +117,8 @@ _KNOWN_CONFIG_KEYS = frozenset(
     {
         "salt",
         "spacy_model",
+        "spacy_models",
+        "spacy_auto_download",
         "use_ner",
         "scan_batch_workers",
         "max_text_bytes",
@@ -160,7 +164,8 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
     If ``"default"`` is passed as ``path``, the bundled
     ``ai_guard/config/default.yaml`` file is used.
 
-    The result is validated; raises ValueError if there are errors.
+    The result is validated; raises :class:`~ai_guard.exceptions.ConfigError`
+    (a subclass of ``ValueError``) if any value is invalid.
     """
     config = _deep_copy(DEFAULT_CONFIG)
     if path is not None:
@@ -187,7 +192,9 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
 
 def validate_config(config: dict[str, Any]) -> None:
     """
-    Validate the configuration. Raises ValueError if any value is invalid.
+    Validate the configuration. Raises
+    :class:`~ai_guard.exceptions.ConfigError` (a ``ValueError`` subclass) if any
+    value is invalid.
     """
     unknown_keys = set(config.keys()) - _KNOWN_CONFIG_KEYS
     if unknown_keys:
@@ -200,13 +207,13 @@ def validate_config(config: dict[str, Any]) -> None:
     entities = config.get("entities", {})
     for entity_name, entity_cfg in entities.items():
         if not isinstance(entity_cfg, dict):
-            raise ValueError(
+            raise ConfigError(
                 f"Invalid entity configuration '{entity_name}': expected dict, "
                 f"got {type(entity_cfg).__name__}."
             )
         action = entity_cfg.get("action", "warn")
         if action not in _VALID_ACTIONS:
-            raise ValueError(
+            raise ConfigError(
                 f"Invalid action '{action}' (entity: {entity_name}). "
                 f"Valid values: {sorted(_VALID_ACTIONS)}"
             )
@@ -214,81 +221,99 @@ def validate_config(config: dict[str, Any]) -> None:
     custom_patterns = config.get("custom_patterns", {})
     for pattern_name, pattern_cfg in custom_patterns.items():
         if not isinstance(pattern_cfg, dict):
-            raise ValueError(
+            raise ConfigError(
                 f"Invalid custom_patterns entry '{pattern_name}': expected dict, "
                 f"got {type(pattern_cfg).__name__}."
             )
         if "pattern" not in pattern_cfg:
-            raise ValueError(f"Custom pattern '{pattern_name}' is missing required 'pattern' key.")
+            raise ConfigError(f"Custom pattern '{pattern_name}' is missing required 'pattern' key.")
         if not isinstance(pattern_cfg["pattern"], str):
-            raise ValueError(f"Custom pattern '{pattern_name}'.pattern must be a string.")
+            raise ConfigError(f"Custom pattern '{pattern_name}'.pattern must be a string.")
         action = pattern_cfg.get("action", "warn")
         if action not in _VALID_ACTIONS:
-            raise ValueError(
+            raise ConfigError(
                 f"Invalid action '{action}' for custom pattern '{pattern_name}'. "
                 f"Valid values: {sorted(_VALID_ACTIONS)}"
             )
         try:
             compiled = re.compile(pattern_cfg["pattern"])
         except re.error as exc:
-            raise ValueError(f"Custom pattern '{pattern_name}' has invalid regex: {exc}") from exc
+            raise ConfigError(f"Custom pattern '{pattern_name}' has invalid regex: {exc}") from exc
         if not _check_redos(compiled):
-            raise ValueError(
+            raise ConfigError(
                 f"Custom pattern '{pattern_name}' may cause catastrophic backtracking "
                 "(ReDoS). Simplify the pattern or remove nested quantifiers."
             )
 
     allowlist = config.get("allowlist", [])
     if not isinstance(allowlist, list):
-        raise ValueError(f"'allowlist' must be a list of strings, got {type(allowlist).__name__}.")
+        raise ConfigError(f"'allowlist' must be a list of strings, got {type(allowlist).__name__}.")
     for item in allowlist:
         if not isinstance(item, str):
-            raise ValueError(
+            raise ConfigError(
                 f"Each 'allowlist' entry must be a string, got {type(item).__name__}: {item!r}"
             )
 
     denylist = config.get("denylist", [])
     if not isinstance(denylist, list):
-        raise ValueError(f"'denylist' must be a list of dicts, got {type(denylist).__name__}.")
+        raise ConfigError(f"'denylist' must be a list of dicts, got {type(denylist).__name__}.")
     for entry in denylist:
         if not isinstance(entry, dict):
-            raise ValueError(
+            raise ConfigError(
                 f"Each 'denylist' entry must be a dict with 'value' or 'pattern', "
                 f"got {type(entry).__name__}: {entry!r}"
             )
         has_value = "value" in entry
         has_pattern = "pattern" in entry
         if not has_value and not has_pattern:
-            raise ValueError(
+            raise ConfigError(
                 f"Denylist entry must have either a 'value' or a 'pattern' key: {entry!r}"
             )
         if has_value and not isinstance(entry["value"], str):
-            raise ValueError(
+            raise ConfigError(
                 f"Denylist entry 'value' must be a string, got {type(entry['value']).__name__}"
             )
         if has_pattern:
             if not isinstance(entry["pattern"], str):
-                raise ValueError(
+                raise ConfigError(
                     f"Denylist entry 'pattern' must be a string, "
                     f"got {type(entry['pattern']).__name__}"
                 )
             try:
                 re.compile(entry["pattern"])
             except re.error as exc:
-                raise ValueError(
+                raise ConfigError(
                     f"Denylist entry 'pattern' {entry['pattern']!r} is not valid regex: {exc}"
                 ) from exc
 
     llm_cfg = config.get("llm_detector", {})
     backend = llm_cfg.get("backend", "ollama")
     if backend not in _VALID_BACKENDS:
-        raise ValueError(
+        raise ConfigError(
             f"Invalid LLM backend '{backend}'. Valid values: {sorted(_VALID_BACKENDS)}"
         )
 
     timeout = llm_cfg.get("timeout", 60)
     if not isinstance(timeout, (int, float)) or timeout <= 0:
-        raise ValueError(f"Invalid llm_detector.timeout: {timeout!r} (must be a positive number)")
+        raise ConfigError(f"Invalid llm_detector.timeout: {timeout!r} (must be a positive number)")
+
+    llm_entities = llm_cfg.get("entities", {})
+    if not isinstance(llm_entities, dict):
+        raise ConfigError(
+            f"'llm_detector.entities' must be a dict, got {type(llm_entities).__name__}."
+        )
+    for entity_name, entity_cfg in llm_entities.items():
+        if not isinstance(entity_cfg, dict):
+            raise ConfigError(
+                f"Invalid llm_detector.entities['{entity_name}']: expected dict, "
+                f"got {type(entity_cfg).__name__}."
+            )
+        action = entity_cfg.get("action", "warn")
+        if action not in _VALID_ACTIONS:
+            raise ConfigError(
+                f"Invalid action '{action}' (llm_detector.entities['{entity_name}']). "
+                f"Valid values: {sorted(_VALID_ACTIONS)}"
+            )
 
 
 # ---------------------------------------------------------------------------

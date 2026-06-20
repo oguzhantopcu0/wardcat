@@ -17,9 +17,12 @@ class Action(str, Enum):
     REDACT = "redact"
     """Replace with a plain label: ``[ENTITY_TYPE]`` — no hash, no original value."""
     MASK = "mask"
-    """Partially obscure: show first 2 and last 2 characters, replace the rest with ``*``.
-    E.g. ``4111111111111111`` → ``41************11``.  For values shorter than 4 characters
-    the entire value is replaced with ``*`` characters."""
+    """Partially obscure the value, entity-aware. Most types reveal only the last
+    few characters — e.g. ``CREDIT_CARD`` → ``************1111``,
+    ``EMAIL`` → ``u***@example.com``, ``SSN`` → ``***-**-6789``. Types without a
+    specific rule fall back to *first 2 + ``*`` + last 2* (``abcdef`` → ``ab**ef``);
+    values shorter than 4 characters are fully replaced with ``*``.
+    See ``ai_guard.core.engine._mask_value`` for the per-type rules."""
 
 
 # Known entity types — for typo checking and IDE support.
