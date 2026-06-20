@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.1] — 2026-06-21
+
+### Added
+
+- **`Entity` constants:** a new `Entity` enum exposes every known entity type as a constant (`Entity.CREDIT_CARD`, `Entity.EMAIL`, …) for IDE autocomplete and typo-proof configuration. Use it anywhere a string entity type was accepted — `guard.configure_entity(Entity.CREDIT_CARD, Action.HASH)`. Bare strings still work; `Entity` *is* its string value (`Entity.EMAIL == "EMAIL"`).
+- `Entity` and `Action` are now first-class, type-hinted arguments to `configure_entity()` / `configure_entities()` (`entity_type: str | Entity`, `action: str | Action`). Static type checkers flag an invalid action or entity at edit time instead of at runtime.
+
+### Changed
+
+- `KNOWN_ENTITY_TYPES` is now derived from the `Entity` enum — the enum is the single source of truth, so the two can no longer drift apart.
+- `configure_entity()` / `configure_entities()` normalize `Entity`/`Action` enum arguments to their canonical string form before storing them in the config.
+
+---
+
 ## [0.3.0] — 2026-06-20
 
 > Includes a **breaking change** (removal of the shipped ASGI/FastAPI middleware).

@@ -8,7 +8,7 @@ from typing import Any
 
 from ai_guard.config.loader import load_config
 from ai_guard.core.engine import DetectionEngine
-from ai_guard.core.models import ScanResult, warn_unknown_entity
+from ai_guard.core.models import Action, Entity, ScanResult, warn_unknown_entity
 from ai_guard.detectors.base import BaseDetector
 from ai_guard.detectors.regex_detector import RegexDetector
 from ai_guard.exceptions import ConfigError, UnsupportedLanguageError
@@ -368,17 +368,19 @@ class LLMGuard:
 
     def configure_entity(
         self,
-        entity_type: str,
+        entity_type: str | Entity,
         enabled: bool = True,
-        action: str = "warn",
+        action: str | Action = "warn",
         layers: list[str] | None = None,
     ) -> LLMGuard:
         """
         Configure a single entity type. Supports method chaining.
 
-        :param entity_type: E.g. "EMAIL", "PERSON", "CREDIT_CARD"
+        :param entity_type: An :class:`~ai_guard.Entity` constant (recommended,
+                            e.g. ``Entity.EMAIL``) or its string form (``"EMAIL"``).
         :param enabled:     Include this entity in the scan engine
-        :param action:      "warn", "hash", "redact", or "mask"
+        :param action:      An :class:`~ai_guard.Action` constant (e.g. ``Action.HASH``)
+                            or its string form: ``"warn"``, ``"hash"``, ``"redact"``, ``"mask"``
         :param layers:      Which detector layers should look for this entity —
                             any of ``"regex"``, ``"ner"``, ``"llm"``. When
                             ``None`` (default), every layer that supports the
@@ -394,7 +396,7 @@ class LLMGuard:
         entities,
         *,
         enabled: bool = True,
-        action: str = "warn",
+        action: str | Action = "warn",
         layers: list[str] | None = None,
     ) -> LLMGuard:
         """
@@ -449,20 +451,26 @@ class LLMGuard:
 
     def _set_entity(
         self,
-        entity_type: str,
+        entity_type: str | Entity,
         *,
         enabled: bool,
-        action: str,
+        action: str | Action,
         layers: list[str] | None,
     ) -> None:
         """Mutate config for one entity across the chosen layers (no rebuild)."""
+        # Normalize Entity/Action enums to their canonical string value. Note:
+        # str(Entity.EMAIL) == "Entity.EMAIL", so we must read `.value`, not str().
+        entity_type = entity_type.value if isinstance(entity_type, Entity) else entity_type
+        try:
+            action = Action(action).value
+        except ValueError:
+            raise ConfigError(
+                f"Invalid action {action!r}. Valid values: 'warn', 'hash', 'mask', 'redact'"
+            ) from None
+
         custom_patterns = self._config.get("custom_patterns", {})
         if entity_type not in custom_patterns:
             warn_unknown_entity(entity_type)
-        if action not in ("warn", "hash", "mask", "redact"):
-            raise ConfigError(
-                f"Invalid action {action!r}. Valid values: 'warn', 'hash', 'mask', 'redact'"
-            )
 
         if layers is None:
             target = [lyr for lyr, ents in _LAYER_ENTITIES.items() if entity_type in ents]

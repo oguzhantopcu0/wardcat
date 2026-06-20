@@ -25,39 +25,54 @@ class Action(str, Enum):
     See ``ai_guard.core.engine._mask_value`` for the per-type rules."""
 
 
+class Entity(str, Enum):
+    """Known entity types, as constants — for autocomplete and typo-proofing.
+
+    Use these instead of bare strings when configuring the guard::
+
+        from ai_guard import Entity, Action
+
+        guard.configure_entity(Entity.CREDIT_CARD, Action.HASH)
+
+    Each member *is* its string value (``Entity.EMAIL == "EMAIL"``), so it can be
+    used anywhere a plain entity-type string is accepted. Note: because this is a
+    ``(str, Enum)``, use ``.value`` to get the canonical string — ``str(Entity.EMAIL)``
+    returns ``"Entity.EMAIL"``, not ``"EMAIL"``.
+    """
+
+    PERSON = "PERSON"
+    ORG = "ORG"
+    EMAIL = "EMAIL"
+    PHONE = "PHONE"
+    CREDIT_CARD = "CREDIT_CARD"
+    IBAN = "IBAN"
+    TC_ID = "TC_ID"
+    IP_ADDRESS = "IP_ADDRESS"
+    IPv6 = "IPv6"
+    ADDRESS = "ADDRESS"
+    POSTAL_CODE = "POSTAL_CODE"
+    CUSTOM_SECRET = "CUSTOM_SECRET"
+    UUID = "UUID"
+    SSN = "SSN"
+    MAC_ADDRESS = "MAC_ADDRESS"
+    JWT = "JWT"
+    NIN = "NIN"
+    UK_POSTAL_CODE = "UK_POSTAL_CODE"
+    US_ZIP_CODE = "US_ZIP_CODE"
+    EU_NATIONAL_ID = "EU_NATIONAL_ID"
+    PASSPORT = "PASSPORT"
+    CODICE_FISCALE = "CODICE_FISCALE"
+    DATE_OF_BIRTH = "DATE_OF_BIRTH"
+    VEHICLE_PLATE = "VEHICLE_PLATE"
+    FINANCIAL_AMOUNT = "FINANCIAL_AMOUNT"
+    VAT_NUMBER = "VAT_NUMBER"
+    SPECIAL_CATEGORY = "SPECIAL_CATEGORY"
+
+
 # Known entity types — for typo checking and IDE support.
-# A warning is issued if a type not in this list is configured.
-KNOWN_ENTITY_TYPES: frozenset[str] = frozenset(
-    {
-        "PERSON",
-        "ORG",
-        "EMAIL",
-        "PHONE",
-        "CREDIT_CARD",
-        "IBAN",
-        "TC_ID",
-        "IP_ADDRESS",
-        "IPv6",
-        "ADDRESS",
-        "POSTAL_CODE",
-        "CUSTOM_SECRET",
-        "UUID",
-        "SSN",
-        "MAC_ADDRESS",
-        "JWT",
-        "NIN",
-        "UK_POSTAL_CODE",
-        "US_ZIP_CODE",
-        "EU_NATIONAL_ID",
-        "PASSPORT",
-        "CODICE_FISCALE",
-        "DATE_OF_BIRTH",
-        "VEHICLE_PLATE",
-        "FINANCIAL_AMOUNT",
-        "VAT_NUMBER",
-        "SPECIAL_CATEGORY",
-    }
-)
+# Derived from Entity so the enum is the single source of truth: a warning is
+# issued if a type not in this set is configured.
+KNOWN_ENTITY_TYPES: frozenset[str] = frozenset(e.value for e in Entity)
 
 
 def warn_unknown_entity(entity_type: str) -> None:

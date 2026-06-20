@@ -126,6 +126,29 @@ for v in result.violations:
 # [warn] EMAIL: 'ali.veli@example.com'
 ```
 
+#### Typo-proof config with `Entity` and `Action` constants
+
+Prefer constants over bare strings — your IDE autocompletes them and a typo is
+caught at edit time instead of becoming a silent runtime warning. They are fully
+interchangeable with the string forms (`Entity.EMAIL == "EMAIL"`):
+
+```python
+from ai_guard import LLMGuard, Entity, Action
+
+guard = (
+    LLMGuard(salt="my-secret-salt")
+    .configure_entity(Entity.CREDIT_CARD, action=Action.HASH)
+    .configure_entity(Entity.EMAIL,       action=Action.REDACT)
+    .configure_entity(Entity.PHONE,       action=Action.MASK)
+)
+
+# Batch form — also accepts Entity keys and Action values:
+guard.configure_entities({
+    Entity.CREDIT_CARD: Action.HASH,
+    Entity.EMAIL:       Action.REDACT,
+})
+```
+
 ### Choosing which filters run, and on which layer
 
 Each entity can be detected by one or more of three layers — `regex`

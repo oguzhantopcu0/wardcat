@@ -1,7 +1,7 @@
 import logging
 from importlib.metadata import PackageNotFoundError, version
 
-from ai_guard.core.models import KNOWN_ENTITY_TYPES, Action, ScanResult, Violation
+from ai_guard.core.models import KNOWN_ENTITY_TYPES, Action, Entity, ScanResult, Violation
 from ai_guard.entity_groups import (
     all_entities,
     core_entities,
@@ -24,13 +24,14 @@ from ai_guard.guard import LLMGuard
 try:
     __version__: str = version("ai-guard")
 except PackageNotFoundError:
-    __version__ = "0.3.0"  # development environment fallback
+    __version__ = "0.3.1"  # development environment fallback
 
 __all__ = [
     "LLMGuard",
     "ScanResult",
     "Violation",
     "Action",
+    "Entity",
     "KNOWN_ENTITY_TYPES",
     "__version__",
     "redacted",
