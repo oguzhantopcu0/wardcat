@@ -166,6 +166,112 @@ def test_set_entity_rejects_all_sentinel_directly():
         guard._set_entity(Entity.All, enabled=True, action="hash", layers=None)
 
 
+def test_add_entities_rejects_non_iterable():
+    guard = AIGuard(salt="s", use_ner=False)
+    with pytest.raises(ConfigError, match="mapping or an iterable"):
+        guard.add_entities(123)  # type: ignore[arg-type]
+
+
+def test_remove_entities_rejects_non_iterable():
+    guard = AIGuard(salt="s", use_ner=False)
+    with pytest.raises(ConfigError, match="iterable of entity types"):
+        guard.remove_entities(123)  # type: ignore[arg-type]
+
+
+def test_add_entities_rejects_invalid_spec_type():
+    guard = AIGuard(salt="s", use_ner=False)
+    with pytest.raises(ConfigError, match="Invalid spec"):
+        guard.add_entities({"EMAIL": 123})  # type: ignore[dict-item]
+
+
+def test_add_entities_rejects_non_string_member():
+    guard = AIGuard(salt="s", use_ner=False)
+    with pytest.raises(ConfigError, match="must be a str or Entity"):
+        guard.add_entities([123])  # type: ignore[list-item]
+
+
+def test_invalid_action_type_raises():
+    guard = AIGuard(salt="s", use_ner=False)
+    with pytest.raises(ConfigError, match="Invalid action"):
+        guard.add_entity(Entity.EMAIL, action=999)  # type: ignore[arg-type]
+
+
+def test_invalid_action_unhashable_raises():
+    """An unhashable action (e.g. a list) is rejected, not propagated as TypeError."""
+    guard = AIGuard(salt="s", use_ner=False)
+    with pytest.raises(ConfigError, match="Invalid action"):
+        guard.add_entity(Entity.EMAIL, action=["hash"])  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# change_entity_action
+# ---------------------------------------------------------------------------
+
+
+def _clean_guard():
+    """A guard with no entities enabled (default config cleared)."""
+    return AIGuard(salt="s", use_ner=False).remove_entity(Entity.All)
+
+
+def test_change_action_updates_active_entity():
+    guard = _clean_guard().add_entity(Entity.EMAIL, action="warn")
+    assert guard.scan("mail a@b.com").sanitized_text == "mail a@b.com"  # warn keeps text
+    guard.change_entity_action(Entity.EMAIL, Action.REDACT)
+    assert guard.scan("mail a@b.com").sanitized_text == "mail [EMAIL]"
+
+
+def test_change_action_returns_self_for_chaining():
+    guard = _clean_guard().add_entity(Entity.EMAIL, action="warn")
+    assert guard.change_entity_action(Entity.EMAIL, "redact") is guard
+
+
+def test_change_action_on_never_added_raises():
+    guard = _clean_guard()
+    with pytest.raises(ConfigError, match="not enabled"):
+        guard.change_entity_action(Entity.PASSPORT, "hash")
+
+
+def test_change_action_on_removed_raises():
+    guard = _clean_guard().add_entity(Entity.EMAIL, action="warn")
+    guard.remove_entity(Entity.EMAIL)
+    with pytest.raises(ConfigError, match="not enabled"):
+        guard.change_entity_action(Entity.EMAIL, "hash")
+
+
+def test_change_action_invalid_action_raises_even_when_active():
+    guard = _clean_guard().add_entity(Entity.EMAIL, action="warn")
+    with pytest.raises(ConfigError, match="Invalid action"):
+        guard.change_entity_action(Entity.EMAIL, "explode")
+
+
+def test_change_action_rejects_non_string_type():
+    guard = _clean_guard().add_entity(Entity.EMAIL, action="warn")
+    with pytest.raises(ConfigError, match="must be a str or Entity"):
+        guard.change_entity_action(123, "hash")  # type: ignore[arg-type]
+
+
+def test_change_action_all_changes_every_active_entity():
+    guard = _clean_guard().add_entities(["EMAIL", "CREDIT_CARD"], action="warn")
+    # warn keeps the card visible
+    assert "4532" in guard.scan("card 4532 0151 1283 0366").sanitized_text
+    guard.change_entity_action(Entity.All, Action.HASH)
+    assert "[CREDIT_CARD:" in guard.scan("card 4532 0151 1283 0366").sanitized_text
+
+
+def test_change_action_all_raises_when_nothing_active():
+    guard = _clean_guard()
+    with pytest.raises(ConfigError, match="no entities are currently enabled"):
+        guard.change_entity_action(Entity.All, "hash")
+
+
+def test_change_action_on_llm_only_entity():
+    guard = _clean_guard().add_entity(Entity.SPECIAL_CATEGORY, action="redact", layers=["llm"])
+    assert guard._is_entity_active("SPECIAL_CATEGORY")
+    guard.change_entity_action(Entity.SPECIAL_CATEGORY, Action.WARN)
+    llm_entities = guard._config["llm_detector"]["entities"]
+    assert llm_entities["SPECIAL_CATEGORY"]["action"] == "warn"
+
+
 # ---------------------------------------------------------------------------
 # Deprecated method aliases
 # ---------------------------------------------------------------------------

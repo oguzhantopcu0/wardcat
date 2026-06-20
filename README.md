@@ -216,6 +216,18 @@ guard = (
 # remove_entity(Entity.All) disables everything again.
 ```
 
+To **change the action** of an entity that is already enabled — without touching
+which layers it runs on — use `change_entity_action()`:
+
+```python
+guard.change_entity_action(Entity.EMAIL, Action.HASH)      # warn → hash
+guard.change_entity_action(Entity.All, Action.REDACT)      # every enabled entity → redact
+```
+
+`change_entity_action()` never silently re-enables an entity: changing the action
+of a removed or never-added entity raises `ConfigError` — add it first with
+`add_entity()`.
+
 > Removing an entity that was never enabled is a no-op. Passing a bare string to
 > `add_entities()` / `remove_entities()` (instead of a list) raises `ConfigError` —
 > use the singular `add_entity()` / `remove_entity()` for one entity.
