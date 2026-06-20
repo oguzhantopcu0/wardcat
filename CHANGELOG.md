@@ -9,8 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.3.0] — 2026-06-20
+
 > Includes a **breaking change** (removal of the shipped ASGI/FastAPI middleware).
-> The next published release should therefore bump the minor version (≥ 0.3.0).
 
 ### Added
 
@@ -75,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
-[Unreleased]: https://github.com/oguzhantopcu0/ai-guard/compare/v0.2.0b1...HEAD
+[Unreleased]: https://github.com/oguzhantopcu0/ai-guard/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/oguzhantopcu0/ai-guard/compare/v0.2.0b1...v0.3.0
 [0.2.0b1]: https://github.com/oguzhantopcu0/ai-guard/releases/tag/v0.2.0b1
 
 ---

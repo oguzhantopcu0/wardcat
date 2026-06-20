@@ -24,7 +24,7 @@ from ai_guard.guard import LLMGuard
 try:
     __version__: str = version("ai-guard")
 except PackageNotFoundError:
-    __version__ = "0.2.0b1"  # development environment fallback
+    __version__ = "0.3.0"  # development environment fallback
 
 __all__ = [
     "LLMGuard",
