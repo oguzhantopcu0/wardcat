@@ -428,7 +428,7 @@ class TestVehiclePlate:
         from ai_guard import AIGuard
 
         guard = AIGuard(use_ner=False)
-        guard.add_entity("VEHICLE_PLATE", enabled=True, action="warn")
+        guard.add_entity("VEHICLE_PLATE", action="warn")
         result = guard.scan("Araç plakası: 34 ABC 123")
         assert any(v.entity_type == "VEHICLE_PLATE" for v in result.violations)
 
@@ -489,7 +489,7 @@ class TestFinancialAmount:
         from ai_guard import AIGuard
 
         guard = AIGuard(use_ner=False)
-        guard.add_entity("FINANCIAL_AMOUNT", enabled=True, action="redact")
+        guard.add_entity("FINANCIAL_AMOUNT", action="redact")
         result = guard.scan("Sözleşme bedeli 2.1 milyon TL olarak belirlendi.")
         assert any(v.entity_type == "FINANCIAL_AMOUNT" for v in result.violations)
 

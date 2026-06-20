@@ -18,21 +18,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking
 
 - **`LLMGuard` → `AIGuard`:** the main class is renamed and the `LLMGuard` name is **removed** (the guard is not LLM-specific — it is regex/NER/LLM hybrid). Update imports to `from ai_guard import AIGuard`.
-- **`configure_entity()` → `add_entity()`** and **`configure_entities()` → `add_entities()`.** The old method names remain as deprecated aliases (with a `DeprecationWarning`) and forward to the new methods.
+- **`configure_entity()` → `add_entity()`** and **`configure_entities()` → `add_entities()`.** The old method names were **removed** (no aliases).
+- **`add_entity()` / `add_entities()` no longer take an `enabled` argument.** Adding an entity always enables it; use `remove_entity()` / `remove_entities()` to turn entities off. This removes the contradictory `add_entity(..., enabled=False)` form.
 
 ### Added
 
 - **`Entity` constants:** a new `Entity` enum exposes every known entity type as a constant (`Entity.CREDIT_CARD`, `Entity.EMAIL`, …) for IDE autocomplete and typo-proof configuration. Use it anywhere a string entity type was accepted — `guard.add_entity(Entity.CREDIT_CARD, action=Action.HASH)`. Bare strings still work; `Entity` *is* its string value (`Entity.EMAIL == "EMAIL"`).
-- **`Entity.All` sentinel:** `add_entity(Entity.All)` enables **every** known entity type in one call (and `add_entities([Entity.All, ...])` expands it inline). It is excluded from `KNOWN_ENTITY_TYPES`.
-- **`remove_entity()` / `remove_entities()`:** disable one or many entity types (across all detector layers). `remove_entity(Entity.All)` disables everything. The natural pattern is "enable all, then prune": `guard.add_entity(Entity.All, action="hash").remove_entity(Entity.ORG)`. Removing an entity that was never enabled is a no-op.
-- **`change_entity_action()`:** retarget the action of an entity that is **currently enabled** without changing its layers — `guard.change_entity_action(Entity.EMAIL, Action.HASH)`. It refuses to silently re-enable: changing the action of a removed or never-added entity raises `ConfigError` (enable it first with `add_entity()`). `change_entity_action(Entity.All, ...)` changes the action of every currently-enabled entity.
+- **`Entity.ALL` sentinel:** `add_entity(Entity.ALL)` enables **every** known entity type in one call (and `add_entities([Entity.ALL, ...])` expands it inline). It is excluded from `KNOWN_ENTITY_TYPES`. (`Entity.All` is kept as a deprecated PascalCase alias.)
+- **`remove_entity()` / `remove_entities()`:** disable one or many entity types (across all detector layers). `remove_entity(Entity.ALL)` disables everything. The natural pattern is "enable all, then prune": `guard.add_entity(Entity.ALL, action="hash").remove_entity(Entity.ORG)`. Removing an entity that was never enabled is a no-op; an unknown *name* logs a warning (like `add_entity`) to catch typos.
+- **`change_entity_action()`:** retarget the action of an entity that is **currently enabled** without changing its layers — `guard.change_entity_action(Entity.EMAIL, Action.HASH)`. It refuses to silently re-enable: changing the action of a removed or never-added entity raises `ConfigError` (enable it first with `add_entity()`). `change_entity_action(Entity.ALL, ...)` changes the action of every currently-enabled entity.
+- **Introspection:** `enabled_entities()` returns the set of currently-enabled entity types; `get_entity_action(entity)` returns an entity's action (or `None` if it is not enabled); `entity_policy()` returns the full `{entity: action}` mapping. This rounds out the write API (add/remove/change) with a read API.
 - `Entity` and `Action` are first-class, type-hinted arguments (`entity_type: str | Entity`, `action: str | Action`). Static type checkers flag an invalid action or entity at edit time instead of at runtime.
 
 ### Changed
 
-- `KNOWN_ENTITY_TYPES` is now derived from the `Entity` enum (excluding the `Entity.All` sentinel) — the enum is the single source of truth, so the two can no longer drift apart.
+- `KNOWN_ENTITY_TYPES` is now derived from the `Entity` enum (excluding the `Entity.ALL` sentinel) — the enum is the single source of truth, so the two can no longer drift apart.
 - `add_entity()` / `add_entities()` normalize `Entity`/`Action` enum arguments to their canonical string form before storing them in the config.
-- **Error handling:** the entity-configuration API now raises `ConfigError` for a non-`str`/`Entity` entity argument, an invalid action, an unknown layer, or a malformed `add_entities()` argument (e.g. passing a bare string). Unknown *entity names* still warn (not raise) so custom entity types keep working.
+- **Error handling:** the entity-management API (`add`/`remove`/`change`/`get`) now raises `ConfigError` for a non-`str`/`Entity` entity argument, an invalid/wrong-typed action, an unknown layer, a malformed `add_entities()` argument (bare string or non-iterable), or `get_entity_action(Entity.ALL)`. Unknown *entity names* still warn (not raise) so custom entity types keep working.
 
 ---
 

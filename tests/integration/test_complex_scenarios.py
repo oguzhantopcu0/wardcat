@@ -264,10 +264,10 @@ class TestS08WarnOnlyMode:
     def test_sanitized_text_unchanged_when_all_warn(self):
         guard = (
             _guard()
-            .add_entity("CREDIT_CARD", enabled=True, action="warn")
-            .add_entity("EMAIL", enabled=True, action="warn")
-            .add_entity("TC_ID", enabled=True, action="warn")
-            .add_entity("IBAN", enabled=True, action="warn")
+            .add_entity("CREDIT_CARD", action="warn")
+            .add_entity("EMAIL", action="warn")
+            .add_entity("TC_ID", action="warn")
+            .add_entity("IBAN", action="warn")
         )
         text = "kart: 4111111111111111 mail: a@b.com TC: 12345678950"
         result = guard.scan(text)
@@ -302,7 +302,7 @@ class TestS09HashConsistency:
     def test_hash_placeholder_length_stable(self):
         # Placeholder format: [TYPE:8hexchars]
         guard = _guard(salt="tuz")
-        guard.add_entity("EMAIL", enabled=True, action="hash")
+        guard.add_entity("EMAIL", action="hash")
         result = guard.scan("a@b.com")
         v = next(v for v in result.violations if v.entity_type == "EMAIL")
         # [EMAIL:xxxxxxxx] → 8 hex characters

@@ -111,7 +111,7 @@ class TestProgrammaticAPIEdgeCases:
     def test_configure_unknown_entity_type(self):
         """Unknown entity type should be configurable (no effect without regex/NER)."""
         guard = AIGuard(use_ner=False)
-        guard.add_entity("MY_CUSTOM_PII", enabled=True, action="warn")
+        guard.add_entity("MY_CUSTOM_PII", action="warn")
         # should not raise, scan should work
         result = guard.scan("bazı metin")
         assert result is not None
@@ -128,14 +128,14 @@ class TestProgrammaticAPIEdgeCases:
             "ADDRESS",
             "POSTAL_CODE",
         ]:
-            guard.add_entity(entity, enabled=False)
+            guard.remove_entity(entity)
         text = "4111111111111111 a@b.com 12345678950 TR330006100519786457841326"
         result = guard.scan(text)
         assert result.is_clean
 
     def test_add_entity_returns_self(self):
         guard = AIGuard(use_ner=False)
-        returned = guard.add_entity("EMAIL", enabled=True, action="warn")
+        returned = guard.add_entity("EMAIL", action="warn")
         assert returned is guard
 
     def test_set_salt_returns_self(self):
@@ -155,9 +155,9 @@ class TestProgrammaticAPIEdgeCases:
 
     def test_readd_entity_midstream(self):
         guard = AIGuard(use_ner=False)
-        guard.add_entity("EMAIL", enabled=True, action="warn")
+        guard.add_entity("EMAIL", action="warn")
         r1 = guard.scan("a@b.com")
-        guard.add_entity("EMAIL", enabled=True, action="hash")
+        guard.add_entity("EMAIL", action="hash")
         r2 = guard.scan("a@b.com")
 
         assert "a@b.com" in r1.sanitized_text  # warn → unchanged
@@ -183,7 +183,7 @@ class TestEntityEnablement:
     )
     def test_disabled_entity_not_detected(self, entity, text):
         guard = AIGuard(use_ner=False)
-        guard.add_entity(entity, enabled=False)
+        guard.remove_entity(entity)
         result = guard.scan(text)
         assert not any(v.entity_type == entity for v in result.violations), (
             f"{entity} was detected despite being disabled"
@@ -199,8 +199,8 @@ class TestEntityEnablement:
     )
     def test_re_enabling_entity_works(self, entity, text):
         guard = AIGuard(use_ner=False)
-        guard.add_entity(entity, enabled=False)
-        guard.add_entity(entity, enabled=True, action="warn")
+        guard.remove_entity(entity)
+        guard.add_entity(entity, action="warn")
         result = guard.scan(text)
         assert any(v.entity_type == entity for v in result.violations), (
             f"{entity} was not re-enabled"
@@ -229,11 +229,11 @@ class TestYAMLAndProgrammaticCombined:
         f = tmp_path / "cfg.yaml"
         f.write_text(yaml.dump({"salt": "yaml-tuz"}))
         guard = AIGuard(config_path=f, use_ner=False)
-        guard.add_entity("TC_ID", enabled=True, action="hash")
+        guard.add_entity("TC_ID", action="hash")
 
         r1 = guard.scan("TC: 12345678950")
         guard2 = AIGuard(config_path=f, salt="farkli-tuz", use_ner=False)
-        guard2.add_entity("TC_ID", enabled=True, action="hash")
+        guard2.add_entity("TC_ID", action="hash")
         r2 = guard2.scan("TC: 12345678950")
 
         # Different salt → different hash

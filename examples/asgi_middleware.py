@@ -181,8 +181,8 @@ try:
 
     guard = (
         AIGuard(use_ner=False, salt="example-salt")
-        .add_entity("EMAIL", enabled=True, action="warn")
-        .add_entity("CREDIT_CARD", enabled=True, action="hash")
+        .add_entity("EMAIL", action="warn")
+        .add_entity("CREDIT_CARD", action="hash")
     )
 
     app = FastAPI()

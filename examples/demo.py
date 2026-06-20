@@ -19,10 +19,10 @@ def demo_programmatic_api():
 
     guard = (
         AIGuard(use_ner=False, salt="gizli-tuz-123")
-        .add_entity("EMAIL", enabled=True, action="warn")
-        .add_entity("CREDIT_CARD", enabled=True, action="hash")
-        .add_entity("IBAN", enabled=True, action="hash")
-        .add_entity("TC_ID", enabled=True, action="hash")
+        .add_entity("EMAIL", action="warn")
+        .add_entity("CREDIT_CARD", action="hash")
+        .add_entity("IBAN", action="hash")
+        .add_entity("TC_ID", action="hash")
     )
 
     result = guard.scan(SAMPLE)

@@ -15,9 +15,9 @@ from ai_guard import AIGuard
 
 guard = (
     AIGuard(salt="my-secret-salt")
-    .add_entity("CREDIT_CARD", enabled=True, action="hash")
-    .add_entity("EMAIL",       enabled=True, action="warn")
-    .add_entity("TC_ID",       enabled=True, action="hash")
+    .add_entity("CREDIT_CARD", action="hash")
+    .add_entity("EMAIL",       action="warn")
+    .add_entity("TC_ID",       action="hash")
 )
 
 result = guard.scan("Name: Ali Veli, card: 4532 0151 1283 0366, email: ali@example.com")
@@ -97,10 +97,10 @@ uv run python -m ai_guard spacy installed
 ## Quick Start
 
 > **Migrating from 0.3.x:** the main class is now `AIGuard` (the old `LLMGuard`
-> name has been removed — `from ai_guard import AIGuard`). The methods
-> `configure_entity()` / `configure_entities()` are now `add_entity()` /
-> `add_entities()`; the old method names still work as deprecated aliases (they
-> emit a `DeprecationWarning`) and will be removed in a future release.
+> name was removed — `from ai_guard import AIGuard`). `configure_entity()` /
+> `configure_entities()` were renamed to `add_entity()` / `add_entities()` and
+> the old names were removed. `add_entity()` no longer takes an `enabled`
+> argument — adding enables; use `remove_entity()` to turn one off.
 
 ### Programmatic API
 
@@ -109,9 +109,9 @@ from ai_guard import AIGuard
 
 guard = (
     AIGuard(salt="my-secret-salt")
-    .add_entity("CREDIT_CARD", enabled=True, action="hash")
-    .add_entity("EMAIL",       enabled=True, action="warn")
-    .add_entity("TC_ID",       enabled=True, action="hash")
+    .add_entity("CREDIT_CARD", action="hash")
+    .add_entity("EMAIL",       action="warn")
+    .add_entity("TC_ID",       action="hash")
 )
 
 result = guard.scan("""
@@ -199,7 +199,7 @@ naturally with `add_entities()`.
 
 #### Enable everything, then prune
 
-`Entity.All` turns on **every** known entity in one call; `remove_entity()` (and
+`Entity.ALL` turns on **every** known entity in one call; `remove_entity()` (and
 `remove_entities()`) then disables the ones you do not want. This "allow-list by
 exclusion" pattern is often the quickest way to a strict policy:
 
@@ -208,12 +208,12 @@ from ai_guard import AIGuard, Entity
 
 guard = (
     AIGuard(salt="my-secret-salt", use_ner=False)
-    .add_entity(Entity.All, action="hash")   # everything on, hashed
+    .add_entity(Entity.ALL, action="hash")   # everything on, hashed
     .remove_entity(Entity.ORG)               # …except organisation names
     .remove_entities([Entity.UUID, Entity.MAC_ADDRESS])
 )
 
-# remove_entity(Entity.All) disables everything again.
+# remove_entity(Entity.ALL) disables everything again.
 ```
 
 To **change the action** of an entity that is already enabled — without touching
@@ -221,16 +221,26 @@ which layers it runs on — use `change_entity_action()`:
 
 ```python
 guard.change_entity_action(Entity.EMAIL, Action.HASH)      # warn → hash
-guard.change_entity_action(Entity.All, Action.REDACT)      # every enabled entity → redact
+guard.change_entity_action(Entity.ALL, Action.REDACT)      # every enabled entity → redact
 ```
 
 `change_entity_action()` never silently re-enables an entity: changing the action
 of a removed or never-added entity raises `ConfigError` — add it first with
 `add_entity()`.
 
-> Removing an entity that was never enabled is a no-op. Passing a bare string to
-> `add_entities()` / `remove_entities()` (instead of a list) raises `ConfigError` —
-> use the singular `add_entity()` / `remove_entity()` for one entity.
+To **inspect** the current policy at any point:
+
+```python
+guard.enabled_entities()            # {"CREDIT_CARD", "EMAIL", ...} — what's on
+guard.get_entity_action("EMAIL")    # "hash"  (None if the entity is not enabled)
+guard.entity_policy()               # {"CREDIT_CARD": "hash", "EMAIL": "warn", ...}
+```
+
+> Removing an entity that was never enabled is a no-op (an unknown *name* logs a
+> warning, to catch typos). Passing a bare string to `add_entities()` /
+> `remove_entities()` (instead of a list) raises `ConfigError` — use the singular
+> `add_entity()` / `remove_entity()` for one entity. `Entity.All` is a deprecated
+> alias of `Entity.ALL`.
 
 ### Declarative API (YAML)
 

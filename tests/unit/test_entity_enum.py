@@ -1,7 +1,5 @@
 """Tests for the Entity constants and their use in the configuration API."""
 
-import warnings
-
 import pytest
 
 from ai_guard import Action, AIGuard, Entity
@@ -18,9 +16,9 @@ def test_entity_is_str_value():
 
 def test_known_entity_types_derived_from_enum_excluding_all():
     """KNOWN_ENTITY_TYPES is the set of Entity values minus the All sentinel."""
-    assert KNOWN_ENTITY_TYPES == frozenset(e.value for e in Entity if e is not Entity.All)
+    assert KNOWN_ENTITY_TYPES == frozenset(e.value for e in Entity if e is not Entity.ALL)
     assert "__ALL__" not in KNOWN_ENTITY_TYPES
-    assert Entity.All.value not in KNOWN_ENTITY_TYPES
+    assert Entity.ALL.value not in KNOWN_ENTITY_TYPES
 
 
 def test_entity_usable_as_dict_key_like_string():
@@ -65,12 +63,12 @@ def test_invalid_action_still_raises():
 
 
 # ---------------------------------------------------------------------------
-# Entity.All — enable everything
+# Entity.ALL — enable everything
 # ---------------------------------------------------------------------------
 
 
 def test_add_entity_all_enables_every_known_entity():
-    guard = AIGuard(salt="s", use_ner=False).add_entity(Entity.All, action="hash")
+    guard = AIGuard(salt="s", use_ner=False).add_entity(Entity.ALL, action="hash")
     enabled = {name for name, cfg in guard._config["entities"].items() if cfg["enabled"]}
     # Every regex/NER-supported known entity should be enabled. (NER ones too,
     # but their engine-side enable depends on the layer; check the config flag.)
@@ -82,7 +80,7 @@ def test_add_entity_all_enables_every_known_entity():
 def test_add_entity_all_then_remove_prunes_one():
     guard = (
         AIGuard(salt="s", use_ner=False)
-        .add_entity(Entity.All, action="hash")
+        .add_entity(Entity.ALL, action="hash")
         .remove_entity(Entity.EMAIL)
     )
     result = guard.scan("card 4532 0151 1283 0366, mail a@b.com")
@@ -92,7 +90,7 @@ def test_add_entity_all_then_remove_prunes_one():
 
 
 def test_add_entities_accepts_all_sentinel_in_iterable():
-    guard = AIGuard(salt="s", use_ner=False).add_entities([Entity.All], action="redact")
+    guard = AIGuard(salt="s", use_ner=False).add_entities([Entity.ALL], action="redact")
     assert KNOWN_ENTITY_TYPES <= set(guard._config["entities"])
 
 
@@ -125,8 +123,8 @@ def test_remove_entities_disables_many():
 
 
 def test_remove_entity_all_disables_everything():
-    guard = AIGuard(salt="s", use_ner=False).add_entity(Entity.All, action="hash")
-    guard.remove_entity(Entity.All)
+    guard = AIGuard(salt="s", use_ner=False).add_entity(Entity.ALL, action="hash")
+    guard.remove_entity(Entity.ALL)
     result = guard.scan("card 4532 0151 1283 0366, mail a@b.com, tc 12345678950")
     assert result.is_clean
 
@@ -162,8 +160,8 @@ def test_remove_entities_rejects_bare_entity():
 
 def test_set_entity_rejects_all_sentinel_directly():
     guard = AIGuard(salt="s", use_ner=False)
-    with pytest.raises(ConfigError, match="Entity.All cannot be set directly"):
-        guard._set_entity(Entity.All, enabled=True, action="hash", layers=None)
+    with pytest.raises(ConfigError, match="Entity.ALL cannot be set directly"):
+        guard._set_entity(Entity.ALL, enabled=True, action="hash", layers=None)
 
 
 def test_add_entities_rejects_non_iterable():
@@ -210,7 +208,7 @@ def test_invalid_action_unhashable_raises():
 
 def _clean_guard():
     """A guard with no entities enabled (default config cleared)."""
-    return AIGuard(salt="s", use_ner=False).remove_entity(Entity.All)
+    return AIGuard(salt="s", use_ner=False).remove_entity(Entity.ALL)
 
 
 def test_change_action_updates_active_entity():
@@ -254,14 +252,14 @@ def test_change_action_all_changes_every_active_entity():
     guard = _clean_guard().add_entities(["EMAIL", "CREDIT_CARD"], action="warn")
     # warn keeps the card visible
     assert "4532" in guard.scan("card 4532 0151 1283 0366").sanitized_text
-    guard.change_entity_action(Entity.All, Action.HASH)
+    guard.change_entity_action(Entity.ALL, Action.HASH)
     assert "[CREDIT_CARD:" in guard.scan("card 4532 0151 1283 0366").sanitized_text
 
 
 def test_change_action_all_raises_when_nothing_active():
     guard = _clean_guard()
     with pytest.raises(ConfigError, match="no entities are currently enabled"):
-        guard.change_entity_action(Entity.All, "hash")
+        guard.change_entity_action(Entity.ALL, "hash")
 
 
 def test_change_action_on_llm_only_entity():
@@ -273,7 +271,7 @@ def test_change_action_on_llm_only_entity():
 
 
 # ---------------------------------------------------------------------------
-# Deprecated method aliases
+# Removed names
 # ---------------------------------------------------------------------------
 
 
@@ -286,10 +284,90 @@ def test_llmguard_name_is_gone():
         from ai_guard import LLMGuard  # noqa: F401
 
 
-def test_configure_entity_alias_warns_but_works():
+def test_configure_entity_aliases_are_gone():
+    """The deprecated configure_entity/configure_entities methods were removed."""
     guard = AIGuard(salt="s", use_ner=False)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        guard.configure_entity(Entity.EMAIL, action="warn")
-    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
-    assert not guard.scan("mail a@b.com").is_clean
+    assert not hasattr(guard, "configure_entity")
+    assert not hasattr(guard, "configure_entities")
+
+
+# ---------------------------------------------------------------------------
+# Entity.ALL casing + Entity.All alias
+# ---------------------------------------------------------------------------
+
+
+def test_entity_all_alias_resolves_to_all():
+    """Entity.All is a deprecated alias of the canonical Entity.ALL."""
+    assert Entity.All is Entity.ALL
+    assert Entity.ALL.name == "ALL"
+    assert Entity.ALL.value == "__ALL__"
+
+
+def test_entity_all_alias_works_in_api():
+    g1 = AIGuard(salt="s", use_ner=False).add_entity(Entity.All, action="hash")
+    g2 = AIGuard(salt="s", use_ner=False).add_entity(Entity.ALL, action="hash")
+    assert g1.entity_policy() == g2.entity_policy()
+
+
+# ---------------------------------------------------------------------------
+# add_entity has no `enabled` parameter (add == enable)
+# ---------------------------------------------------------------------------
+
+
+def test_add_entity_has_no_enabled_param():
+    guard = AIGuard(salt="s", use_ner=False)
+    with pytest.raises(TypeError):
+        guard.add_entity("EMAIL", enabled=False)  # type: ignore[call-arg]
+
+
+# ---------------------------------------------------------------------------
+# remove_* warns on an unknown (typo) name
+# ---------------------------------------------------------------------------
+
+
+def test_remove_entity_warns_on_unknown_name(caplog):
+    import logging
+
+    guard = AIGuard(salt="s", use_ner=False)
+    with caplog.at_level(logging.WARNING, logger="ai_guard.core.models"):
+        guard.remove_entity("EMIAL")  # typo
+    assert any("Unknown entity type" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Introspection: enabled_entities / get_entity_action / entity_policy
+# ---------------------------------------------------------------------------
+
+
+def test_enabled_entities_reflects_add_and_remove():
+    guard = _clean_guard().add_entities(["EMAIL", "CREDIT_CARD", "IBAN"], action="hash")
+    assert guard.enabled_entities() == {"EMAIL", "CREDIT_CARD", "IBAN"}
+    guard.remove_entity(Entity.IBAN)
+    assert guard.enabled_entities() == {"EMAIL", "CREDIT_CARD"}
+
+
+def test_get_entity_action_returns_action_or_none():
+    guard = _clean_guard().add_entity(Entity.EMAIL, action="redact")
+    assert guard.get_entity_action(Entity.EMAIL) == "redact"
+    assert guard.get_entity_action(Entity.PASSPORT) is None  # not enabled
+    guard.change_entity_action(Entity.EMAIL, Action.HASH)
+    assert guard.get_entity_action("EMAIL") == "hash"
+
+
+def test_get_entity_action_rejects_all():
+    guard = _clean_guard().add_entity(Entity.EMAIL, action="warn")
+    with pytest.raises(ConfigError, match="does not accept Entity.ALL"):
+        guard.get_entity_action(Entity.ALL)
+
+
+def test_get_entity_action_rejects_non_string_type():
+    guard = _clean_guard()
+    with pytest.raises(ConfigError, match="must be a str or Entity"):
+        guard.get_entity_action(123)  # type: ignore[arg-type]
+
+
+def test_entity_policy_maps_enabled_to_action():
+    guard = _clean_guard().add_entities({"EMAIL": "warn", "CREDIT_CARD": "hash"})
+    assert guard.entity_policy() == {"CREDIT_CARD": "hash", "EMAIL": "warn"}
+    guard.remove_entity(Entity.EMAIL)
+    assert guard.entity_policy() == {"CREDIT_CARD": "hash"}

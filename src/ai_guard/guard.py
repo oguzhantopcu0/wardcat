@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -133,8 +132,9 @@ class AIGuard:
 
     Enable everything, then prune::
 
-        guard = AIGuard(salt="...").add_entity(Entity.All, action="hash")
+        guard = AIGuard(salt="...").add_entity(Entity.ALL, action="hash")
         guard.remove_entity(Entity.ORG)
+        guard.entity_policy()   # inspect: {"CREDIT_CARD": "hash", ...}
 
     Declarative API (YAML)::
 
@@ -383,21 +383,20 @@ class AIGuard:
     def add_entity(
         self,
         entity_type: str | Entity,
-        enabled: bool = True,
         action: str | Action = "warn",
         layers: list[str] | None = None,
     ) -> AIGuard:
         """
-        Enable a single entity type (or every type via :attr:`Entity.All`).
+        Enable a single entity type (or every type via :attr:`Entity.ALL`).
 
-        Supports method chaining.
+        Adding an entity always enables it — to turn one off, use
+        :meth:`remove_entity`. Supports method chaining.
 
         :param entity_type: An :class:`~ai_guard.Entity` constant (recommended,
                             e.g. ``Entity.EMAIL``) or its string form (``"EMAIL"``).
-                            Pass :attr:`Entity.All` to enable **every** known
+                            Pass :attr:`Entity.ALL` to enable **every** known
                             entity in one call, then prune with
                             :meth:`remove_entity`.
-        :param enabled:     Include this entity in the scan engine.
         :param action:      An :class:`~ai_guard.Action` constant (e.g. ``Action.HASH``)
                             or its string form: ``"warn"``, ``"hash"``, ``"redact"``, ``"mask"``.
         :param layers:      Which detector layers should look for this entity —
@@ -410,9 +409,9 @@ class AIGuard:
         """
         if self._is_all(entity_type):
             for name in sorted(KNOWN_ENTITY_TYPES):
-                self._set_entity(name, enabled=enabled, action=action, layers=layers)
+                self._set_entity(name, enabled=True, action=action, layers=layers)
         else:
-            self._set_entity(entity_type, enabled=enabled, action=action, layers=layers)
+            self._set_entity(entity_type, enabled=True, action=action, layers=layers)
         self._rebuild()
         return self
 
@@ -420,14 +419,14 @@ class AIGuard:
         self,
         entities,
         *,
-        enabled: bool = True,
         action: str | Action = "warn",
         layers: list[str] | None = None,
     ) -> AIGuard:
         """
         Enable many entity types at once (single rebuild). Supports chaining.
 
-        ``entities`` may be:
+        Like :meth:`add_entity`, every listed entity is enabled; use
+        :meth:`remove_entities` to turn entities off. ``entities`` may be:
 
         * an iterable of names — applied with the given ``action``/``layers``::
 
@@ -439,17 +438,17 @@ class AIGuard:
 
               guard.add_entities({"EMAIL": "warn", "CREDIT_CARD": "hash"})
 
-        * a mapping ``{name: {"action": ..., "layers": ..., "enabled": ...}}``
-          for per-entity control::
+        * a mapping ``{name: {"action": ..., "layers": ...}}`` for per-entity
+          control::
 
               guard.add_entities({
                   "CREDIT_CARD":      "hash",
                   "SPECIAL_CATEGORY": {"action": "redact", "layers": ["llm"]},
               })
 
-        :attr:`Entity.All` may appear as an entry to expand to every known
-        entity. The top-level ``enabled``/``action``/``layers`` act as defaults
-        for any entry that does not specify its own.
+        :attr:`Entity.ALL` may appear as an entry to expand to every known
+        entity. The top-level ``action``/``layers`` act as defaults for any entry
+        that does not specify its own.
 
         :raises ConfigError: if ``entities`` is not a mapping or iterable, or any
                             spec/action/entity is invalid.
@@ -483,12 +482,9 @@ class AIGuard:
                 )
             entity_action = spec.get("action", action)
             entity_layers = spec.get("layers", layers)
-            entity_enabled = spec.get("enabled", enabled)
             names = sorted(KNOWN_ENTITY_TYPES) if self._is_all(name) else [name]
             for n in names:
-                self._set_entity(
-                    n, enabled=entity_enabled, action=entity_action, layers=entity_layers
-                )
+                self._set_entity(n, enabled=True, action=entity_action, layers=entity_layers)
         self._rebuild()
         return self
 
@@ -499,19 +495,20 @@ class AIGuard:
         Pairs with :meth:`add_entity` — a common pattern is to enable everything
         and prune what you do not need::
 
-            guard.add_entity(Entity.All, action="hash").remove_entity(Entity.ORG)
+            guard.add_entity(Entity.ALL, action="hash").remove_entity(Entity.ORG)
 
-        Removing an entity that was never enabled is a no-op. Supports chaining.
+        Removing an entity that was never enabled is a no-op. An unknown entity
+        *name* (likely a typo) logs a warning, like :meth:`add_entity`. Supports
+        chaining.
 
         :raises ConfigError: if ``entity_type`` is not a ``str`` or ``Entity``.
         """
         if self._is_all(entity_type):
-            for name in list(self._config.get("entities", {})):
-                self._disable_entity(name)
-            for name in list(self._config.get("llm_detector", {}).get("entities", {})):
-                self._disable_entity(name)
+            self._disable_all()
         else:
-            self._disable_entity(self._normalize_entity(entity_type))
+            name = self._normalize_entity(entity_type)
+            self._warn_if_unknown(name)
+            self._disable_entity(name)
         self._rebuild()
         return self
 
@@ -519,7 +516,7 @@ class AIGuard:
         """
         Disable many entity types at once (single rebuild). Supports chaining.
 
-        ``entities`` is an iterable of entity names/constants (``Entity.All`` is
+        ``entities`` is an iterable of entity names/constants (``Entity.ALL`` is
         accepted and expands to every enabled entity).
 
         :raises ConfigError: if ``entities`` is not an iterable of entity types.
@@ -539,12 +536,11 @@ class AIGuard:
 
         for entity_type in items:
             if self._is_all(entity_type):
-                for name in list(self._config.get("entities", {})):
-                    self._disable_entity(name)
-                for name in list(self._config.get("llm_detector", {}).get("entities", {})):
-                    self._disable_entity(name)
+                self._disable_all()
             else:
-                self._disable_entity(self._normalize_entity(entity_type))
+                name = self._normalize_entity(entity_type)
+                self._warn_if_unknown(name)
+                self._disable_entity(name)
         self._rebuild()
         return self
 
@@ -558,11 +554,11 @@ class AIGuard:
         added, it raises — enable it first with :meth:`add_entity`. The layers it
         runs on are left unchanged. Supports method chaining.
 
-        :attr:`Entity.All` changes the action of *every* currently-enabled entity.
+        :attr:`Entity.ALL` changes the action of *every* currently-enabled entity.
 
         :raises ConfigError: if ``entity_type`` is not a ``str``/``Entity``, the
                             ``action`` is invalid, or the entity (or, for
-                            ``Entity.All``, *any* entity) is not currently enabled.
+                            ``Entity.ALL``, *any* entity) is not currently enabled.
         """
         action = self._normalize_action(action)
 
@@ -570,7 +566,7 @@ class AIGuard:
             active = self._active_entities()
             if not active:
                 raise ConfigError(
-                    "change_entity_action(Entity.All) failed: no entities are currently "
+                    "change_entity_action(Entity.ALL) failed: no entities are currently "
                     "enabled. Enable some first with add_entity()."
                 )
             for name in sorted(active):
@@ -586,25 +582,53 @@ class AIGuard:
         self._rebuild()
         return self
 
-    # ----- Deprecated aliases (kept for backward compatibility) ---------------
+    # ------------------------------------------------------------------
+    # Introspection (read the current policy)
+    # ------------------------------------------------------------------
 
-    def configure_entity(self, *args: Any, **kwargs: Any) -> AIGuard:
-        """Deprecated alias for :meth:`add_entity`."""
-        warnings.warn(
-            "configure_entity() is deprecated; use add_entity() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.add_entity(*args, **kwargs)
+    def enabled_entities(self) -> set[str]:
+        """Return the set of entity types currently enabled on any detector layer.
 
-    def configure_entities(self, *args: Any, **kwargs: Any) -> AIGuard:
-        """Deprecated alias for :meth:`add_entities`."""
-        warnings.warn(
-            "configure_entities() is deprecated; use add_entities() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.add_entities(*args, **kwargs)
+        ::
+
+            guard.add_entity(Entity.ALL, action="hash").remove_entity(Entity.ORG)
+            "ORG" in guard.enabled_entities()      # False
+        """
+        return self._active_entities()
+
+    def get_entity_action(self, entity_type: str | Entity) -> str | None:
+        """Return the action of a currently-enabled entity, or ``None`` if it is
+        not enabled.
+
+        ::
+
+            guard.get_entity_action(Entity.EMAIL)   # "hash" | "warn" | … | None
+
+        :raises ConfigError: if ``entity_type`` is not a ``str``/``Entity``, or is
+                            :attr:`Entity.ALL` (use :meth:`entity_policy` instead).
+        """
+        if self._is_all(entity_type):
+            raise ConfigError(
+                "get_entity_action() does not accept Entity.ALL — use entity_policy()."
+            )
+        name = self._normalize_entity(entity_type)
+        if not self._is_entity_active(name):
+            return None
+        return self._entity_action(name)
+
+    def entity_policy(self) -> dict[str, str]:
+        """Return a ``{entity_type: action}`` mapping of every enabled entity.
+
+        ::
+
+            guard.entity_policy()   # {"CREDIT_CARD": "hash", "EMAIL": "warn", …}
+        """
+        policy: dict[str, str] = {}
+        for name in sorted(self._active_entities()):
+            action = self._entity_action(name)
+            if action is not None:
+                policy[name] = action
+        return policy
 
     # ------------------------------------------------------------------
     # Internal entity helpers
@@ -612,8 +636,11 @@ class AIGuard:
 
     @staticmethod
     def _is_all(entity_type: object) -> bool:
-        """True if *entity_type* is the :attr:`Entity.All` sentinel."""
-        return entity_type is Entity.All or entity_type == Entity.All.value
+        """True if *entity_type* is the :attr:`Entity.ALL` sentinel.
+
+        (``Entity.All`` is an alias of ``Entity.ALL``, so it is covered too.)
+        """
+        return entity_type is Entity.ALL or entity_type == Entity.ALL.value
 
     @staticmethod
     def _normalize_entity(entity_type: str | Entity) -> str:
@@ -639,6 +666,11 @@ class AIGuard:
                 f"Invalid action {action!r}. Valid values: 'warn', 'hash', 'mask', 'redact'"
             ) from None
 
+    def _warn_if_unknown(self, entity_type: str) -> None:
+        """Log a warning if *entity_type* is neither a known nor a custom entity."""
+        if entity_type not in self._config.get("custom_patterns", {}):
+            warn_unknown_entity(entity_type)
+
     def _is_entity_active(self, entity_type: str) -> bool:
         """True if *entity_type* is currently enabled on any detector layer."""
         ent = self._config.get("entities", {}).get(entity_type)
@@ -646,6 +678,16 @@ class AIGuard:
             return True
         llm = self._config.get("llm_detector", {}).get("entities", {}).get(entity_type)
         return bool(llm and llm.get("enabled"))
+
+    def _entity_action(self, entity_type: str) -> str | None:
+        """Return the configured action for *entity_type*, or None if unset."""
+        ent = self._config.get("entities", {}).get(entity_type)
+        if ent and "action" in ent:
+            return str(ent["action"])
+        llm = self._config.get("llm_detector", {}).get("entities", {}).get(entity_type)
+        if llm and "action" in llm:
+            return str(llm["action"])
+        return None
 
     def _active_entities(self) -> set[str]:
         """The set of entity types currently enabled on any layer."""
@@ -672,6 +714,13 @@ class AIGuard:
         if entity_type in llm_entities:
             llm_entities[entity_type]["enabled"] = False
 
+    def _disable_all(self) -> None:
+        """Disable every configured entity on every layer (no rebuild)."""
+        for name in list(self._config.get("entities", {})):
+            self._disable_entity(name)
+        for name in list(self._config.get("llm_detector", {}).get("entities", {})):
+            self._disable_entity(name)
+
     def _set_entity(
         self,
         entity_type: str | Entity,
@@ -682,18 +731,15 @@ class AIGuard:
     ) -> None:
         """Mutate config for one entity across the chosen layers (no rebuild)."""
         # Normalize the entity type to its canonical string, validating the
-        # argument type. (Entity.All must be expanded by the caller, never reach here.)
+        # argument type. (Entity.ALL must be expanded by the caller, never reach here.)
         if self._is_all(entity_type):
             raise ConfigError(
-                "Entity.All cannot be set directly — it is expanded by add_entity()/"
+                "Entity.ALL cannot be set directly — it is expanded by add_entity()/"
                 "add_entities() into the individual known entity types."
             )
         entity_type = self._normalize_entity(entity_type)
         action = self._normalize_action(action)
-
-        custom_patterns = self._config.get("custom_patterns", {})
-        if entity_type not in custom_patterns:
-            warn_unknown_entity(entity_type)
+        self._warn_if_unknown(entity_type)
 
         if layers is None:
             target = [lyr for lyr, ents in _LAYER_ENTITIES.items() if entity_type in ents]

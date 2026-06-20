@@ -223,7 +223,7 @@ class TestSanitizedIntegrity:
 
     def test_sanitized_text_length_accounts_for_replacements(self, g):
         g2 = AIGuard(use_ner=False)
-        g2.add_entity("EMAIL", enabled=True, action="hash")
+        g2.add_entity("EMAIL", action="hash")
         text = "prefix a@b.com suffix"
         result = g2.scan(text)
         v = next(v for v in result.violations if v.entity_type == "EMAIL")

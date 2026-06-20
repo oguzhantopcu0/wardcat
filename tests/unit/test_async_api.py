@@ -84,20 +84,20 @@ class TestScanAsyncActions:
 
     def test_hash_action_in_async(self):
         guard = AIGuard(use_ner=False, salt="s")
-        guard.add_entity("EMAIL", enabled=True, action="hash")
+        guard.add_entity("EMAIL", action="hash")
         result = asyncio.run(guard.scan_async("a@b.com"))
         assert "a@b.com" not in result.sanitized_text
         assert "[EMAIL:" in result.sanitized_text
 
     def test_redact_action_in_async(self):
         guard = AIGuard(use_ner=False)
-        guard.add_entity("EMAIL", enabled=True, action="redact")
+        guard.add_entity("EMAIL", action="redact")
         result = asyncio.run(guard.scan_async("a@b.com"))
         assert result.sanitized_text == "[EMAIL]"
 
     def test_mask_action_in_async(self):
         guard = AIGuard(use_ner=False)
-        guard.add_entity("EMAIL", enabled=True, action="mask")
+        guard.add_entity("EMAIL", action="mask")
         result = asyncio.run(guard.scan_async("a@b.com"))
         replacement = result.violations[0].replacement
         assert replacement is not None
@@ -105,14 +105,14 @@ class TestScanAsyncActions:
 
     def test_allowlist_in_async(self):
         guard = AIGuard(use_ner=False)
-        guard.add_entity("EMAIL", enabled=True, action="warn")
+        guard.add_entity("EMAIL", action="warn")
         guard.add_allowlist(["a@b.com"])
         result = asyncio.run(guard.scan_async("a@b.com"))
         assert result.is_clean
 
     def test_denylist_in_async(self):
         guard = AIGuard(use_ner=False)
-        guard.add_entity("PERSON", enabled=True, action="warn")
+        guard.add_entity("PERSON", action="warn")
         guard.add_denylist([{"value": "Jane Doe", "entity_type": "PERSON"}])
         result = asyncio.run(guard.scan_async("Hello Jane Doe"))
         assert any(v.entity_type == "PERSON" for v in result.violations)

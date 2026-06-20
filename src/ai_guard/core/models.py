@@ -39,14 +39,17 @@ class Entity(str, Enum):
     ``(str, Enum)``, use ``.value`` to get the canonical string — ``str(Entity.EMAIL)``
     returns ``"Entity.EMAIL"``, not ``"EMAIL"``.
 
-    The special member :attr:`Entity.All` is a sentinel, **not** a real entity
+    The special member :attr:`Entity.ALL` is a sentinel, **not** a real entity
     type: passing it to :meth:`~ai_guard.AIGuard.add_entity` /
     :meth:`~ai_guard.AIGuard.remove_entity` enables/disables every known entity
-    in one call. It is excluded from :data:`KNOWN_ENTITY_TYPES`.
+    in one call. It is excluded from :data:`KNOWN_ENTITY_TYPES`. ``Entity.All``
+    is a deprecated alias of ``Entity.ALL`` kept for backward compatibility.
     """
 
-    All = "__ALL__"
+    ALL = "__ALL__"
     """Sentinel selecting *every* known entity type (not a real entity)."""
+    All = "__ALL__"
+    """Deprecated PascalCase alias of :attr:`ALL`."""
 
     PERSON = "PERSON"
     ORG = "ORG"
@@ -79,8 +82,8 @@ class Entity(str, Enum):
 
 # Known entity types — for typo checking and IDE support.
 # Derived from Entity so the enum is the single source of truth (excluding the
-# Entity.All sentinel): a warning is issued if a type not in this set is configured.
-KNOWN_ENTITY_TYPES: frozenset[str] = frozenset(e.value for e in Entity if e is not Entity.All)
+# Entity.ALL sentinel): a warning is issued if a type not in this set is configured.
+KNOWN_ENTITY_TYPES: frozenset[str] = frozenset(e.value for e in Entity if e is not Entity.ALL)
 
 
 def warn_unknown_entity(entity_type: str) -> None:

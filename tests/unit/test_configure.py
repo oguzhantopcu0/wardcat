@@ -18,13 +18,13 @@ def guard():
 
 def test_add_entity_default_layers_auto_detect(guard):
     """With no layers, an entity goes to every layer that supports it."""
-    guard.add_entity("EMAIL", enabled=True, action="redact")
+    guard.add_entity("EMAIL", action="redact")
     assert guard._config["entities"]["EMAIL"] == {"enabled": True, "action": "redact"}
 
 
 def test_add_entity_llm_only_layer(guard):
     """layers=['llm'] writes to the LLM set, NOT the regex/NER enabled set."""
-    guard.add_entity("SPECIAL_CATEGORY", enabled=True, action="redact", layers=["llm"])
+    guard.add_entity("SPECIAL_CATEGORY", action="redact", layers=["llm"])
     # action recorded so the engine can apply it, but regex/NER enabled is False
     assert guard._config["entities"]["SPECIAL_CATEGORY"] == {
         "enabled": False,
@@ -39,7 +39,7 @@ def test_add_entity_llm_only_layer(guard):
 def test_add_entity_regex_only_layer(guard):
     """layers=['regex'] enables regex but does not touch the LLM set."""
     llm_before = dict(guard._config.get("llm_detector", {}).get("entities", {}))
-    guard.add_entity("EMAIL", enabled=True, action="hash", layers=["regex"])
+    guard.add_entity("EMAIL", action="hash", layers=["regex"])
     assert guard._config["entities"]["EMAIL"] == {"enabled": True, "action": "hash"}
     # LLM set is left exactly as it was — regex-only targeting must not edit it
     assert guard._config.get("llm_detector", {}).get("entities", {}) == llm_before
@@ -60,8 +60,8 @@ def test_add_entity_returns_self_for_chaining(guard):
     assert result is guard
 
 
-def test_add_entity_disable(guard):
-    guard.add_entity("EMAIL", enabled=False)
+def test_remove_entity_disables(guard):
+    guard.remove_entity("EMAIL")
     assert guard._config["entities"]["EMAIL"]["enabled"] is False
 
 
@@ -110,8 +110,8 @@ def test_add_entities_top_level_defaults_apply(guard):
     assert guard._config["entities"]["CREDIT_CARD"]["action"] == "hash"
 
 
-def test_add_entities_enabled_false(guard):
-    guard.add_entities(["EMAIL", "PHONE"], enabled=False)
+def test_remove_entities_disables(guard):
+    guard.remove_entities(["EMAIL", "PHONE"])
     assert guard._config["entities"]["EMAIL"]["enabled"] is False
     assert guard._config["entities"]["PHONE"]["enabled"] is False
 
@@ -142,7 +142,7 @@ def test_add_entities_end_to_end_detection():
 def test_add_entity_llm_only_does_not_enable_regex_scan():
     """An llm-only entity must not be detected by the regex layer."""
     guard = AIGuard(use_ner=False)
-    guard.add_entity("EMAIL", enabled=True, action="redact", layers=["llm"])
+    guard.add_entity("EMAIL", action="redact", layers=["llm"])
     # EMAIL only assigned to llm; regex layer should not flag it
     result = guard.scan("Mail: john@x.com")
     assert "[EMAIL]" not in result.sanitized_text
