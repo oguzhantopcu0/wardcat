@@ -19,7 +19,7 @@ from ai_guard.exceptions import (
     ModelDownloadError,
     UnsupportedLanguageError,
 )
-from ai_guard.guard import AIGuard, LLMGuard
+from ai_guard.guard import AIGuard
 
 try:
     __version__: str = version("ai-guard")
@@ -28,7 +28,6 @@ except PackageNotFoundError:
 
 __all__ = [
     "AIGuard",
-    "LLMGuard",  # deprecated alias for AIGuard
     "ScanResult",
     "Violation",
     "Action",

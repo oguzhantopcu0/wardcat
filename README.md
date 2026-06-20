@@ -96,10 +96,11 @@ uv run python -m ai_guard spacy installed
 
 ## Quick Start
 
-> **Migrating from 0.3.x:** the main class is now `AIGuard` (was `LLMGuard`), and
+> **Migrating from 0.3.x:** the main class is now `AIGuard` (the old `LLMGuard`
+> name has been removed — `from ai_guard import AIGuard`). The methods
 > `configure_entity()` / `configure_entities()` are now `add_entity()` /
-> `add_entities()`. The old names still work as deprecated aliases (they emit a
-> `DeprecationWarning`) and will be removed in a future release.
+> `add_entities()`; the old method names still work as deprecated aliases (they
+> emit a `DeprecationWarning`) and will be removed in a future release.
 
 ### Programmatic API
 

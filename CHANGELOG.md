@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
-- **`LLMGuard` → `AIGuard`:** the main class is renamed. `LLMGuard` remains as a deprecated subclass alias that emits a `DeprecationWarning`; it will be removed in a future release.
-- **`configure_entity()` → `add_entity()`** and **`configure_entities()` → `add_entities()`.** The old names remain as deprecated aliases (with a `DeprecationWarning`) and forward to the new methods.
+- **`LLMGuard` → `AIGuard`:** the main class is renamed and the `LLMGuard` name is **removed** (the guard is not LLM-specific — it is regex/NER/LLM hybrid). Update imports to `from ai_guard import AIGuard`.
+- **`configure_entity()` → `add_entity()`** and **`configure_entities()` → `add_entities()`.** The old method names remain as deprecated aliases (with a `DeprecationWarning`) and forward to the new methods.
 
 ### Added
 

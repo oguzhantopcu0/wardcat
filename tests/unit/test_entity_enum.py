@@ -167,18 +167,17 @@ def test_set_entity_rejects_all_sentinel_directly():
 
 
 # ---------------------------------------------------------------------------
-# Deprecated aliases
+# Deprecated method aliases
 # ---------------------------------------------------------------------------
 
 
-def test_llmguard_alias_warns_but_works():
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        from ai_guard import LLMGuard
+def test_llmguard_name_is_gone():
+    """The old class name is no longer importable."""
+    import ai_guard
 
-        guard = LLMGuard(salt="s", use_ner=False)
-    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
-    assert isinstance(guard, AIGuard)
+    assert not hasattr(ai_guard, "LLMGuard")
+    with pytest.raises(ImportError):
+        from ai_guard import LLMGuard  # noqa: F401
 
 
 def test_configure_entity_alias_warns_but_works():

@@ -811,21 +811,3 @@ class AIGuard:
         return LLMDetector(
             backend=backend, enabled_entities=enabled, timeout=timeout, cache_ttl=cache_ttl
         )
-
-
-class LLMGuard(AIGuard):
-    """Deprecated alias for :class:`AIGuard`.
-
-    Retained for backward compatibility; emits a :class:`DeprecationWarning` on
-    construction. Use :class:`AIGuard` instead — it will be removed in a future
-    release.
-    """
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        warnings.warn(
-            "LLMGuard has been renamed to AIGuard; the LLMGuard alias is deprecated "
-            "and will be removed in a future release.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(*args, **kwargs)
