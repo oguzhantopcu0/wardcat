@@ -18,6 +18,7 @@ from ai_guard.core.models import (
 from ai_guard.detectors.base import BaseDetector
 from ai_guard.detectors.regex_detector import RegexDetector
 from ai_guard.exceptions import ConfigError, UnsupportedLanguageError
+from ai_guard.ner.spacy_catalog import Language
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +124,7 @@ class AIGuard:
         from ai_guard import AIGuard, Entity, Action
 
         guard = (
-            AIGuard(salt=os.environ["LLMGUARD_SALT"])
+            AIGuard(salt=os.environ["AIGUARD_SALT"])
             .add_entity(Entity.EMAIL,       action=Action.HASH)
             .add_entity(Entity.CREDIT_CARD, action=Action.HASH)
             .remove_entity(Entity.ORG)
@@ -143,12 +144,12 @@ class AIGuard:
 
     Environment variables (override YAML and constructor arguments)::
 
-        LLMGUARD_SALT          — hash salt value
-        LLMGUARD_LLM_URL       — Ollama/OpenAI-compat service URL
-        LLMGUARD_LLM_MODEL     — LLM model name
-        LLMGUARD_LLM_API_KEY   — API key (OpenAI-compat)
-        LLMGUARD_LLM_TIMEOUT   — LLM timeout (seconds, default 60)
-        LLMGUARD_SPACY_MODEL   — SpaCy model name
+        AIGUARD_SALT          — hash salt value
+        AIGUARD_LLM_URL       — Ollama/OpenAI-compat service URL
+        AIGUARD_LLM_MODEL     — LLM model name
+        AIGUARD_LLM_API_KEY   — API key (OpenAI-compat)
+        AIGUARD_LLM_TIMEOUT   — LLM timeout (seconds, default 60)
+        AIGUARD_SPACY_MODEL   — SpaCy model name
 
     LLM detector (Ollama)::
 
@@ -159,12 +160,18 @@ class AIGuard:
         )
         result = guard.scan(text)
 
-    NER by language (auto-resolves and downloads the SpaCy model)::
+    NER requires an explicit model — ai-guard ships no default. Choose one in a
+    documented way via ``language=`` (recommended) or ``spacy_model=``::
 
-        guard = AIGuard(language="de", spacy_size="md")     # → de_core_news_md
-        guard = AIGuard(language=["de", "fr"])              # one NER model per language
-        # Supported: en, de, fr, es, it, nl, pt, tr; sizes sm/md/lg/trf.
-        # Selecting a language implies auto-download (spacy_auto_download=False to disable).
+        from ai_guard import AIGuard, Language
+
+        guard = AIGuard(language=Language.DE, spacy_size="md")   # → de_core_news_md
+        guard = AIGuard(language=[Language.DE, Language.FR])     # one model per language
+        guard = AIGuard(spacy_model="en_core_web_sm")           # explicit package name
+        guard = AIGuard(spacy_model=["en_core_web_sm", "de_core_news_sm"])  # multiple
+        # Supported languages: en, de, fr, es, it, nl, pt, tr; sizes sm/md/lg/trf.
+        # A named-but-missing model is auto-downloaded (spacy_auto_download=False to disable).
+        # ``use_ner=True`` without a model (or language) raises ConfigError.
         # For mixed-language text without extra models, use the LLM layer (use_llm=True),
         # whose prompt is multilingual.
     """
@@ -173,9 +180,9 @@ class AIGuard:
         self,
         config_path: str | Path | None = None,
         salt: str = "",
-        use_ner: bool = True,
-        spacy_model: str = "en_core_web_sm",
-        language: str | list[str] | None = None,  # NER: pick model(s) by language code(s)
+        use_ner: bool | None = None,  # None → inherit config (off unless YAML/model says on)
+        spacy_model: str | list[str] | None = None,  # explicit SpaCy model name(s)
+        language: str | Language | list[str | Language] | None = None,  # NER by language
         spacy_size: str = "sm",  # NER: model size tier when language is given (sm/md/lg/trf)
         spacy_auto_download: bool | None = None,  # download the SpaCy model if missing
         use_llm: bool = False,
@@ -196,48 +203,49 @@ class AIGuard:
         # (environment variables were already applied inside load_config)
         if salt:
             self._config["salt"] = salt
-        if not use_ner:
-            self._config["use_ner"] = False
-        if spacy_model != "en_core_web_sm":
-            self._config["spacy_model"] = spacy_model
 
-        # Language selection: resolve one or more supported languages (+ size
-        # tier) to concrete SpaCy models. A list loads one NER model per language
-        # (multilingual NER). Selecting a language implies auto-download unless
-        # the caller explicitly turned it off.
-        if language:
-            from ai_guard.ner.spacy_catalog import (
-                SPACY_CATALOG,
-                get_models_by_language,
-                resolve_model,
-            )
-
-            langs = [language] if isinstance(language, str) else list(language)
-            models: list[str] = []
-            for lang in langs:
-                info = resolve_model(lang.lower(), spacy_size)
-                if info is None:
-                    if get_models_by_language(lang.lower()):
-                        raise UnsupportedLanguageError(
-                            f"No compatible SpaCy model for language {lang!r} "
-                            f"at size {spacy_size!r}. Try a different size (sm/md/lg)."
-                        )
-                    supported = sorted({m.lang_code for m in SPACY_CATALOG})
-                    raise UnsupportedLanguageError(
-                        f"Unsupported language {lang!r}. Supported: {supported}. "
-                        "See: python -m ai_guard spacy list"
-                    )
-                models.append(info.name)
-
-            # Dedupe while preserving order; expose both the canonical list and a
-            # single primary model (back-compat with config["spacy_model"]).
-            models = list(dict.fromkeys(models))
+        # ── NER model selection ────────────────────────────────────────────
+        # ai-guard ships no default SpaCy model: NER requires an explicit choice,
+        # made in a documented way via `language=` (recommended, supports a list
+        # for multilingual NER) or `spacy_model=` (explicit package name(s)).
+        # Specifying either resolves the model(s) and implies NER on (unless the
+        # caller explicitly passed use_ner=False); a named-but-missing model is
+        # auto-downloaded.
+        specified_model = language is not None or spacy_model is not None
+        if language is not None:
+            models = self._resolve_language_models(language, spacy_size)
             self._config["spacy_models"] = models
             self._config["spacy_model"] = models[0]
             if spacy_auto_download is None:
                 spacy_auto_download = True
+        if spacy_model is not None:
+            names = [spacy_model] if isinstance(spacy_model, str) else list(spacy_model)
+            names = list(dict.fromkeys(names))  # dedupe, preserve order
+            if not names:
+                raise ConfigError("spacy_model is empty — pass at least one model name.")
+            self._config["spacy_models"] = names
+            self._config["spacy_model"] = names[0]
+            if spacy_auto_download is None:
+                spacy_auto_download = True
+
+        # Effective NER flag: an explicit constructor value wins; otherwise NER is
+        # on when a model/language was specified, else it inherits the config
+        # (YAML/default, which is off).
+        if use_ner is None:
+            ner_on = specified_model or bool(self._config.get("use_ner", False))
+        else:
+            ner_on = use_ner
+        self._config["use_ner"] = ner_on
         if spacy_auto_download:
             self._config["spacy_auto_download"] = True
+
+        # NER on but no model resolved (constructor or YAML) → hard error.
+        if ner_on and not (self._config.get("spacy_models") or self._config.get("spacy_model")):
+            raise ConfigError(
+                "use_ner=True requires a SpaCy model, but none was given. "
+                "Pass language=... (e.g. Language.EN, or a list for multilingual NER) "
+                "or spacy_model=...; ai-guard ships no default model."
+            )
 
         # LLM detector overrides
         llm_cfg = self._config.setdefault("llm_detector", {})
@@ -273,8 +281,9 @@ class AIGuard:
             )
             if has_hash:
                 logger.warning(
-                    "Hash salt is empty — identical PII values will always produce the same hash. "
-                    "Set the LLMGUARD_SALT environment variable in production."
+                    "No hash salt set — using unsalted hashes (identical PII always yields the "
+                    "same hash, leaving them open to rainbow-table attacks). Pass salt=... or set "
+                    "the AIGUARD_SALT environment variable in production."
                 )
 
         self._rebuild()
@@ -681,6 +690,36 @@ class AIGuard:
         return action
 
     @staticmethod
+    def _resolve_language_models(
+        language: str | Language | list[str | Language], spacy_size: str
+    ) -> list[str]:
+        """Resolve one or more languages (+ size tier) to concrete SpaCy model names."""
+        from ai_guard.ner.spacy_catalog import (
+            SPACY_CATALOG,
+            get_models_by_language,
+            resolve_model,
+        )
+
+        items = [language] if isinstance(language, str) else list(language)
+        models: list[str] = []
+        for lang in items:
+            code = (lang.value if isinstance(lang, Language) else str(lang)).lower()
+            info = resolve_model(code, spacy_size)
+            if info is None:
+                if get_models_by_language(code):
+                    raise UnsupportedLanguageError(
+                        f"No compatible SpaCy model for language {code!r} "
+                        f"at size {spacy_size!r}. Try a different size (sm/md/lg)."
+                    )
+                supported = sorted({m.lang_code for m in SPACY_CATALOG})
+                raise UnsupportedLanguageError(
+                    f"Unsupported language {code!r}. Supported: {supported}. "
+                    "See: python -m ai_guard spacy list"
+                )
+            models.append(info.name)
+        return list(dict.fromkeys(models))  # dedupe, preserve order
+
+    @staticmethod
     def _normalize_action(action: str | Action) -> str:
         """Validate and coerce an Action/str to its canonical string value."""
         # ValueError: unknown string value; TypeError: unhashable type (e.g. list).
@@ -865,9 +904,9 @@ class AIGuard:
         if self._config.get("use_ner", True):
             enabled_ner = {e for e in _NER_ENTITIES if entity_cfg.get(e, {}).get("enabled", True)}
             if enabled_ner:
-                models = self._config.get("spacy_models") or [
-                    self._config.get("spacy_model", "en_core_web_sm")
-                ]
+                models = self._config.get("spacy_models") or (
+                    [self._config["spacy_model"]] if self._config.get("spacy_model") else []
+                )
                 auto_download = self._config.get("spacy_auto_download", False)
                 loaded: set[str] = set()
                 for model in models:

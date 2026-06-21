@@ -8,6 +8,31 @@ Model names are the official SpaCy package names passed to ``python -m spacy dow
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
+
+
+class Language(str, Enum):
+    """Supported NER languages, as constants — for documented, typo-proof selection.
+
+    Pass these to ``AIGuard(language=...)`` instead of bare ISO codes::
+
+        from ai_guard import AIGuard, Language
+
+        AIGuard(language=Language.EN)                 # one language
+        AIGuard(language=[Language.EN, Language.DE])  # multilingual NER
+
+    Each member *is* its ISO 639-1 code (``Language.EN == "en"``), so the plain
+    string form is still accepted.
+    """
+
+    EN = "en"
+    DE = "de"
+    FR = "fr"
+    ES = "es"
+    IT = "it"
+    NL = "nl"
+    PT = "pt"
+    TR = "tr"
 
 
 @dataclass(frozen=True)

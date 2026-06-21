@@ -14,12 +14,13 @@
 # Üretim ortamında ortam değişkeninden okuyun, buraya yazmayın.
 salt: ""
 
-# SpaCy modelini değiştirmek için:
-# spacy_model: "tr_core_news_sm"   # Türkçe model
-spacy_model: "en_core_web_sm"
-
-# NER'ı tamamen kapatmak (yalnızca regex) için:
-use_ner: true
+# NER varsayılan olarak KAPALIDIR. Açmak için bir model/dil belirtmelisiniz —
+# kod tarafında AIGuard(language=Language.EN) ya da AIGuard(spacy_model="en_core_web_sm"),
+# veya bu dosyada hem use_ner: true hem de bir spacy_model verin:
+# use_ner: true
+# spacy_model: "en_core_web_sm"   # tek model
+# spacy_models: ["en_core_web_sm", "de_core_news_sm"]   # çoklu (multilingual)
+use_ner: false
 
 entities:
   # ── Regex tabanlı ──────────────────────────────────────────

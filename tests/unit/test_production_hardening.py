@@ -223,32 +223,32 @@ class TestScanBatchIsolation:
 
 class TestEnvVarConfig:
     def test_llmguard_salt_from_env(self):
-        with patch.dict(os.environ, {"LLMGUARD_SALT": "env-test-salt"}):
+        with patch.dict(os.environ, {"AIGUARD_SALT": "env-test-salt"}):
             cfg = load_config()
         assert cfg["salt"] == "env-test-salt"
 
     def test_llmguard_llm_url_from_env(self):
-        with patch.dict(os.environ, {"LLMGUARD_LLM_URL": "http://remote:11434"}):
+        with patch.dict(os.environ, {"AIGUARD_LLM_URL": "http://remote:11434"}):
             cfg = load_config()
         assert cfg["llm_detector"]["base_url"] == "http://remote:11434"
 
     def test_llmguard_llm_model_from_env(self):
-        with patch.dict(os.environ, {"LLMGUARD_LLM_MODEL": "mistral:7b"}):
+        with patch.dict(os.environ, {"AIGUARD_LLM_MODEL": "mistral:7b"}):
             cfg = load_config()
         assert cfg["llm_detector"]["model"] == "mistral:7b"
 
     def test_llmguard_spacy_model_from_env(self):
-        with patch.dict(os.environ, {"LLMGUARD_SPACY_MODEL": "tr_core_news_sm"}):
+        with patch.dict(os.environ, {"AIGUARD_SPACY_MODEL": "tr_core_news_sm"}):
             cfg = load_config()
         assert cfg["spacy_model"] == "tr_core_news_sm"
 
     def test_llmguard_timeout_from_env(self):
-        with patch.dict(os.environ, {"LLMGUARD_LLM_TIMEOUT": "120"}):
+        with patch.dict(os.environ, {"AIGUARD_LLM_TIMEOUT": "120"}):
             cfg = load_config()
         assert cfg["llm_detector"]["timeout"] == 120
 
     def test_invalid_timeout_env_ignored(self, caplog):
-        with patch.dict(os.environ, {"LLMGUARD_LLM_TIMEOUT": "abc"}):
+        with patch.dict(os.environ, {"AIGUARD_LLM_TIMEOUT": "abc"}):
             with caplog.at_level(logging.WARNING, logger="ai_guard.config.loader"):
                 cfg = load_config()
         # Invalid value is ignored, default is preserved
@@ -258,7 +258,7 @@ class TestEnvVarConfig:
         """Environment variable should override the YAML value."""
         yaml_file = tmp_path / "cfg.yaml"
         yaml_file.write_text("salt: yaml-salt\n")
-        with patch.dict(os.environ, {"LLMGUARD_SALT": "env-salt"}):
+        with patch.dict(os.environ, {"AIGUARD_SALT": "env-salt"}):
             cfg = load_config(yaml_file)
         assert cfg["salt"] == "env-salt"
 
@@ -333,12 +333,12 @@ class TestSaltWarning:
     def test_empty_salt_with_hash_action_logs_warning(self, caplog):
         with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
             AIGuard(use_ner=False, salt="")
-        assert "LLMGUARD_SALT" in caplog.text
+        assert "AIGUARD_SALT" in caplog.text
 
     def test_nonempty_salt_no_warning(self, caplog):
         with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
             AIGuard(use_ner=False, salt="my-secret-salt")
-        assert "LLMGUARD_SALT" not in caplog.text
+        assert "AIGUARD_SALT" not in caplog.text
 
 
 # ── CLI Encoding Error Handling ───────────────────────────────────────────────

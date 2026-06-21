@@ -275,7 +275,7 @@ class TestModelFallback:
     def test_fallback_logged_when_model_not_installed(self, caplog):
         """Requesting a non-installed model must log a WARNING with fallback info."""
         with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
-            AIGuard(use_ner=True, spacy_model="xx_fake_model_xyz")
+            AIGuard(use_ner=True, spacy_model="xx_fake_model_xyz", spacy_auto_download=False)
         # Either fallback warning OR "not installed" warning should appear
         assert any(
             "falling back" in r.message.lower() or "not installed" in r.message.lower()
@@ -339,7 +339,9 @@ class TestNERErrorHandling:
         import logging
 
         with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
-            guard = AIGuard(use_ner=True, spacy_model="nonexistent_model_xyz")
+            guard = AIGuard(
+                use_ner=True, spacy_model="nonexistent_model_xyz", spacy_auto_download=False
+            )
 
         assert any(
             "NER" in r.message or "could not be loaded" in r.message or "not installed" in r.message

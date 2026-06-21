@@ -15,11 +15,12 @@ logger = logging.getLogger(__name__)
 
 # Library-internal default configuration.
 # Values from YAML override these (deep-merge).
-# Environment variables (LLMGUARD_*) override everything.
+# Environment variables (AIGUARD_*) override everything.
 DEFAULT_CONFIG: dict[str, Any] = {
     "salt": "",
-    "spacy_model": "en_core_web_sm",
-    "use_ner": True,
+    # NER is off by default and ships no default model — enable it explicitly via
+    # AIGuard(language=...) / AIGuard(spacy_model=...) or a YAML use_ner + spacy_model.
+    "use_ner": False,
     "scan_batch_workers": 4,  # thread pool size for scan_batch()
     "max_text_bytes": 500_000,  # maximum input size in bytes
     "custom_patterns": {},  # user-defined regex patterns
@@ -100,12 +101,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 # Supported environment variables
 _ENV_VARS = {
-    "LLMGUARD_SALT": ("salt",),
-    "LLMGUARD_SPACY_MODEL": ("spacy_model",),
-    "LLMGUARD_LLM_URL": ("llm_detector", "base_url"),
-    "LLMGUARD_LLM_MODEL": ("llm_detector", "model"),
-    "LLMGUARD_LLM_API_KEY": ("llm_detector", "api_key"),
-    "LLMGUARD_LLM_TIMEOUT": ("llm_detector", "timeout"),
+    "AIGUARD_SALT": ("salt",),
+    "AIGUARD_SPACY_MODEL": ("spacy_model",),
+    "AIGUARD_LLM_URL": ("llm_detector", "base_url"),
+    "AIGUARD_LLM_MODEL": ("llm_detector", "model"),
+    "AIGUARD_LLM_API_KEY": ("llm_detector", "api_key"),
+    "AIGUARD_LLM_TIMEOUT": ("llm_detector", "timeout"),
 }
 
 # Valid action values
@@ -157,7 +158,7 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
     Load configuration and apply environment variables.
 
     Priority order (highest to lowest):
-    1. Environment variables (LLMGUARD_*)
+    1. Environment variables (AIGUARD_*)
     2. YAML file (if path is provided)
     3. DEFAULT_CONFIG
 
@@ -323,7 +324,7 @@ def validate_config(config: dict[str, Any]) -> None:
 
 def _apply_env_overrides(config: dict[str, Any]) -> None:
     """
-    Apply LLMGUARD_* environment variables to the config.
+    Apply AIGUARD_* environment variables to the config.
     When an environment variable is present, it always overrides the YAML/default value.
     """
     for env_var, key_path in _ENV_VARS.items():
@@ -337,7 +338,7 @@ def _apply_env_overrides(config: dict[str, Any]) -> None:
             try:
                 value = int(raw)
             except ValueError:
-                logger.warning("LLMGUARD_LLM_TIMEOUT has invalid value %r — ignored.", raw)
+                logger.warning("AIGUARD_LLM_TIMEOUT has invalid value %r — ignored.", raw)
                 continue
 
         # Follow nested key path

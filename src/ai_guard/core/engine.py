@@ -118,7 +118,7 @@ class DetectionEngine:
         if not self.salt:
             logger.debug(
                 "Hash salt is empty — identical values will produce the same hash. "
-                "Set the LLMGUARD_SALT environment variable in production."
+                "Set the AIGUARD_SALT environment variable in production."
             )
 
     # ------------------------------------------------------------------

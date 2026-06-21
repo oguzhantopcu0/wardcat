@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`configure_entity()` → `add_entity()`** and **`configure_entities()` → `add_entities()`.** The old method names were **removed** (no aliases).
 - **`add_entity()` / `add_entities()` no longer take an `enabled` argument.** Adding an entity always enables it; use `remove_entity()` / `remove_entities()` to turn entities off. This removes the contradictory `add_entity(..., enabled=False)` form.
 - **Default action is now `hash` (was `warn`).** Calling `add_entity()` / `add_entities()` without an `action` enables the entity with `action="hash"` (the safest default) and logs a warning; pass `action=...` explicitly to silence it.
+- **NER is off by default and ships no default model.** `use_ner` now defaults to off, and the old `spacy_model="en_core_web_sm"` default is gone (constructor and `default.yaml`). Enable NER explicitly with `language=...` (recommended) or `spacy_model=...`; `use_ner=True` without a model raises `ConfigError`. A named-but-missing model is auto-downloaded.
+- **Environment variables renamed `LLMGUARD_*` → `AIGUARD_*`** (`AIGUARD_SALT`, `AIGUARD_LLM_URL`, `AIGUARD_LLM_MODEL`, `AIGUARD_LLM_API_KEY`, `AIGUARD_LLM_TIMEOUT`, `AIGUARD_SPACY_MODEL`).
 
 ### Added
 
@@ -29,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`remove_entity()` / `remove_entities()`:** disable one or many entity types (across all detector layers). `remove_entity(Entity.ALL)` disables everything. The natural pattern is "enable all, then prune": `guard.add_entity(Entity.ALL, action="hash").remove_entity(Entity.ORG)`. Removing an entity that was never enabled is a no-op; an unknown *name* logs a warning (like `add_entity`) to catch typos.
 - **`change_entity_action()`:** retarget the action of an entity that is **currently enabled** without changing its layers — `guard.change_entity_action(Entity.EMAIL, Action.HASH)`. It refuses to silently re-enable: changing the action of a removed or never-added entity raises `ConfigError` (enable it first with `add_entity()`). `change_entity_action(Entity.ALL, ...)` changes the action of every currently-enabled entity.
 - **Introspection:** `enabled_entities()` returns the set of currently-enabled entity types; `get_entity_action(entity)` returns an entity's action (or `None` if it is not enabled); `entity_policy()` returns the full `{entity: action}` mapping. This rounds out the write API (add/remove/change) with a read API.
+- **`Language` constants:** a new `Language` enum (`Language.EN`, `DE`, `FR`, `ES`, `IT`, `NL`, `PT`, `TR`) for documented, typo-proof NER language selection — `AIGuard(language=Language.DE)` or a list for multilingual NER. Plain ISO codes are still accepted.
+- **Multiple explicit models:** `spacy_model=` now accepts a list, e.g. `spacy_model=["en_core_web_sm", "de_core_news_sm"]`.
+- **Salt:** when no salt is set and a `hash` action is in play, ai-guard logs a clear warning (rainbow-table risk) and proceeds with unsalted hashes; set `salt=...` or `AIGUARD_SALT`.
 - `Entity` and `Action` are first-class, type-hinted arguments (`entity_type: str | Entity`, `action: str | Action`). Static type checkers flag an invalid action or entity at edit time instead of at runtime.
 
 ### Changed

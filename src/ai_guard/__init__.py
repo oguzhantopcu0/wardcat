@@ -20,6 +20,7 @@ from ai_guard.exceptions import (
     UnsupportedLanguageError,
 )
 from ai_guard.guard import AIGuard
+from ai_guard.ner.spacy_catalog import Language
 
 try:
     __version__: str = version("ai-guard")
@@ -32,6 +33,7 @@ __all__ = [
     "Violation",
     "Action",
     "Entity",
+    "Language",
     "KNOWN_ENTITY_TYPES",
     "__version__",
     "redacted",

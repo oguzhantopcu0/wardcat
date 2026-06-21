@@ -11,10 +11,12 @@
 `ai-guard` scans text for personally identifiable information (PII) before it reaches an LLM, and either warns about or replaces the sensitive data with salted SHA-256 hashes. It supports Turkish, English, German, and French out of the box.
 
 ```python
+import os
 from ai_guard import AIGuard
 
+# Read the salt from the environment — never hard-code it (see "Salt" below).
 guard = (
-    AIGuard(salt="my-secret-salt")
+    AIGuard(salt=os.environ.get("AIGUARD_SALT", ""))
     .add_entity("CREDIT_CARD", action="hash")
     .add_entity("EMAIL",       action="warn")
     .add_entity("TC_ID",       action="hash")
@@ -254,8 +256,9 @@ result = guard.scan(text)
 ```yaml
 # config/my_policy.yaml
 salt: ""          # read from env in production
-spacy_model: "en_core_web_sm"
-use_ner: true
+use_ner: false   # NER is off by default; set true AND provide a model below
+# spacy_model: "en_core_web_sm"      # one model
+# spacy_models: ["en_core_web_sm", "de_core_news_sm"]   # or several (multilingual)
 
 entities:
   CREDIT_CARD: { enabled: true,  action: hash }
@@ -479,20 +482,24 @@ ai-guard models pull llama3.1:8b
 | `ORG` | `warn` | Organization / company names |
 | `ADDRESS` | `warn` | Location entities (complements regex) |
 
-> **Language & NER models:** the regex and LLM layers are multilingual by design. The SpaCy layer detects names with the model you load — set `spacy_model` to match your text (`en_core_web_sm`, `de_core_news_sm`, `fr_core_news_sm`, `tr_core_news_md`, …). Running, say, the Turkish model on German text produces noisy results, so pick the model per language (or rely on the LLM layer for cross-language names). A multilingual gazetteer filters out job titles, HR terms, and abbreviations (EN/DE/FR/TR) that NER models commonly mislabel.
+> **NER requires an explicit model — there is no default.** NER is **off by default**; `AIGuard(use_ner=True)` without a model (or language) raises `ConfigError`. Choose a model in a documented way via `language=` (recommended) or `spacy_model=`. Running, say, the Turkish model on German text produces noisy results, so pick the model per language (or rely on the LLM layer for cross-language names). A multilingual gazetteer filters out job titles, HR terms, and abbreviations (EN/DE/FR/TR) that NER models commonly mislabel.
 
-**Pick a language, not a model name.** Instead of remembering exact SpaCy package names, pass a language code and (optionally) a size tier — ai-guard resolves the right model from its catalog and **downloads it automatically if it is missing**:
+**Pick a language, not a model name.** Use the `Language` constants (or their ISO codes) and an optional size tier — ai-guard resolves the right model from its catalog and **downloads it automatically if it is missing**:
 
 ```python
-from ai_guard import AIGuard
+from ai_guard import AIGuard, Language
 
-# Selecting a language implies auto-download (turn off with spacy_auto_download=False)
-guard = AIGuard(language="de")                 # → de_core_news_sm
-guard = AIGuard(language="fr", spacy_size="md") # → fr_core_news_md (sm/md/lg/trf)
-guard = AIGuard(language="tr", spacy_size="lg") # → tr_core_news_lg
+# Selecting a language turns NER on and implies auto-download (off with spacy_auto_download=False)
+guard = AIGuard(language=Language.DE)                  # → de_core_news_sm
+guard = AIGuard(language=Language.FR, spacy_size="md") # → fr_core_news_md (sm/md/lg/trf)
+guard = AIGuard(language=Language.TR, spacy_size="lg") # → tr_core_news_lg
+
+# Or name the SpaCy package(s) explicitly — one or several:
+guard = AIGuard(spacy_model="en_core_web_sm")
+guard = AIGuard(spacy_model=["en_core_web_sm", "de_core_news_sm"])
 ```
 
-Supported languages: `en`, `de`, `fr`, `es`, `it`, `nl`, `pt`, `tr`. If the requested size is unavailable for a language, the recommended model is used. The same works from the CLI:
+Supported languages: `Language.EN`, `DE`, `FR`, `ES`, `IT`, `NL`, `PT`, `TR` (plain ISO codes like `"de"` are also accepted). If the requested size is unavailable for a language, the recommended model is used. The same works from the CLI:
 
 ```bash
 ai-guard scan --lang de --spacy-size md --spacy-auto-download --text "..."
@@ -511,7 +518,8 @@ For text that mixes several languages you have two options:
 2. **Multiple SpaCy models.** Pass a list of languages — ai-guard loads one NER model per language and the engine merges their results. Each model adds RAM and roughly multiplies NER scan time, so this is opt-in:
 
    ```python
-   guard = AIGuard(language=["en", "de", "fr"])  # 3 NER models, auto-downloaded if missing
+   from ai_guard import AIGuard, Language
+   guard = AIGuard(language=[Language.EN, Language.DE, Language.FR])  # 3 NER models, auto-downloaded
    ```
 
    This is **explicit** — you list the languages; ai-guard does not guess the language of the input. The regex layer is multilingual regardless of these choices.
@@ -579,7 +587,7 @@ Salt prevents rainbow table attacks. Set it via environment variable in producti
 
 ```python
 import os
-guard = AIGuard(salt=os.environ["LLMGUARD_SALT"])
+guard = AIGuard(salt=os.environ["AIGUARD_SALT"])
 ```
 
 > Never hardcode the salt in source code or config files.
@@ -608,12 +616,12 @@ Inputs exceeding **500 KB** raise a `ValueError`. Split large documents into sma
 
 | Variable | Description |
 |---|---|
-| `LLMGUARD_SALT` | Hash salt |
-| `LLMGUARD_LLM_URL` | LLM service base URL |
-| `LLMGUARD_LLM_MODEL` | LLM model name |
-| `LLMGUARD_LLM_API_KEY` | API key for OpenAI-compatible backends |
-| `LLMGUARD_LLM_TIMEOUT` | LLM request timeout in seconds |
-| `LLMGUARD_SPACY_MODEL` | SpaCy model name |
+| `AIGUARD_SALT` | Hash salt |
+| `AIGUARD_LLM_URL` | LLM service base URL |
+| `AIGUARD_LLM_MODEL` | LLM model name |
+| `AIGUARD_LLM_API_KEY` | API key for OpenAI-compatible backends |
+| `AIGUARD_LLM_TIMEOUT` | LLM request timeout in seconds |
+| `AIGUARD_SPACY_MODEL` | SpaCy model name |
 
 ---
 
