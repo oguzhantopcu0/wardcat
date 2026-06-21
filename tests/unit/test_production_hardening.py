@@ -28,6 +28,7 @@ from ai_guard import AIGuard, __version__
 from ai_guard.config.loader import load_config, validate_config
 from ai_guard.core.models import KNOWN_ENTITY_TYPES, warn_unknown_entity
 from ai_guard.detectors.regex_detector import RegexDetector
+from tests.conftest import make_legacy_guard
 
 # ── __version__ ───────────────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ class TestReDoS:
 
 class TestLargeInput:
     def _guard(self):
-        return AIGuard(use_ner=False)
+        return make_legacy_guard(use_ner=False)
 
     def test_100kb_clean_text(self):
         """100 KB of clean text should be processable."""
@@ -191,7 +192,7 @@ class TestScanBatchIsolation:
         """
         Even if an unexpected error occurs in one item, the others should be scanned successfully.
         """
-        guard = AIGuard(use_ner=False)
+        guard = make_legacy_guard(use_ner=False)
 
         original_scan = guard._engine.scan
 
@@ -325,7 +326,7 @@ class TestEntityTypeWarning:
 class TestSaltWarning:
     def test_empty_salt_with_hash_action_logs_warning(self, caplog):
         with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
-            AIGuard(use_ner=False, salt="")
+            make_legacy_guard(use_ner=False, salt="")
         assert "AIGUARD_SALT" in caplog.text
 
     def test_nonempty_salt_no_warning(self, caplog):
@@ -390,7 +391,7 @@ class TestLogging:
         from ai_guard.core.engine import DetectionEngine
 
         cfg = load_config()
-        cfg["entities"]["EMAIL"]["enabled"] = True
+        cfg.setdefault("entities", {})["EMAIL"] = {"enabled": True, "action": "warn"}
         from ai_guard.detectors.regex_detector import RegexDetector
 
         engine = DetectionEngine(cfg, [RegexDetector({"EMAIL"})])

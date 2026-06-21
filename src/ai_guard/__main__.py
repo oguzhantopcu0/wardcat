@@ -219,10 +219,13 @@ def _resolve_llm_url(args_url: str) -> str:
 def _make_guard(args: argparse.Namespace):
     from ai_guard import AIGuard
 
+    # The CLI is an application: with no --config it uses the bundled default
+    # policy (a sensible "detect common PII" preset), unlike the library which
+    # starts empty. use_ner stays unset unless --no-ner / a model is given.
     return AIGuard(
-        config_path=args.config,
+        config_path=args.config or "default",
         salt=args.salt,
-        use_ner=not args.no_ner,
+        use_ner=False if args.no_ner else None,
         spacy_model=args.model,
         language=getattr(args, "lang", None),
         spacy_size=getattr(args, "spacy_size", "sm"),

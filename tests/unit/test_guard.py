@@ -16,7 +16,7 @@ def test_clean_text_returns_no_violations(guard):
 
 
 def test_email_detected(guard):
-    result = guard.scan("Bana user@example.com adresinden ulaşabilirsin.")
+    result = guard.add_entity("EMAIL").scan("Bana user@example.com adresinden ulaşabilirsin.")
     types = [v.entity_type for v in result.violations]
     assert "EMAIL" in types
 

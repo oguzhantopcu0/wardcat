@@ -44,6 +44,7 @@ def _guard_with_llm(response: str, entities: set[str] | None = None) -> AIGuard:
         "ADDRESS",
         "CUSTOM_SECRET",
     }
+    guard.add_entities(list(enabled), action="warn")  # enable regex/NER layers too
     llm_det = LLMDetector(
         backend=_mock_backend(response),
         enabled_entities=enabled,
@@ -177,7 +178,7 @@ class TestLLMFaultTolerance:
         failing_backend.complete.side_effect = ConnectionError("Ollama çevrimdışı")
         failing_backend.complete_messages.side_effect = ConnectionError("Ollama çevrimdışı")
 
-        guard = AIGuard(use_ner=False)
+        guard = AIGuard(use_ner=False).add_entity("CREDIT_CARD", "warn")
         llm_det = LLMDetector(backend=failing_backend, enabled_entities={"PERSON"})
         guard._detectors.append(llm_det)
         from ai_guard.core.engine import DetectionEngine

@@ -653,7 +653,7 @@ class TestVatNumber:
     def test_vat_in_guard(self):
         from ai_guard import AIGuard
 
-        guard = AIGuard(use_ner=False)
+        guard = AIGuard(use_ner=False).add_entity("VAT_NUMBER", "warn")
         result = guard.scan("Firma USt-IdNr DE123456789 ile kayıtlı.")
         assert any(v.entity_type == "VAT_NUMBER" for v in result.violations)
 

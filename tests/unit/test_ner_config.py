@@ -129,9 +129,7 @@ def test_backend_string_and_enum_equivalent():
 
     g_enum = AIGuard(salt="s", use_llm=True, llm_backend=Backend.TRANSFORMERS, llm_model="x")
     g_str = AIGuard(salt="s", use_llm=True, llm_backend="transformers", llm_model="x")
-    assert (
-        g_enum._config["llm_detector"]["backend"] == g_str._config["llm_detector"]["backend"]
-    )
+    assert g_enum._config["llm_detector"]["backend"] == g_str._config["llm_detector"]["backend"]
 
 
 def test_invalid_backend_raises():
@@ -178,7 +176,8 @@ def test_builders_chain_back_to_back():
 
     guard = (
         AIGuard(salt="s")
-        .add_entity(Entity.EMAIL, "hash")
+        .add_entity(Entity.EMAIL, "hash")  # regex layer
+        .add_entity(Entity.PERSON, "hash")  # NER layer (NER needs an NER entity on)
         .with_ner(language=Language.EN)
         .with_llm(backend=Backend.OLLAMA, model="llama3.2")
     )

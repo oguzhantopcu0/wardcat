@@ -1,8 +1,8 @@
-from ai_guard import AIGuard
+from ai_guard import AIGuard, Entity
 
 
 def guard():
-    return AIGuard(use_ner=False)
+    return AIGuard(use_ner=False).add_entity(Entity.ALL, action="warn")
 
 
 def test_batch_returns_correct_count():

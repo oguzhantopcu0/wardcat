@@ -127,8 +127,8 @@ class TestEntityGroupsWithGuard:
         assert not result.is_clean
 
     def test_configure_network_group(self):
-        from ai_guard import AIGuard
+        from ai_guard import AIGuard, network_entities
 
-        guard = AIGuard(use_ner=False)
+        guard = AIGuard(use_ner=False).add_entities(network_entities())
         result = guard.scan("Server IP: 192.168.1.100")
         assert any(v.entity_type == "IP_ADDRESS" for v in result.violations)

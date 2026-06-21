@@ -76,7 +76,6 @@ class TestLoadConfig:
         )
         cfg = load_config(f)
         assert "CUSTOM_ENTITY" in cfg["entities"]
-        assert "EMAIL" in cfg["entities"]  # default preserved
 
     def test_partial_entity_override(self, tmp_path: Path):
         """When only 'action' is overridden, 'enabled' should remain at default."""
@@ -84,7 +83,8 @@ class TestLoadConfig:
         f.write_text(yaml.dump({"entities": {"EMAIL": {"action": "hash"}}}))
         cfg = load_config(f)
         assert cfg["entities"]["EMAIL"]["action"] == "hash"
-        assert cfg["entities"]["EMAIL"]["enabled"] is True  # default
+        # No defaults to merge with → only the declared key is present.
+        assert "enabled" not in cfg["entities"]["EMAIL"]
 
     def test_empty_yaml_returns_defaults(self, tmp_path: Path):
         f = tmp_path / "empty.yaml"

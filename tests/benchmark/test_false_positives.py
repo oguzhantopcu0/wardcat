@@ -209,7 +209,7 @@ class TestScanBatchWorkersConfig:
         assert cfg["scan_batch_workers"] == 4
 
     def test_explicit_max_workers_override(self):
-        guard = AIGuard(use_ner=False)
+        guard = AIGuard(use_ner=False).add_entity("EMAIL", "warn")
         texts = ["a@b.com"] * 8
         results = guard.scan_batch(texts, max_workers=2)
         assert len(results) == 8

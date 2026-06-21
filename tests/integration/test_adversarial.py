@@ -11,11 +11,12 @@ from __future__ import annotations
 import pytest
 
 from ai_guard import AIGuard
+from tests.conftest import make_legacy_guard
 
 
 @pytest.fixture
 def g():
-    return AIGuard(use_ner=False)
+    return make_legacy_guard(use_ner=False)
 
 
 # ══════════════════════════════════════════════════════════════════════════

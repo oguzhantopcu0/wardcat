@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- **Detection is opt-in: a bare `AIGuard()` starts empty.** Previously every regex/NER entity was on by default; now nothing is enabled until you `add_entity()` / `add_entities()`. Enable everything with `add_entity(Entity.ALL, action=...)`. (The `ai-guard` CLI keeps a sensible "detect common PII" default policy, since it is an application.) The unsalted-hash warning now fires from the first rebuild that activates a `hash` action, not only at construction.
 - **`LLMGuard` → `AIGuard`:** the main class is renamed and the `LLMGuard` name is **removed** (the guard is not LLM-specific — it is regex/NER/LLM hybrid). Update imports to `from ai_guard import AIGuard`.
 - **`configure_entity()` → `add_entity()`** and **`configure_entities()` → `add_entities()`.** The old method names were **removed** (no aliases).
 - **`add_entity()` / `add_entities()` no longer take an `enabled` argument.** Adding an entity always enables it; use `remove_entity()` / `remove_entities()` to turn entities off. This removes the contradictory `add_entity(..., enabled=False)` form.

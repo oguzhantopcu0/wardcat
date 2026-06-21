@@ -47,7 +47,9 @@ def _originals(result) -> list[str]:
 
 
 def _guard(**kw) -> AIGuard:
-    return AIGuard(use_ner=False, **kw)
+    from tests.conftest import make_legacy_guard
+
+    return make_legacy_guard(use_ner=False, **kw)
 
 
 # ── S01: Realistic customer support prompt ───────────────────────────────────

@@ -87,7 +87,7 @@ class TestGuardLanguageSelection:
 
         monkeypatch.setattr(downloader, "ensure_model", fake_ensure)
         # use_ner True triggers the NER branch; ensure_model is called there
-        AIGuard(language="de", spacy_size="md", use_ner=True)
+        AIGuard(language="de", spacy_size="md", use_ner=True).add_entity("PERSON")
         assert seen["model"] == "de_core_news_md"
         assert seen["auto"] is True
 

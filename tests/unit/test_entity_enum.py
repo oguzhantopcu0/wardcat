@@ -301,7 +301,11 @@ def test_change_action_all_raises_when_nothing_active():
 
 
 def test_change_action_on_llm_only_entity():
-    guard = _clean_guard().add_entity(Entity.SPECIAL_CATEGORY, action="redact", layers=["llm"])
+    guard = (
+        AIGuard(salt="s", use_ner=False, use_llm=True, llm_model="x")
+        .remove_entity(Entity.ALL)
+        .add_entity(Entity.SPECIAL_CATEGORY, action="redact", layers=["llm"])
+    )
     assert guard._is_entity_active("SPECIAL_CATEGORY")
     guard.change_entity_action(Entity.SPECIAL_CATEGORY, Action.WARN)
     llm_entities = guard._config["llm_detector"]["entities"]

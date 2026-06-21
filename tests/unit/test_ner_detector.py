@@ -14,6 +14,7 @@ import spacy.util
 
 from ai_guard import AIGuard
 from ai_guard.detectors.ner_detector import NERDetector, _is_valid_person
+from tests.conftest import make_legacy_guard
 
 pytestmark = pytest.mark.ner  # tag: uv run pytest -m ner
 
@@ -39,13 +40,13 @@ def ner_tr():
 
 @pytest.fixture(scope="module")
 def guard_with_ner():
-    return AIGuard(use_ner=True, spacy_model="en_core_web_sm")
+    return make_legacy_guard(use_ner=True, spacy_model="en_core_web_sm")
 
 
 @pytest.fixture(scope="module")
 def guard_tr():
     tr_model = next((m for m in sorted(_INSTALLED) if m.startswith("tr_")), "en_core_web_sm")
-    return AIGuard(use_ner=True, spacy_model=tr_model)
+    return make_legacy_guard(use_ner=True, spacy_model=tr_model)
 
 
 # ── PERSON detection ─────────────────────────────────────────────────────────
@@ -275,7 +276,9 @@ class TestModelFallback:
     def test_fallback_logged_when_model_not_installed(self, caplog):
         """Requesting a non-installed model must log a WARNING with fallback info."""
         with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
-            AIGuard(use_ner=True, spacy_model="xx_fake_model_xyz", spacy_auto_download=False)
+            make_legacy_guard(
+                use_ner=True, spacy_model="xx_fake_model_xyz", spacy_auto_download=False
+            )
         # Either fallback warning OR "not installed" warning should appear
         assert any(
             "falling back" in r.message.lower() or "not installed" in r.message.lower()
@@ -285,7 +288,7 @@ class TestModelFallback:
     def test_correct_model_logged_at_info(self, caplog):
         """When model is installed, INFO log must show the exact model name."""
         with caplog.at_level(logging.INFO, logger="ai_guard.guard"):
-            AIGuard(use_ner=True, spacy_model="en_core_web_sm").scan("test")
+            make_legacy_guard(use_ner=True, spacy_model="en_core_web_sm").scan("test")
         assert any(
             "en_core_web_sm" in r.message for r in caplog.records if r.levelno == logging.INFO
         )
@@ -339,9 +342,9 @@ class TestNERErrorHandling:
         import logging
 
         with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
-            guard = AIGuard(
+            guard = make_legacy_guard(
                 use_ner=True, spacy_model="nonexistent_model_xyz", spacy_auto_download=False
-            )
+            )  # legacy: enables PERSON so the NER detector is actually built
 
         assert any(
             "NER" in r.message or "could not be loaded" in r.message or "not installed" in r.message

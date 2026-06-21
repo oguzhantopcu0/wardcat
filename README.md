@@ -10,9 +10,12 @@
 
 `ai-guard` scans text for personally identifiable information (PII) before it reaches an LLM, and either warns about or replaces the sensitive data with salted SHA-256 hashes. It supports Turkish, English, German, and French out of the box.
 
+**Detection is opt-in:** a bare `AIGuard()` detects nothing — you enable the
+entities you want (or all of them with `add_entity(Entity.ALL, ...)`).
+
 ```python
 import os
-from ai_guard import AIGuard
+from ai_guard import AIGuard, Entity
 
 # Read the salt from the environment — never hard-code it (see "Salt" below).
 guard = (
@@ -21,6 +24,8 @@ guard = (
     .add_entity("EMAIL",       action="warn")
     .add_entity("TC_ID",       action="hash")
 )
+# Or enable everything at once, then prune:
+#   AIGuard(salt=...).add_entity(Entity.ALL, action="hash").remove_entity(Entity.ORG)
 
 result = guard.scan("Name: Ali Veli, card: 4532 0151 1283 0366, email: ali@example.com")
 print(result.sanitized_text)

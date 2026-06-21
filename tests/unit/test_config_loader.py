@@ -8,8 +8,8 @@ from ai_guard.config.loader import DEFAULT_CONFIG, load_config
 
 def test_load_defaults_when_no_path():
     config = load_config()
-    assert "entities" in config
-    assert config["entities"]["CREDIT_CARD"]["action"] == "hash"
+    # Entities are opt-in now: the bare default config enables nothing.
+    assert config["entities"] == {}
 
 
 def test_yaml_overrides_default(tmp_path: Path):
@@ -27,8 +27,8 @@ def test_yaml_overrides_default(tmp_path: Path):
     assert config["salt"] == "test-salt"
     assert config["entities"]["EMAIL"]["enabled"] is False
     assert config["entities"]["EMAIL"]["action"] == "hash"
-    # Other entities should come from defaults
-    assert config["entities"]["CREDIT_CARD"]["action"] == "hash"
+    # No default entities anymore — only what the YAML declared is present.
+    assert "CREDIT_CARD" not in config["entities"]
 
 
 def test_missing_file_raises():

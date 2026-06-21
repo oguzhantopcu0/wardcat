@@ -275,20 +275,9 @@ class AIGuard:
         if llm_load_in_4bit:
             llm_cfg["load_in_4bit"] = True
 
-        # Salt warning: hash action is configured but salt is empty
-        effective_salt = self._config.get("salt", "")
-        if not effective_salt:
-            entity_cfg = self._config.get("entities", {})
-            has_hash = any(
-                cfg.get("action") == "hash" for cfg in entity_cfg.values() if isinstance(cfg, dict)
-            )
-            if has_hash:
-                logger.warning(
-                    "No hash salt set — using unsalted hashes (identical PII always yields the "
-                    "same hash, leaving them open to rainbow-table attacks). Pass salt=... or set "
-                    "the AIGUARD_SALT environment variable in production."
-                )
-
+        # Warn at most once when a hash action is active without a salt. Checked
+        # in _rebuild() too, since entities are opt-in and usually added after init.
+        self._salt_warned = False
         self._rebuild()
 
     # ------------------------------------------------------------------
@@ -834,12 +823,17 @@ class AIGuard:
             warn_unknown_entity(entity_type)
 
     def _is_entity_active(self, entity_type: str) -> bool:
-        """True if *entity_type* is currently enabled on any detector layer."""
+        """True if *entity_type* is currently enabled on any *active* detector layer."""
         ent = self._config.get("entities", {}).get(entity_type)
         if ent and ent.get("enabled"):
             return True
-        llm = self._config.get("llm_detector", {}).get("entities", {}).get(entity_type)
-        return bool(llm and llm.get("enabled"))
+        # LLM entities only count when the LLM layer itself is enabled.
+        llm_cfg = self._config.get("llm_detector", {})
+        if llm_cfg.get("enabled"):
+            llm = llm_cfg.get("entities", {}).get(entity_type)
+            if llm and llm.get("enabled"):
+                return True
+        return False
 
     def _entity_action(self, entity_type: str) -> str | None:
         """Return the configured action for *entity_type*, or None if unset."""
@@ -981,8 +975,26 @@ class AIGuard:
     # Internal
     # ------------------------------------------------------------------
 
+    def _maybe_warn_unsalted(self) -> None:
+        """Warn once if a hash action is active but no salt is set."""
+        if self._salt_warned or self._config.get("salt"):
+            return
+        entity_cfg = self._config.get("entities", {})
+        has_hash = any(
+            isinstance(cfg, dict) and cfg.get("action") == "hash" and cfg.get("enabled")
+            for cfg in entity_cfg.values()
+        )
+        if has_hash:
+            self._salt_warned = True
+            logger.warning(
+                "No hash salt set — using unsalted hashes (identical PII always yields the "
+                "same hash, leaving them open to rainbow-table attacks). Pass salt=... or set "
+                "the AIGUARD_SALT environment variable in production."
+            )
+
     def _rebuild(self) -> None:
         """Rebuild detectors and engine when configuration changes."""
+        self._maybe_warn_unsalted()
         self._detectors: list[BaseDetector] = []
         entity_cfg = self._config.get("entities", {})
 
@@ -993,14 +1005,16 @@ class AIGuard:
             entity_cfg.setdefault(
                 cp_name, {"enabled": True, "action": cp_cfg.get("action", "warn")}
             )
-        enabled_regex = {e for e in _REGEX_ENTITIES if entity_cfg.get(e, {}).get("enabled", True)}
+        # Entities are opt-in: only those explicitly enabled (via add_entity / YAML)
+        # run. An entity absent from the config is OFF.
+        enabled_regex = {e for e in _REGEX_ENTITIES if entity_cfg.get(e, {}).get("enabled", False)}
         if enabled_regex or custom_patterns:
             self._detectors.append(RegexDetector(enabled_regex, custom_patterns=custom_patterns))
 
         # SpaCy NER detector(s) (optional). A list of models loads one detector
         # per language (multilingual NER); the engine merges their spans.
         if self._config.get("use_ner", True):
-            enabled_ner = {e for e in _NER_ENTITIES if entity_cfg.get(e, {}).get("enabled", True)}
+            enabled_ner = {e for e in _NER_ENTITIES if entity_cfg.get(e, {}).get("enabled", False)}
             if enabled_ner:
                 models = self._config.get("spacy_models") or (
                     [self._config["spacy_model"]] if self._config.get("spacy_model") else []
@@ -1082,9 +1096,13 @@ class AIGuard:
         entity_cfg = llm_cfg.get("entities", {})
         enabled = {e for e, cfg in entity_cfg.items() if cfg.get("enabled", True)}
 
-        # Add LLM entity actions to global engine config (without overriding)
+        # Make the LLM entities' *actions* available to the engine for applying to
+        # LLM-detected spans — but as enabled=False so they do NOT switch on the
+        # regex/NER layer for the same entity (the LLM layer is opt-in on its own).
         for entity, cfg in entity_cfg.items():
-            self._config["entities"].setdefault(entity, cfg)
+            self._config["entities"].setdefault(
+                entity, {"enabled": False, "action": cfg.get("action", "warn")}
+            )
 
         cache_ttl = llm_cfg.get("cache_ttl", 0)
         return LLMDetector(

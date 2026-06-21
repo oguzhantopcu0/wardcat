@@ -5,7 +5,7 @@ NER is kept disabled → runs without SpaCy installed.
 
 import pytest
 
-from ai_guard import AIGuard
+from tests.conftest import make_legacy_guard
 
 SAMPLE_PROMPT = """
 Merhaba, ben Ahmet Yılmaz. Şirketimizin sunucu IP'si 10.0.0.42.
@@ -18,7 +18,7 @@ TC kimliğim 10987654202.
 
 @pytest.fixture
 def guard():
-    return AIGuard(use_ner=False, salt="entegrasyon-tuz")
+    return make_legacy_guard(use_ner=False, salt="entegrasyon-tuz")
 
 
 def test_multiple_entities_detected(guard):

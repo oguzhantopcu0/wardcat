@@ -64,39 +64,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "SPECIAL_CATEGORY": {"enabled": False, "action": "redact"},
         },
     },
-    "entities": {
-        # Regex-based
-        "CREDIT_CARD": {"enabled": True, "action": "hash"},
-        "EMAIL": {"enabled": True, "action": "warn"},
-        "PHONE": {"enabled": True, "action": "warn"},
-        "IBAN": {"enabled": True, "action": "hash"},
-        "IP_ADDRESS": {"enabled": True, "action": "warn"},
-        "TC_ID": {"enabled": True, "action": "hash"},
-        # Regex-based — address
-        "ADDRESS": {"enabled": True, "action": "warn"},
-        "POSTAL_CODE": {"enabled": True, "action": "warn"},
-        # Regex-based — global identity/technical
-        "UUID": {"enabled": True, "action": "warn"},
-        "SSN": {"enabled": True, "action": "hash"},
-        "MAC_ADDRESS": {"enabled": True, "action": "warn"},
-        "JWT": {"enabled": True, "action": "hash"},
-        "IPv6": {"enabled": True, "action": "warn"},
-        "NIN": {"enabled": True, "action": "hash"},
-        # SpaCy NER-based
-        "PERSON": {"enabled": True, "action": "hash"},
-        "ORG": {"enabled": False, "action": "warn"},
-        # Date detection
-        "DATE_OF_BIRTH": {"enabled": True, "action": "hash"},
-        # Turkish vehicle plate
-        "VEHICLE_PLATE": {"enabled": True, "action": "warn"},
-        # Financial amounts — disabled by default; enable for confidential document scanning
-        "FINANCIAL_AMOUNT": {"enabled": False, "action": "redact"},
-        # VAT / tax numbers (EU country-prefixed + Turkish Vergi No)
-        "VAT_NUMBER": {"enabled": True, "action": "warn"},
-        # GDPR Art.9 special-category data (health, religion, ethnicity, etc.)
-        # LLM-only, semantic — no regex/NER; enable via llm_detector.entities
-        "SPECIAL_CATEGORY": {"enabled": False, "action": "redact"},
-    },
+    # NER/regex entities are opt-in: nothing is enabled by default.
+    # Add what you need with AIGuard().add_entity(...) / add_entities(...),
+    # or enable everything with add_entity(Entity.ALL, action=...).
+    "entities": {},
 }
 
 # Valid action values

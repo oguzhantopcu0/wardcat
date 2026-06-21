@@ -61,6 +61,7 @@ def test_add_entity_returns_self_for_chaining(guard):
 
 
 def test_remove_entity_disables(guard):
+    guard.add_entity("EMAIL")
     guard.remove_entity("EMAIL")
     assert guard._config["entities"]["EMAIL"]["enabled"] is False
 
@@ -111,6 +112,7 @@ def test_add_entities_top_level_defaults_apply(guard):
 
 
 def test_remove_entities_disables(guard):
+    guard.add_entities(["EMAIL", "PHONE"])
     guard.remove_entities(["EMAIL", "PHONE"])
     assert guard._config["entities"]["EMAIL"]["enabled"] is False
     assert guard._config["entities"]["PHONE"]["enabled"] is False
