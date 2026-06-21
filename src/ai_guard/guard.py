@@ -278,6 +278,7 @@ class AIGuard:
         # Warn at most once when a hash action is active without a salt. Checked
         # in _rebuild() too, since entities are opt-in and usually added after init.
         self._salt_warned = False
+        self._default_action_warned = False
         self._rebuild()
 
     # ------------------------------------------------------------------
@@ -476,7 +477,6 @@ class AIGuard:
                     f"got {type(entities).__name__}."
                 ) from exc
 
-        defaulted = False
         for name, spec in specs.items():
             if isinstance(spec, str):
                 spec = {"action": spec}
@@ -487,19 +487,11 @@ class AIGuard:
                     f"Invalid spec for {name!r}: expected str, dict, or None, "
                     f"got {type(spec).__name__}."
                 )
-            entity_action = spec.get("action", action)
-            if entity_action is None:
-                entity_action = Action.HASH.value
-                defaulted = True
+            entity_action = self._action_or_default(spec.get("action", action))
             entity_layers = spec.get("layers", layers)
             names = sorted(KNOWN_ENTITY_TYPES) if self._is_all(name) else [name]
             for n in names:
                 self._set_entity(n, enabled=True, action=entity_action, layers=entity_layers)
-        if defaulted:
-            logger.warning(
-                "add_entities(): one or more entities were enabled without an action — "
-                "defaulting to 'hash'. Pass action=... (or a per-entity action) to silence this."
-            )
         self._rebuild()
         return self
 
@@ -765,16 +757,23 @@ class AIGuard:
             return entity_type
         raise ConfigError(f"entity_type must be a str or Entity, got {type(entity_type).__name__}.")
 
-    @staticmethod
-    def _action_or_default(action: str | Action | None) -> str | Action:
-        """Return *action*, or the default ``hash`` (with a warning) when unspecified."""
+    def _action_or_default(self, action: str | Action | None) -> str | Action:
+        """Return *action*, or the default ``hash`` (warned once) when unspecified."""
         if action is None:
-            logger.warning(
-                "No action specified — defaulting to 'hash' (the safest action). "
-                "Pass action=... (e.g. Action.WARN) to choose explicitly and silence this warning."
-            )
+            self._warn_default_action_once()
             return Action.HASH.value
         return action
+
+    def _warn_default_action_once(self) -> None:
+        """Warn at most once per guard that a missing action defaulted to ``hash``."""
+        if self._default_action_warned:
+            return
+        self._default_action_warned = True
+        logger.warning(
+            "No action specified for one or more entities — defaulting to 'hash' (the safest "
+            "action). Pass action=... (e.g. Action.WARN) to choose explicitly. This is logged "
+            "once per guard."
+        )
 
     @staticmethod
     def _resolve_language_models(

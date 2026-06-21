@@ -100,6 +100,18 @@ def test_add_entities_without_action_defaults_to_hash_and_warns_once(caplog):
     assert len(warnings_logged) == 1  # a single aggregated warning
 
 
+def test_default_action_warns_only_once_per_guard(caplog):
+    import logging
+
+    guard = AIGuard(salt="s", use_ner=False).remove_entity(Entity.ALL)
+    with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
+        guard.add_entity(Entity.EMAIL)  # 1st missing action → warns
+        guard.add_entity(Entity.CREDIT_CARD)  # 2nd → no repeat
+        guard.add_entities(["IBAN", "SSN"])  # still no repeat
+    warnings_logged = [r for r in caplog.records if "defaulting to 'hash'" in r.message]
+    assert len(warnings_logged) == 1
+
+
 # ---------------------------------------------------------------------------
 # Entity.ALL — enable everything
 # ---------------------------------------------------------------------------

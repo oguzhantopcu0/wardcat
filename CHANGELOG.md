@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Default-action warning noise:** when `add_entity()` / `add_entities()` default a missing action to `hash`, the warning is now logged **once per guard** instead of on every call — it stays visible without spamming logs when many entities are added.
 - **Misleading install hint:** the LLM backends' missing-`httpx` error pointed at a non-existent `ai-guard[llm]` extra; `httpx` is a core dependency, so the message now says to reinstall ai-guard.
 - **Multiple explicit models:** `spacy_model=` now accepts a list, e.g. `spacy_model=["en_core_web_sm", "de_core_news_sm"]`.
 - **Salt:** when no salt is set and a `hash` action is in play, ai-guard logs a clear warning (rainbow-table risk) and proceeds with unsalted hashes; set `salt=...` or `AIGUARD_SALT`.
