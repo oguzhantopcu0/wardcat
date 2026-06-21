@@ -453,3 +453,35 @@ class TestBaseLLMBackendAsyncDefault:
 
         result = asyncio.run(_Concrete().complete_async("hi"))
         assert result == "sync result"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HTTP policy via allow_http parameter (no env vars)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestAllowHttpParameter:
+    def test_remote_http_raises_by_default(self):
+        with pytest.raises(ValueError, match="not allowed"):
+            OllamaBackend(base_url="http://remote-host:11434")
+
+    def test_remote_http_allowed_with_flag(self):
+        backend = OllamaBackend(base_url="http://remote-host:11434", allow_http=True)
+        assert backend.base_url == "http://remote-host:11434"
+
+    def test_localhost_http_only_warns(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="ai_guard.llm.backends.ollama"):
+            OllamaBackend(base_url="http://localhost:11434")
+        assert any("HTTP" in r.message for r in caplog.records)
+
+    def test_openai_compat_remote_http_raises(self):
+        with pytest.raises(ValueError, match="not allowed"):
+            OpenAICompatBackend(base_url="http://remote-host:8000/v1", model="x")
+
+    def test_openai_compat_remote_http_allowed_with_flag(self):
+        backend = OpenAICompatBackend(
+            base_url="http://remote-host:8000/v1", model="x", allow_http=True
+        )
+        assert backend.base_url == "http://remote-host:8000/v1"

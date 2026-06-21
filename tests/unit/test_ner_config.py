@@ -85,11 +85,112 @@ def test_explicit_models_deduped():
 
 
 # ---------------------------------------------------------------------------
-# AIGUARD_* environment variables (renamed from LLMGUARD_*)
+# The library does not read environment variables (that is the CLI's job)
 # ---------------------------------------------------------------------------
 
 
-def test_aiguard_salt_env(monkeypatch):
+def test_library_ignores_aiguard_env(monkeypatch):
     monkeypatch.setenv("AIGUARD_SALT", "env-salt-xyz")
+    monkeypatch.setenv("AIGUARD_SPACY_MODEL", "tr_core_news_sm")
     guard = AIGuard()
-    assert guard._config["salt"] == "env-salt-xyz"
+    assert guard._config["salt"] == ""  # env ignored — pass salt=... explicitly
+    assert guard._config["use_ner"] is False  # AIGUARD_SPACY_MODEL ignored too
+
+
+# ---------------------------------------------------------------------------
+# Backend enum (typo-proof LLM backend selection)
+# ---------------------------------------------------------------------------
+
+
+def test_backend_enum_is_str_value():
+    from ai_guard import Backend
+
+    assert Backend.OLLAMA == "ollama"
+    assert Backend.OPENAI_COMPATIBLE.value == "openai_compatible"
+    assert Backend.TRANSFORMERS == "transformers"
+
+
+def test_backend_enum_configures_llm():
+    from ai_guard import AIGuard, Backend
+
+    guard = AIGuard(
+        salt="s",
+        use_llm=True,
+        llm_backend=Backend.OPENAI_COMPATIBLE,
+        llm_base_url="http://localhost:8000/v1",
+        llm_model="mistral",
+    )
+    # stored as the canonical string, not the enum object
+    assert guard._config["llm_detector"]["backend"] == "openai_compatible"
+
+
+def test_backend_string_and_enum_equivalent():
+    from ai_guard import AIGuard, Backend
+
+    g_enum = AIGuard(salt="s", use_llm=True, llm_backend=Backend.TRANSFORMERS, llm_model="x")
+    g_str = AIGuard(salt="s", use_llm=True, llm_backend="transformers", llm_model="x")
+    assert (
+        g_enum._config["llm_detector"]["backend"] == g_str._config["llm_detector"]["backend"]
+    )
+
+
+def test_invalid_backend_raises():
+    from ai_guard import AIGuard
+    from ai_guard.exceptions import ConfigError
+
+    with pytest.raises(ConfigError, match="backend"):
+        AIGuard(salt="s", use_llm=True, llm_backend="bogus")
+
+
+# ---------------------------------------------------------------------------
+# Fluent builders: with_ner() / with_llm() (chainable, symmetric)
+# ---------------------------------------------------------------------------
+
+
+def test_with_ner_enables_ner():
+    from ai_guard import AIGuard, Language
+
+    guard = AIGuard(salt="s").with_ner(language=Language.EN)
+    assert guard._config["use_ner"] is True
+    assert guard._config["spacy_models"] == ["en_core_web_sm"]
+
+
+def test_with_ner_requires_model():
+    from ai_guard import AIGuard
+    from ai_guard.exceptions import ConfigError
+
+    with pytest.raises(ConfigError, match="requires a model"):
+        AIGuard(salt="s").with_ner()
+
+
+def test_with_llm_enables_llm():
+    from ai_guard import AIGuard, Backend
+
+    guard = AIGuard(salt="s").with_llm(backend=Backend.OLLAMA, model="llama3.2", adjudicate=True)
+    cfg = guard._config["llm_detector"]
+    assert cfg["enabled"] is True
+    assert cfg["backend"] == "ollama"
+    assert cfg["adjudicate"] is True
+
+
+def test_builders_chain_back_to_back():
+    from ai_guard import AIGuard, Backend, Entity, Language
+
+    guard = (
+        AIGuard(salt="s")
+        .add_entity(Entity.EMAIL, "hash")
+        .with_ner(language=Language.EN)
+        .with_llm(backend=Backend.OLLAMA, model="llama3.2")
+    )
+    assert guard._config["use_ner"] is True
+    assert guard._config["llm_detector"]["enabled"] is True
+    assert len(guard._detectors) == 3  # regex + ner + llm
+
+
+def test_with_ner_multiple_models():
+    from ai_guard import AIGuard
+
+    guard = AIGuard(salt="s").with_ner(
+        spacy_model=["en_core_web_sm", "de_core_news_sm"], auto_download=False
+    )
+    assert guard._config["spacy_models"] == ["en_core_web_sm", "de_core_news_sm"]

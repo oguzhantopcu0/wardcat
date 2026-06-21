@@ -223,9 +223,10 @@ def test_check_redos_timeout_rejects_pattern(tmp_path: Path):
         load_config(cfg_file)
 
 
-def test_invalid_llm_timeout_env_ignored(monkeypatch):
-    """Invalid LLMGUARD_LLM_TIMEOUT env var should be ignored with a warning."""
-    monkeypatch.setenv("LLMGUARD_LLM_TIMEOUT", "not_a_number")
+def test_load_config_does_not_read_env(monkeypatch):
+    """The library loader ignores environment variables entirely."""
+    monkeypatch.setenv("AIGUARD_SALT", "env-salt")
+    monkeypatch.setenv("AIGUARD_LLM_TIMEOUT", "999")
     config = load_config()
-    # Should not raise; invalid value is skipped and default timeout preserved
-    assert isinstance(config["llm_detector"]["timeout"], (int, float))
+    assert config["salt"] == ""
+    assert config["llm_detector"]["timeout"] == 60

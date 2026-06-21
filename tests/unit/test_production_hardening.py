@@ -221,46 +221,39 @@ class TestScanBatchIsolation:
 # ── Environment Variable Configuration ───────────────────────────────────────
 
 
-class TestEnvVarConfig:
-    def test_llmguard_salt_from_env(self):
+class TestLibraryIgnoresEnv:
+    """The library is config-explicit: load_config / AIGuard never read env vars.
+
+    (Reading AIGUARD_* env vars is the CLI's job — see tests/unit/test_cli.py.)
+    """
+
+    def test_load_config_ignores_aiguard_salt(self):
         with patch.dict(os.environ, {"AIGUARD_SALT": "env-test-salt"}):
             cfg = load_config()
-        assert cfg["salt"] == "env-test-salt"
+        assert cfg["salt"] == ""  # not read from env
 
-    def test_llmguard_llm_url_from_env(self):
-        with patch.dict(os.environ, {"AIGUARD_LLM_URL": "http://remote:11434"}):
+    def test_load_config_ignores_llm_env(self):
+        with patch.dict(
+            os.environ,
+            {"AIGUARD_LLM_URL": "http://remote:11434", "AIGUARD_LLM_MODEL": "mistral:7b"},
+        ):
             cfg = load_config()
-        assert cfg["llm_detector"]["base_url"] == "http://remote:11434"
+        assert cfg["llm_detector"]["base_url"] == "http://localhost:11434"
+        assert cfg["llm_detector"]["model"] == "llama3.2"
 
-    def test_llmguard_llm_model_from_env(self):
-        with patch.dict(os.environ, {"AIGUARD_LLM_MODEL": "mistral:7b"}):
-            cfg = load_config()
-        assert cfg["llm_detector"]["model"] == "mistral:7b"
+    def test_aiguard_ignores_env_salt(self):
+        from ai_guard import AIGuard
 
-    def test_llmguard_spacy_model_from_env(self):
-        with patch.dict(os.environ, {"AIGUARD_SPACY_MODEL": "tr_core_news_sm"}):
-            cfg = load_config()
-        assert cfg["spacy_model"] == "tr_core_news_sm"
-
-    def test_llmguard_timeout_from_env(self):
-        with patch.dict(os.environ, {"AIGUARD_LLM_TIMEOUT": "120"}):
-            cfg = load_config()
-        assert cfg["llm_detector"]["timeout"] == 120
-
-    def test_invalid_timeout_env_ignored(self, caplog):
-        with patch.dict(os.environ, {"AIGUARD_LLM_TIMEOUT": "abc"}):
-            with caplog.at_level(logging.WARNING, logger="ai_guard.config.loader"):
-                cfg = load_config()
-        # Invalid value is ignored, default is preserved
-        assert cfg["llm_detector"]["timeout"] == 60
-
-    def test_env_overrides_yaml(self, tmp_path):
-        """Environment variable should override the YAML value."""
-        yaml_file = tmp_path / "cfg.yaml"
-        yaml_file.write_text("salt: yaml-salt\n")
         with patch.dict(os.environ, {"AIGUARD_SALT": "env-salt"}):
-            cfg = load_config(yaml_file)
-        assert cfg["salt"] == "env-salt"
+            guard = AIGuard(use_ner=False)
+        assert guard._config["salt"] == ""  # explicit only
+
+    def test_explicit_salt_wins_over_env(self):
+        from ai_guard import AIGuard
+
+        with patch.dict(os.environ, {"AIGUARD_SALT": "env-salt"}):
+            guard = AIGuard(use_ner=False, salt="explicit-salt")
+        assert guard._config["salt"] == "explicit-salt"
 
 
 # ── Config Validation ─────────────────────────────────────────────────────────

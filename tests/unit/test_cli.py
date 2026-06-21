@@ -105,7 +105,7 @@ class TestResolveURL:
 
         from ai_guard.__main__ import _resolve_llm_url
 
-        with patch.dict(os.environ, {"LLMGUARD_LLM_URL": "http://env:11434"}, clear=False):
+        with patch.dict(os.environ, {"AIGUARD_LLM_URL": "http://env:11434"}, clear=False):
             result = _resolve_llm_url("")
         assert result == "http://env:11434"
 
@@ -114,7 +114,7 @@ class TestResolveURL:
 
         from ai_guard.__main__ import _resolve_llm_url
 
-        env = {k: v for k, v in os.environ.items() if k != "LLMGUARD_LLM_URL"}
+        env = {k: v for k, v in os.environ.items() if k != "AIGUARD_LLM_URL"}
         with patch.dict(os.environ, env, clear=True):
             result = _resolve_llm_url("")
         assert result == "http://localhost:11434"

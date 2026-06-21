@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -10,12 +9,13 @@ from typing import Any
 import yaml
 
 from ai_guard.exceptions import ConfigError
+from ai_guard.llm.backends.base import Backend
 
 logger = logging.getLogger(__name__)
 
 # Library-internal default configuration.
-# Values from YAML override these (deep-merge).
-# Environment variables (AIGUARD_*) override everything.
+# Values from a YAML file (if provided) override these (deep-merge).
+# The library does not read environment variables.
 DEFAULT_CONFIG: dict[str, Any] = {
     "salt": "",
     # NER is off by default and ships no default model — enable it explicitly via
@@ -99,20 +99,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
 }
 
-# Supported environment variables
-_ENV_VARS = {
-    "AIGUARD_SALT": ("salt",),
-    "AIGUARD_SPACY_MODEL": ("spacy_model",),
-    "AIGUARD_LLM_URL": ("llm_detector", "base_url"),
-    "AIGUARD_LLM_MODEL": ("llm_detector", "model"),
-    "AIGUARD_LLM_API_KEY": ("llm_detector", "api_key"),
-    "AIGUARD_LLM_TIMEOUT": ("llm_detector", "timeout"),
-}
-
 # Valid action values
 _VALID_ACTIONS = {"warn", "hash", "mask", "redact"}
 # Valid backend values
-_VALID_BACKENDS = {"ollama", "openai_compatible", "transformers"}
+_VALID_BACKENDS = {b.value for b in Backend}
 # Valid top-level config keys — used to catch typos in YAML files
 _KNOWN_CONFIG_KEYS = frozenset(
     {
@@ -155,12 +145,16 @@ def _check_redos(pattern: re.Pattern, timeout: float = 0.5) -> bool:
 
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
     """
-    Load configuration and apply environment variables.
+    Load configuration from defaults and an optional YAML file.
 
     Priority order (highest to lowest):
-    1. Environment variables (AIGUARD_*)
-    2. YAML file (if path is provided)
-    3. DEFAULT_CONFIG
+    1. YAML file (if path is provided)
+    2. DEFAULT_CONFIG
+
+    The library does **not** read environment variables — pass configuration
+    explicitly via :class:`~ai_guard.AIGuard` constructor arguments or a YAML
+    file. (The ``ai-guard`` CLI, being an application, does read ``AIGUARD_*``
+    env vars as defaults.)
 
     If ``"default"`` is passed as ``path``, the bundled
     ``ai_guard/config/default.yaml`` file is used.
@@ -186,7 +180,6 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
                 user_config = yaml.safe_load(fh) or {}
         config = _deep_merge(config, user_config)
 
-    _apply_env_overrides(config)
     validate_config(config)
     return config
 
@@ -320,33 +313,6 @@ def validate_config(config: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
-
-
-def _apply_env_overrides(config: dict[str, Any]) -> None:
-    """
-    Apply AIGUARD_* environment variables to the config.
-    When an environment variable is present, it always overrides the YAML/default value.
-    """
-    for env_var, key_path in _ENV_VARS.items():
-        raw = os.environ.get(env_var)
-        if raw is None:
-            continue
-
-        value: str | int = raw
-        # Integer conversion for timeout
-        if key_path == ("llm_detector", "timeout"):
-            try:
-                value = int(raw)
-            except ValueError:
-                logger.warning("AIGUARD_LLM_TIMEOUT has invalid value %r — ignored.", raw)
-                continue
-
-        # Follow nested key path
-        target = config
-        for key in key_path[:-1]:
-            target = target.setdefault(key, {})
-        target[key_path[-1]] = value
-        logger.debug("Read from environment variable: %s → %s", env_var, key_path)
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

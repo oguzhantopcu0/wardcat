@@ -18,6 +18,7 @@ from ai_guard.core.models import (
 from ai_guard.detectors.base import BaseDetector
 from ai_guard.detectors.regex_detector import RegexDetector
 from ai_guard.exceptions import ConfigError, UnsupportedLanguageError
+from ai_guard.llm.backends.base import Backend
 from ai_guard.ner.spacy_catalog import Language
 
 logger = logging.getLogger(__name__)
@@ -121,9 +122,12 @@ class AIGuard:
 
     Programmatic API (method chaining)::
 
+        import os
         from ai_guard import AIGuard, Entity, Action
 
         guard = (
+            # Read secrets from the environment in YOUR app — the library itself
+            # never reads env vars; pass everything explicitly.
             AIGuard(salt=os.environ["AIGUARD_SALT"])
             .add_entity(Entity.EMAIL,       action=Action.HASH)
             .add_entity(Entity.CREDIT_CARD, action=Action.HASH)
@@ -142,14 +146,9 @@ class AIGuard:
         guard = AIGuard(config_path="config/my_policy.yaml")
         result = guard.scan(text)
 
-    Environment variables (override YAML and constructor arguments)::
-
-        AIGUARD_SALT          — hash salt value
-        AIGUARD_LLM_URL       — Ollama/OpenAI-compat service URL
-        AIGUARD_LLM_MODEL     — LLM model name
-        AIGUARD_LLM_API_KEY   — API key (OpenAI-compat)
-        AIGUARD_LLM_TIMEOUT   — LLM timeout (seconds, default 60)
-        AIGUARD_SPACY_MODEL   — SpaCy model name
+    Configuration is explicit: pass constructor arguments or a YAML ``config_path``.
+    The library does **not** read environment variables (the ``ai-guard`` CLI does,
+    as it is an application — see ``AIGUARD_*`` in ``python -m ai_guard --help``).
 
     LLM detector (Ollama)::
 
@@ -186,11 +185,12 @@ class AIGuard:
         spacy_size: str = "sm",  # NER: model size tier when language is given (sm/md/lg/trf)
         spacy_auto_download: bool | None = None,  # download the SpaCy model if missing
         use_llm: bool = False,
-        llm_backend: str = "ollama",  # "ollama" | "openai_compatible" | "transformers"
+        llm_backend: str | Backend = "ollama",  # Backend.OLLAMA | OPENAI_COMPATIBLE | TRANSFORMERS
         llm_model: str = "llama3.2",
         llm_base_url: str = "http://localhost:11434",
         llm_api_key: str = "",
         llm_timeout: int = 60,
+        llm_allow_http: bool = False,  # allow plaintext HTTP to a remote LLM (not recommended)
         llm_adjudicate: bool = False,  # ensemble: LLM verifies regex/NER candidates
         auto_pull: bool = False,  # Ollama: automatically download if model is missing
         llm_device_map: str = "auto",  # Transformers: GPU distribution
@@ -200,7 +200,6 @@ class AIGuard:
         self._config = load_config(config_path)
 
         # Constructor arguments override YAML
-        # (environment variables were already applied inside load_config)
         if salt:
             self._config["salt"] = salt
 
@@ -252,7 +251,9 @@ class AIGuard:
         if use_llm:
             llm_cfg["enabled"] = True
         if llm_backend != "ollama":
-            llm_cfg["backend"] = llm_backend
+            llm_cfg["backend"] = (
+                llm_backend.value if isinstance(llm_backend, Backend) else llm_backend
+            )
         if llm_model != "llama3.2":
             llm_cfg["model"] = llm_model
         if llm_base_url != "http://localhost:11434":
@@ -261,6 +262,8 @@ class AIGuard:
             llm_cfg["api_key"] = llm_api_key
         if llm_timeout != 60:
             llm_cfg["timeout"] = llm_timeout
+        if llm_allow_http:
+            llm_cfg["allow_http"] = True
         if llm_adjudicate:
             llm_cfg["adjudicate"] = True
         if auto_pull:
@@ -654,6 +657,101 @@ class AIGuard:
         return policy
 
     # ------------------------------------------------------------------
+    # Layer builders (fluent alternative to the constructor's llm_*/spacy_* args)
+    # ------------------------------------------------------------------
+
+    def with_ner(
+        self,
+        *,
+        language: str | Language | list[str | Language] | None = None,
+        spacy_model: str | list[str] | None = None,
+        spacy_size: str = "sm",
+        auto_download: bool = True,
+    ) -> AIGuard:
+        """
+        Enable the SpaCy NER layer with an explicit model. Supports chaining.
+
+        Mirrors :meth:`with_llm`. Pass ``language=`` (recommended; a list enables
+        multilingual NER) or ``spacy_model=`` (explicit package name(s)).
+
+        ::
+
+            guard = AIGuard(salt="s").with_ner(language=Language.EN)
+            guard = AIGuard(salt="s").with_ner(spacy_model=["en_core_web_sm", "de_core_news_sm"])
+
+        :raises ConfigError: if neither ``language`` nor ``spacy_model`` is given.
+        """
+        if language is None and spacy_model is None:
+            raise ConfigError(
+                "with_ner() requires a model — pass language=... (e.g. Language.EN) "
+                "or spacy_model=...; ai-guard ships no default model."
+            )
+        if language is not None:
+            models = self._resolve_language_models(language, spacy_size)
+        else:
+            models = [spacy_model] if isinstance(spacy_model, str) else list(spacy_model)  # type: ignore[arg-type]
+            models = list(dict.fromkeys(models))
+            if not models:
+                raise ConfigError("spacy_model is empty — pass at least one model name.")
+        self._config["spacy_models"] = models
+        self._config["spacy_model"] = models[0]
+        self._config["use_ner"] = True
+        if auto_download:
+            self._config["spacy_auto_download"] = True
+        self._rebuild()
+        return self
+
+    def with_llm(
+        self,
+        *,
+        backend: str | Backend = Backend.OLLAMA,
+        model: str = "llama3.2",
+        base_url: str = "http://localhost:11434",
+        api_key: str = "",
+        timeout: int = 60,
+        allow_http: bool = False,
+        adjudicate: bool = False,
+        auto_pull: bool = False,
+        device_map: str = "auto",
+        load_in_8bit: bool = False,
+        load_in_4bit: bool = False,
+    ) -> AIGuard:
+        """
+        Enable the on-prem LLM detector. Supports chaining; mirrors :meth:`with_ner`.
+
+        A fluent alternative to the constructor's ``llm_*`` arguments — keeps the
+        LLM configuration in one place::
+
+            guard = (
+                AIGuard(salt="s")
+                .with_ner(language=Language.TR)
+                .with_llm(backend=Backend.OLLAMA, model="llama3.2", adjudicate=True)
+            )
+
+        ``backend`` is the backend *type* (:class:`~ai_guard.Backend`); the
+        *address* goes to ``base_url``.
+        """
+        llm_cfg = self._config.setdefault("llm_detector", {})
+        llm_cfg.update(
+            {
+                "enabled": True,
+                "backend": backend.value if isinstance(backend, Backend) else backend,
+                "model": model,
+                "base_url": base_url,
+                "api_key": api_key,
+                "timeout": timeout,
+                "allow_http": allow_http,
+                "adjudicate": adjudicate,
+                "auto_pull": auto_pull,
+                "device_map": device_map,
+                "load_in_8bit": load_in_8bit,
+                "load_in_4bit": load_in_4bit,
+            }
+        )
+        self._rebuild()
+        return self
+
+    # ------------------------------------------------------------------
     # Internal entity helpers
     # ------------------------------------------------------------------
 
@@ -949,12 +1047,13 @@ class AIGuard:
         base_url = llm_cfg.get("base_url", "http://localhost:11434")
         api_key = llm_cfg.get("api_key", "")
         timeout = llm_cfg.get("timeout", 60)
+        allow_http = llm_cfg.get("allow_http", False)
 
         if backend_name == "ollama":
             from ai_guard.llm.backends.ollama import OllamaBackend
             from ai_guard.llm.model_manager import ModelManager
 
-            ollama_backend = OllamaBackend(base_url=base_url, model=model)
+            ollama_backend = OllamaBackend(base_url=base_url, model=model, allow_http=allow_http)
             if llm_cfg.get("auto_pull", False):
                 mgr = ModelManager(ollama_backend)
                 mgr.ensure_available(model, verbose=True)
@@ -962,7 +1061,9 @@ class AIGuard:
         elif backend_name == "openai_compatible":
             from ai_guard.llm.backends.openai_compat import OpenAICompatBackend
 
-            backend = OpenAICompatBackend(base_url=base_url, model=model, api_key=api_key)
+            backend = OpenAICompatBackend(
+                base_url=base_url, model=model, api_key=api_key, allow_http=allow_http
+            )
         elif backend_name == "transformers":
             from ai_guard.llm.backends.transformers_backend import TransformersBackend
 

@@ -19,10 +19,10 @@ Usage:
     python -m ai_guard spacy installed
 
 Environment variables:
-    LLMGUARD_SALT         — instead of --salt
-    LLMGUARD_LLM_URL      — instead of --llm-url
-    LLMGUARD_LLM_MODEL    — instead of --llm-model
-    LLMGUARD_LLM_API_KEY  — instead of --llm-api-key
+    AIGUARD_SALT         — instead of --salt
+    AIGUARD_LLM_URL      — instead of --llm-url
+    AIGUARD_LLM_MODEL    — instead of --llm-model
+    AIGUARD_LLM_API_KEY  — instead of --llm-api-key
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ def _build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config", metavar="PATH", help="YAML policy file")
     common.add_argument(
-        "--salt", default="", help="Hash salt value (can also be set via LLMGUARD_SALT env)"
+        "--salt", default="", help="Hash salt value (can also be set via AIGUARD_SALT env)"
     )
     common.add_argument("--no-ner", action="store_true", help="Disable SpaCy NER")
     common.add_argument(
@@ -106,13 +106,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--llm-url",
         default="",
         metavar="URL",
-        help="LLM service URL (default: LLMGUARD_LLM_URL or http://localhost:11434)",
+        help="LLM service URL (default: AIGUARD_LLM_URL or http://localhost:11434)",
     )
     common.add_argument(
         "--llm-api-key",
         default="",
         metavar="KEY",
-        help="OpenAI-compat API key (can also be set via LLMGUARD_LLM_API_KEY env)",
+        help="OpenAI-compat API key (can also be set via AIGUARD_LLM_API_KEY env)",
     )
     common.add_argument(
         "--auto-pull",
@@ -210,10 +210,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _resolve_llm_url(args_url: str) -> str:
-    """--llm-url → LLMGUARD_LLM_URL env → default."""
+    """--llm-url → AIGUARD_LLM_URL env → default."""
     if args_url:
         return args_url
-    return os.environ.get("LLMGUARD_LLM_URL", "http://localhost:11434")
+    return os.environ.get("AIGUARD_LLM_URL", "http://localhost:11434")
 
 
 def _make_guard(args: argparse.Namespace):
@@ -231,7 +231,7 @@ def _make_guard(args: argparse.Namespace):
         llm_backend=args.llm_backend,
         llm_model=args.llm_model,
         llm_base_url=_resolve_llm_url(args.llm_url),
-        llm_api_key=args.llm_api_key or os.environ.get("LLMGUARD_LLM_API_KEY", ""),
+        llm_api_key=args.llm_api_key or os.environ.get("AIGUARD_LLM_API_KEY", ""),
         auto_pull=getattr(args, "auto_pull", False),
     )
 
@@ -239,7 +239,7 @@ def _make_guard(args: argparse.Namespace):
 def _make_backend(args: argparse.Namespace):
     backend = getattr(args, "llm_backend", "ollama")
     url = _resolve_llm_url(getattr(args, "llm_url", ""))
-    api_key = getattr(args, "llm_api_key", "") or os.environ.get("LLMGUARD_LLM_API_KEY", "")
+    api_key = getattr(args, "llm_api_key", "") or os.environ.get("AIGUARD_LLM_API_KEY", "")
 
     if backend == "ollama":
         from ai_guard.llm.backends.ollama import OllamaBackend
@@ -307,11 +307,11 @@ def _read_file(path: Path) -> str:
 
 def _warn_if_no_salt(args: argparse.Namespace) -> None:
     """Write a warning to stderr if no salt is used in production."""
-    salt = args.salt or os.environ.get("LLMGUARD_SALT", "")
+    salt = args.salt or os.environ.get("AIGUARD_SALT", "")
     if not salt:
         print(
             "WARNING: Hash salt is not set — identical PII values will always produce the same "
-            "hash. Use --salt or LLMGUARD_SALT in production.",
+            "hash. Use --salt or AIGUARD_SALT in production.",
             file=sys.stderr,
         )
 

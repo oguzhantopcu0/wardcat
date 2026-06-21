@@ -287,6 +287,24 @@ for r in results:
 
 ### On-prem LLM
 
+> **Fluent setup (recommended).** Instead of passing a dozen `llm_*` / `spacy_*`
+> constructor arguments, use the chainable builders — they keep each layer's
+> config in one place and read top-to-bottom:
+>
+> ```python
+> from ai_guard import AIGuard, Backend, Language
+>
+> guard = (
+>     AIGuard(salt="s")
+>     .with_ner(language=Language.TR)                       # NER layer
+>     .with_llm(backend=Backend.OLLAMA, model="llama3.2",   # LLM layer
+>               adjudicate=True)
+> )
+> ```
+>
+> `with_ner()` and `with_llm()` both return `self`, so they chain back-to-back
+> (regex + NER + LLM all active). The constructor arguments below still work.
+
 Two options for LLM-based detection:
 
 **Option 1 — Run locally with Ollama:**
@@ -296,10 +314,17 @@ Two options for LLM-based detection:
 ollama pull llama3.2
 ```
 
+> Use the `Backend` constants for typo-proof selection — `Backend.OLLAMA`,
+> `Backend.OPENAI_COMPATIBLE`, `Backend.TRANSFORMERS`. Plain strings (`"ollama"`,
+> …) are still accepted. `llm_backend` is the backend **type**; the **address**
+> goes to `llm_base_url`.
+
 ```python
+from ai_guard import AIGuard, Backend
+
 guard = AIGuard(
     use_llm=True,
-    llm_backend="ollama",
+    llm_backend=Backend.OLLAMA,
     llm_model="llama3.2",
     llm_base_url="http://localhost:11434",
 )
@@ -308,20 +333,25 @@ guard = AIGuard(
 **Option 2 — Connect to an existing endpoint (vLLM, LM Studio, LocalAI):**
 
 ```python
+from ai_guard import AIGuard, Backend
+
 guard = AIGuard(
     use_llm=True,
-    llm_backend="openai_compatible",
-    llm_base_url="http://10.0.0.5:8000",
+    llm_backend=Backend.OPENAI_COMPATIBLE,
+    llm_base_url="http://10.0.0.5:8000/v1",
     llm_model="llama3.1:8b",
+    # llm_api_key="sk-..."   # only if the endpoint requires auth (omit otherwise)
 )
 ```
 
 **Option 3 — HuggingFace Transformers (GPU/CPU):**
 
 ```python
+from ai_guard import AIGuard, Backend
+
 guard = AIGuard(
     use_llm=True,
-    llm_backend="transformers",
+    llm_backend=Backend.TRANSFORMERS,
     llm_model="meta-llama/Llama-3.1-8B-Instruct",
     llm_load_in_8bit=True,  # optional: reduce VRAM usage
 )
@@ -612,16 +642,23 @@ Inputs exceeding **500 KB** raise a `ValueError`. Split large documents into sma
 
 ---
 
-## Environment Variables
+## Environment Variables (CLI only)
 
-| Variable | Description |
-|---|---|
-| `AIGUARD_SALT` | Hash salt |
-| `AIGUARD_LLM_URL` | LLM service base URL |
-| `AIGUARD_LLM_MODEL` | LLM model name |
-| `AIGUARD_LLM_API_KEY` | API key for OpenAI-compatible backends |
-| `AIGUARD_LLM_TIMEOUT` | LLM request timeout in seconds |
-| `AIGUARD_SPACY_MODEL` | SpaCy model name |
+> **The library never reads environment variables.** When you use `ai_guard` as a
+> library, pass everything explicitly — `AIGuard(salt=..., llm_base_url=..., llm_allow_http=...)`
+> or a YAML `config_path`. Read secrets from the environment in *your* application
+> and hand them to the constructor. The variables below are read **only by the
+> `ai-guard` CLI** (which is an application), as defaults for the matching flags.
+
+| Variable (CLI) | Flag | Description |
+|---|---|---|
+| `AIGUARD_SALT` | `--salt` | Hash salt |
+| `AIGUARD_LLM_URL` | `--llm-url` | LLM service base URL |
+| `AIGUARD_LLM_MODEL` | `--llm-model` | LLM model name |
+| `AIGUARD_LLM_API_KEY` | `--llm-api-key` | API key for OpenAI-compatible backends |
+
+To allow plaintext HTTP to a **remote** LLM (blocked by default), pass
+`AIGuard(llm_allow_http=True)` — there is no env var for this.
 
 ---
 

@@ -4,6 +4,28 @@ import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
+
+
+class Backend(str, Enum):
+    """LLM backend types, as constants — for typo-proof selection.
+
+    Pass these to ``AIGuard(llm_backend=...)`` instead of bare strings::
+
+        from ai_guard import AIGuard, Backend
+
+        AIGuard(use_llm=True, llm_backend=Backend.OPENAI_COMPATIBLE, ...)
+
+    Each member *is* its string value (``Backend.OLLAMA == "ollama"``), so the
+    plain string form is still accepted.
+    """
+
+    OLLAMA = "ollama"
+    """Local Ollama service (supports model download)."""
+    OPENAI_COMPATIBLE = "openai_compatible"
+    """OpenAI-compatible HTTP API — vLLM, LM Studio, LocalAI, LiteLLM, …"""
+    TRANSFORMERS = "transformers"
+    """In-process HuggingFace Transformers (no HTTP; loads the model locally)."""
 
 
 @dataclass
