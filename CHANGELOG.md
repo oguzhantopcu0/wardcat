@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`LLMGuard` → `AIGuard`:** the main class is renamed and the `LLMGuard` name is **removed** (the guard is not LLM-specific — it is regex/NER/LLM hybrid). Update imports to `from ai_guard import AIGuard`.
 - **`configure_entity()` → `add_entity()`** and **`configure_entities()` → `add_entities()`.** The old method names were **removed** (no aliases).
 - **`add_entity()` / `add_entities()` no longer take an `enabled` argument.** Adding an entity always enables it; use `remove_entity()` / `remove_entities()` to turn entities off. This removes the contradictory `add_entity(..., enabled=False)` form.
+- **Default action is now `hash` (was `warn`).** Calling `add_entity()` / `add_entities()` without an `action` enables the entity with `action="hash"` (the safest default) and logs a warning; pass `action=...` explicitly to silence it.
 
 ### Added
 

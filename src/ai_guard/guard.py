@@ -383,7 +383,7 @@ class AIGuard:
     def add_entity(
         self,
         entity_type: str | Entity,
-        action: str | Action = "warn",
+        action: str | Action | None = None,
         layers: list[str] | None = None,
     ) -> AIGuard:
         """
@@ -399,6 +399,9 @@ class AIGuard:
                             :meth:`remove_entity`.
         :param action:      An :class:`~ai_guard.Action` constant (e.g. ``Action.HASH``)
                             or its string form: ``"warn"``, ``"hash"``, ``"redact"``, ``"mask"``.
+                            **When omitted, defaults to** ``"hash"`` (the safest
+                            action) and a warning is logged — pass ``action``
+                            explicitly to silence it.
         :param layers:      Which detector layers should look for this entity —
                             any of ``"regex"``, ``"ner"``, ``"llm"``. When
                             ``None`` (default), every layer that supports the
@@ -407,6 +410,7 @@ class AIGuard:
         :raises ConfigError: if ``entity_type`` is not a ``str``/``Entity``, the
                             ``action`` is invalid, or a ``layer`` is unknown.
         """
+        action = self._action_or_default(action)
         if self._is_all(entity_type):
             for name in sorted(KNOWN_ENTITY_TYPES):
                 self._set_entity(name, enabled=True, action=action, layers=layers)
@@ -419,7 +423,7 @@ class AIGuard:
         self,
         entities,
         *,
-        action: str | Action = "warn",
+        action: str | Action | None = None,
         layers: list[str] | None = None,
     ) -> AIGuard:
         """
@@ -448,7 +452,8 @@ class AIGuard:
 
         :attr:`Entity.ALL` may appear as an entry to expand to every known
         entity. The top-level ``action``/``layers`` act as defaults for any entry
-        that does not specify its own.
+        that does not specify its own. Any entity left without an action defaults
+        to ``"hash"`` and logs a single warning.
 
         :raises ConfigError: if ``entities`` is not a mapping or iterable, or any
                             spec/action/entity is invalid.
@@ -470,6 +475,7 @@ class AIGuard:
                     f"got {type(entities).__name__}."
                 ) from exc
 
+        defaulted = False
         for name, spec in specs.items():
             if isinstance(spec, str):
                 spec = {"action": spec}
@@ -481,10 +487,18 @@ class AIGuard:
                     f"got {type(spec).__name__}."
                 )
             entity_action = spec.get("action", action)
+            if entity_action is None:
+                entity_action = Action.HASH.value
+                defaulted = True
             entity_layers = spec.get("layers", layers)
             names = sorted(KNOWN_ENTITY_TYPES) if self._is_all(name) else [name]
             for n in names:
                 self._set_entity(n, enabled=True, action=entity_action, layers=entity_layers)
+        if defaulted:
+            logger.warning(
+                "add_entities(): one or more entities were enabled without an action — "
+                "defaulting to 'hash'. Pass action=... (or a per-entity action) to silence this."
+            )
         self._rebuild()
         return self
 
@@ -654,6 +668,17 @@ class AIGuard:
         if isinstance(entity_type, str):
             return entity_type
         raise ConfigError(f"entity_type must be a str or Entity, got {type(entity_type).__name__}.")
+
+    @staticmethod
+    def _action_or_default(action: str | Action | None) -> str | Action:
+        """Return *action*, or the default ``hash`` (with a warning) when unspecified."""
+        if action is None:
+            logger.warning(
+                "No action specified — defaulting to 'hash' (the safest action). "
+                "Pass action=... (e.g. Action.WARN) to choose explicitly and silence this warning."
+            )
+            return Action.HASH.value
+        return action
 
     @staticmethod
     def _normalize_action(action: str | Action) -> str:

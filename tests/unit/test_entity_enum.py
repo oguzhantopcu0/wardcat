@@ -63,6 +63,44 @@ def test_invalid_action_still_raises():
 
 
 # ---------------------------------------------------------------------------
+# Default action: omitting `action` → hash + a logged warning
+# ---------------------------------------------------------------------------
+
+
+def test_add_entity_without_action_defaults_to_hash_and_warns(caplog):
+    import logging
+
+    guard = AIGuard(salt="s", use_ner=False).remove_entity(Entity.ALL)
+    with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
+        guard.add_entity(Entity.EMAIL)  # no action
+    assert guard.get_entity_action("EMAIL") == "hash"
+    assert any("defaulting to 'hash'" in r.message for r in caplog.records)
+
+
+def test_add_entity_with_action_does_not_warn(caplog):
+    import logging
+
+    guard = AIGuard(salt="s", use_ner=False).remove_entity(Entity.ALL)
+    with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
+        guard.add_entity(Entity.EMAIL, action="warn")
+    assert guard.get_entity_action("EMAIL") == "warn"
+    assert not any("defaulting to 'hash'" in r.message for r in caplog.records)
+
+
+def test_add_entities_without_action_defaults_to_hash_and_warns_once(caplog):
+    import logging
+
+    guard = AIGuard(salt="s", use_ner=False).remove_entity(Entity.ALL)
+    with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
+        guard.add_entities({"EMAIL": "redact", "CREDIT_CARD": {}, "IBAN": {}})
+    assert guard.get_entity_action("CREDIT_CARD") == "hash"
+    assert guard.get_entity_action("IBAN") == "hash"
+    assert guard.get_entity_action("EMAIL") == "redact"  # explicit, unaffected
+    warnings_logged = [r for r in caplog.records if "defaulting to 'hash'" in r.message]
+    assert len(warnings_logged) == 1  # a single aggregated warning
+
+
+# ---------------------------------------------------------------------------
 # Entity.ALL — enable everything
 # ---------------------------------------------------------------------------
 
