@@ -32,7 +32,7 @@ def _guard_with_llm(response: str, entities: set[str] | None = None) -> AIGuard:
     Instead of patching AIGuard's _build_llm_detector directly,
     we inject the detector afterwards.
     """
-    guard = AIGuard(use_ner=False, use_llm=False)  # build without LLM first
+    guard = AIGuard(use_ner=False)  # build without LLM first
     enabled = entities or {
         "CREDIT_CARD",
         "EMAIL",
@@ -211,17 +211,16 @@ class TestLLMFaultTolerance:
 
 class TestAIGuardConfig:
     def test_use_llm_false_no_llm_detector(self):
-        guard = AIGuard(use_ner=False, use_llm=False)
+        guard = AIGuard(use_ner=False)
         from ai_guard.detectors.llm_detector import LLMDetector
 
         assert not any(isinstance(d, LLMDetector) for d in guard._detectors)
 
     def test_llm_config_stored_correctly(self):
-        guard = AIGuard(
-            use_ner=False,
-            use_llm=False,  # test without service; check config
-            llm_model="mistral",
-            llm_base_url="http://10.0.0.5:11434",
+        guard = AIGuard(use_ner=False).with_llm(
+            model="mistral",
+            base_url="http://10.0.0.5:11434",
+            allow_http=True,  # remote HTTP allowed for this config-only check (no connection)
         )
         cfg = guard._config["llm_detector"]
         assert cfg["model"] == "mistral"

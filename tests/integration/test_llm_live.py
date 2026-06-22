@@ -92,7 +92,7 @@ class TestLiveLLMDetection:
 
     def test_detects_contextual_secret(self):
         # db_pass=VALUE has no known prefix → regex can't catch it; only the LLM can.
-        guard = AIGuard(use_ner=False, use_llm=True, llm_model=_MODEL, llm_timeout=120, salt="s")
+        guard = AIGuard(use_ner=False, salt="s").with_llm(model=_MODEL, timeout=120)
         guard._config["llm_detector"]["entities"]["CUSTOM_SECRET"] = {
             "enabled": True,
             "action": "hash",

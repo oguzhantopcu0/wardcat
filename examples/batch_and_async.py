@@ -17,8 +17,15 @@ TEXTS = [
 ]
 
 
+def _build_guard() -> AIGuard:
+    # Detection is opt-in: enable the entities you care about.
+    return AIGuard(use_ner=False, salt="example-salt").add_entities(
+        {"EMAIL": "warn", "CREDIT_CARD": "hash", "IBAN": "hash"}
+    )
+
+
 def batch_demo() -> None:
-    guard = AIGuard(use_ner=False, salt="example-salt")
+    guard = _build_guard()
     results = guard.scan_batch(TEXTS)
     print("== scan_batch ==")
     for text, r in zip(TEXTS, results, strict=True):
@@ -27,7 +34,7 @@ def batch_demo() -> None:
 
 
 async def async_demo() -> None:
-    guard = AIGuard(use_ner=False, salt="example-salt")
+    guard = _build_guard()
     results = await guard.scan_batch_async(TEXTS)
     print("\n== scan_batch_async ==")
     for text, r in zip(TEXTS, results, strict=True):

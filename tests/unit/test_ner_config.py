@@ -113,12 +113,10 @@ def test_backend_enum_is_str_value():
 def test_backend_enum_configures_llm():
     from ai_guard import AIGuard, Backend
 
-    guard = AIGuard(
-        salt="s",
-        use_llm=True,
-        llm_backend=Backend.OPENAI_COMPATIBLE,
-        llm_base_url="http://localhost:8000/v1",
-        llm_model="mistral",
+    guard = AIGuard(salt="s").with_llm(
+        backend=Backend.OPENAI_COMPATIBLE,
+        base_url="http://localhost:8000/v1",
+        model="mistral",
     )
     # stored as the canonical string, not the enum object
     assert guard._config["llm_detector"]["backend"] == "openai_compatible"
@@ -127,8 +125,8 @@ def test_backend_enum_configures_llm():
 def test_backend_string_and_enum_equivalent():
     from ai_guard import AIGuard, Backend
 
-    g_enum = AIGuard(salt="s", use_llm=True, llm_backend=Backend.TRANSFORMERS, llm_model="x")
-    g_str = AIGuard(salt="s", use_llm=True, llm_backend="transformers", llm_model="x")
+    g_enum = AIGuard(salt="s").with_llm(backend=Backend.TRANSFORMERS, model="x")
+    g_str = AIGuard(salt="s").with_llm(backend="transformers", model="x")
     assert g_enum._config["llm_detector"]["backend"] == g_str._config["llm_detector"]["backend"]
 
 
@@ -137,7 +135,7 @@ def test_invalid_backend_raises():
     from ai_guard.exceptions import ConfigError
 
     with pytest.raises(ConfigError, match="backend"):
-        AIGuard(salt="s", use_llm=True, llm_backend="bogus")
+        AIGuard(salt="s").with_llm(backend="bogus")
 
 
 # ---------------------------------------------------------------------------

@@ -363,12 +363,8 @@ print(f"{BOLD}{CYAN}Guard kuruluyor: Regex + NER(tr_core_news_lg) + LLM(gemma3:1
 guard = AIGuard(
     use_ner=True,
     spacy_model="tr_core_news_lg",
-    use_llm=True,
-    llm_backend="ollama",
-    llm_model="gemma3:12b",
-    llm_timeout=120,
     salt="coverage-test-salt",
-)
+).with_llm(backend="ollama", model="gemma3:12b", timeout=120)
 # Bağlamsal sırların LLM tarafından da yakalanması için CUSTOM_SECRET'i aç.
 guard._config.setdefault("llm_detector", {}).setdefault("entities", {})["CUSTOM_SECRET"] = {
     "enabled": True,

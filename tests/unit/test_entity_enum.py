@@ -314,7 +314,8 @@ def test_change_action_all_raises_when_nothing_active():
 
 def test_change_action_on_llm_only_entity():
     guard = (
-        AIGuard(salt="s", use_ner=False, use_llm=True, llm_model="x")
+        AIGuard(salt="s", use_ner=False)
+        .with_llm(model="x")
         .remove_entity(Entity.ALL)
         .add_entity(Entity.SPECIAL_CATEGORY, action="redact", layers=["llm"])
     )

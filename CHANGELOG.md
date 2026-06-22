@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- **LLM is configured via `with_llm()` (or YAML), not constructor arguments.** The `use_llm`, `llm_backend`, `llm_model`, `llm_base_url`, `llm_api_key`, `llm_timeout`, `llm_allow_http`, `llm_adjudicate`, `auto_pull`, `llm_device_map`, `llm_load_in_8bit`, `llm_load_in_4bit` constructor parameters were removed — use `AIGuard(...).with_llm(backend=..., model=..., ...)`. This slims the constructor (19 → 7 params) and removes the duplicate path. NER constructor args (`use_ner`, `language`, `spacy_model`, …) are unchanged.
 - **Detection is opt-in: a bare `AIGuard()` starts empty.** Previously every regex/NER entity was on by default; now nothing is enabled until you `add_entity()` / `add_entities()`. Enable everything with `add_entity(Entity.ALL, action=...)`. (The `ai-guard` CLI keeps a sensible "detect common PII" default policy, since it is an application.) The unsalted-hash warning now fires from the first rebuild that activates a `hash` action, not only at construction.
 - **`LLMGuard` → `AIGuard`:** the main class is renamed and the `LLMGuard` name is **removed** (the guard is not LLM-specific — it is regex/NER/LLM hybrid). Update imports to `from ai_guard import AIGuard`.
 - **`configure_entity()` → `add_entity()`** and **`configure_entities()` → `add_entities()`.** The old method names were **removed** (no aliases).
@@ -39,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Broken `examples/batch_and_async.py`:** it scanned without enabling any entity, so after the opt-in change it silently reported everything as clean. Examples now enable entities, and a new smoke test (`tests/test_examples.py`) runs the offline examples in CI and asserts they actually detect PII — so examples can't rot silently again.
 - **Default-action warning noise:** when `add_entity()` / `add_entities()` default a missing action to `hash`, the warning is now logged **once per guard** instead of on every call — it stays visible without spamming logs when many entities are added.
 - **Misleading install hint:** the LLM backends' missing-`httpx` error pointed at a non-existent `ai-guard[llm]` extra; `httpx` is a core dependency, so the message now says to reinstall ai-guard.
 - **Multiple explicit models:** `spacy_model=` now accepts a list, e.g. `spacy_model=["en_core_web_sm", "de_core_news_sm"]`.

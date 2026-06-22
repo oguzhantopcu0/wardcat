@@ -48,7 +48,7 @@ def make_guard(entities: set[str] | None = None, use_ner: bool = False) -> AIGua
         "IP_ADDRESS",
         "CUSTOM_SECRET",
     }
-    guard = AIGuard(use_ner=use_ner, use_llm=False)
+    guard = AIGuard(use_ner=use_ner)
     for e in enabled:
         guard._config["entities"].setdefault(e, {"enabled": True, "action": "warn"})
     guard._config["entities"]["PERSON"] = {"enabled": True, "action": "hash"}

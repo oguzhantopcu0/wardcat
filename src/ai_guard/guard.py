@@ -150,13 +150,10 @@ class AIGuard:
     The library does **not** read environment variables (the ``ai-guard`` CLI does,
     as it is an application — see ``AIGUARD_*`` in ``python -m ai_guard --help``).
 
-    LLM detector (Ollama)::
+    LLM detector — configured with :meth:`with_llm` (or a YAML ``config_path``),
+    not constructor arguments::
 
-        guard = AIGuard(
-            use_llm=True,
-            llm_model="llama3.1:8b",
-            llm_base_url="http://localhost:11434",
-        )
+        guard = AIGuard(salt="s").with_llm(model="llama3.1:8b")
         result = guard.scan(text)
 
     NER requires an explicit model — ai-guard ships no default. Choose one in a
@@ -184,18 +181,6 @@ class AIGuard:
         language: str | Language | list[str | Language] | None = None,  # NER by language
         spacy_size: str = "sm",  # NER: model size tier when language is given (sm/md/lg/trf)
         spacy_auto_download: bool | None = None,  # download the SpaCy model if missing
-        use_llm: bool = False,
-        llm_backend: str | Backend = "ollama",  # Backend.OLLAMA | OPENAI_COMPATIBLE | TRANSFORMERS
-        llm_model: str = "llama3.2",
-        llm_base_url: str = "http://localhost:11434",
-        llm_api_key: str = "",
-        llm_timeout: int = 60,
-        llm_allow_http: bool = False,  # allow plaintext HTTP to a remote LLM (not recommended)
-        llm_adjudicate: bool = False,  # ensemble: LLM verifies regex/NER candidates
-        auto_pull: bool = False,  # Ollama: automatically download if model is missing
-        llm_device_map: str = "auto",  # Transformers: GPU distribution
-        llm_load_in_8bit: bool = False,  # Transformers: 8-bit quantization
-        llm_load_in_4bit: bool = False,  # Transformers: 4-bit quantization
     ) -> None:
         self._config = load_config(config_path)
 
@@ -246,34 +231,9 @@ class AIGuard:
                 "or spacy_model=...; ai-guard ships no default model."
             )
 
-        # LLM detector overrides
-        llm_cfg = self._config.setdefault("llm_detector", {})
-        if use_llm:
-            llm_cfg["enabled"] = True
-        if llm_backend != "ollama":
-            llm_cfg["backend"] = (
-                llm_backend.value if isinstance(llm_backend, Backend) else llm_backend
-            )
-        if llm_model != "llama3.2":
-            llm_cfg["model"] = llm_model
-        if llm_base_url != "http://localhost:11434":
-            llm_cfg["base_url"] = llm_base_url
-        if llm_api_key:
-            llm_cfg["api_key"] = llm_api_key
-        if llm_timeout != 60:
-            llm_cfg["timeout"] = llm_timeout
-        if llm_allow_http:
-            llm_cfg["allow_http"] = True
-        if llm_adjudicate:
-            llm_cfg["adjudicate"] = True
-        if auto_pull:
-            llm_cfg["auto_pull"] = True
-        if llm_device_map != "auto":
-            llm_cfg["device_map"] = llm_device_map
-        if llm_load_in_8bit:
-            llm_cfg["load_in_8bit"] = True
-        if llm_load_in_4bit:
-            llm_cfg["load_in_4bit"] = True
+        # The LLM detector is configured via with_llm() or a YAML config_path —
+        # not constructor arguments. Ensure the sub-config exists for YAML/builder use.
+        self._config.setdefault("llm_detector", {})
 
         # Warn at most once when a hash action is active without a salt. Checked
         # in _rebuild() too, since entities are opt-in and usually added after init.

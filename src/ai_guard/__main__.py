@@ -222,7 +222,7 @@ def _make_guard(args: argparse.Namespace):
     # The CLI is an application: with no --config it uses the bundled default
     # policy (a sensible "detect common PII" preset), unlike the library which
     # starts empty. use_ner stays unset unless --no-ner / a model is given.
-    return AIGuard(
+    guard = AIGuard(
         config_path=args.config or "default",
         salt=args.salt,
         use_ner=False if args.no_ner else None,
@@ -230,13 +230,16 @@ def _make_guard(args: argparse.Namespace):
         language=getattr(args, "lang", None),
         spacy_size=getattr(args, "spacy_size", "sm"),
         spacy_auto_download=getattr(args, "spacy_auto_download", False) or None,
-        use_llm=args.llm,
-        llm_backend=args.llm_backend,
-        llm_model=args.llm_model,
-        llm_base_url=_resolve_llm_url(args.llm_url),
-        llm_api_key=args.llm_api_key or os.environ.get("AIGUARD_LLM_API_KEY", ""),
-        auto_pull=getattr(args, "auto_pull", False),
     )
+    if args.llm:
+        guard.with_llm(
+            backend=args.llm_backend,
+            model=args.llm_model,
+            base_url=_resolve_llm_url(args.llm_url),
+            api_key=args.llm_api_key or os.environ.get("AIGUARD_LLM_API_KEY", ""),
+            auto_pull=getattr(args, "auto_pull", False),
+        )
+    return guard
 
 
 def _make_backend(args: argparse.Namespace):

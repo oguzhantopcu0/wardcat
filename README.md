@@ -165,8 +165,8 @@ guard.add_entities({
 ### Choosing which filters run, and on which layer
 
 Each entity can be detected by one or more of three layers — `regex`
-(deterministic), `ner` (SpaCy), and `llm` (contextual/semantic). By default an
-entity is enabled on every layer that supports it. Use `layers=[...]` to target
+(deterministic), `ner` (SpaCy), and `llm` (contextual/semantic). When you enable
+an entity it runs on every layer that supports it; pass `layers=[...]` to target
 a specific layer — for example, keep a semantic-only entity off the regex/NER
 path:
 
@@ -277,6 +277,7 @@ entities:
 ### Batch Scanning
 
 ```python
+guard = AIGuard(salt="s").add_entities(["EMAIL", "CREDIT_CARD"])
 results = guard.scan_batch([
     "ali@example.com",
     "Card: 4111 1111 1111 1111",
@@ -308,9 +309,12 @@ for r in results:
 > ```
 >
 > `with_ner()` and `with_llm()` both return `self`, so they chain back-to-back
-> (regex + NER + LLM all active). The constructor arguments below still work.
+> (regex + NER + LLM all active).
 
-Two options for LLM-based detection:
+The LLM detector is configured **only** via `with_llm()` (or a YAML `config_path`)
+— it is not a set of constructor arguments. `backend` is the backend **type**
+(use the `Backend` constants — `Backend.OLLAMA`, `Backend.OPENAI_COMPATIBLE`,
+`Backend.TRANSFORMERS`; plain strings work too); the **address** goes to `base_url`.
 
 **Option 1 — Run locally with Ollama:**
 
@@ -319,19 +323,13 @@ Two options for LLM-based detection:
 ollama pull llama3.2
 ```
 
-> Use the `Backend` constants for typo-proof selection — `Backend.OLLAMA`,
-> `Backend.OPENAI_COMPATIBLE`, `Backend.TRANSFORMERS`. Plain strings (`"ollama"`,
-> …) are still accepted. `llm_backend` is the backend **type**; the **address**
-> goes to `llm_base_url`.
-
 ```python
 from ai_guard import AIGuard, Backend
 
-guard = AIGuard(
-    use_llm=True,
-    llm_backend=Backend.OLLAMA,
-    llm_model="llama3.2",
-    llm_base_url="http://localhost:11434",
+guard = AIGuard(salt="s").with_llm(
+    backend=Backend.OLLAMA,
+    model="llama3.2",
+    base_url="http://localhost:11434",
 )
 ```
 
@@ -340,12 +338,11 @@ guard = AIGuard(
 ```python
 from ai_guard import AIGuard, Backend
 
-guard = AIGuard(
-    use_llm=True,
-    llm_backend=Backend.OPENAI_COMPATIBLE,
-    llm_base_url="http://10.0.0.5:8000/v1",
-    llm_model="llama3.1:8b",
-    # llm_api_key="sk-..."   # only if the endpoint requires auth (omit otherwise)
+guard = AIGuard(salt="s").with_llm(
+    backend=Backend.OPENAI_COMPATIBLE,
+    base_url="http://10.0.0.5:8000/v1",
+    model="llama3.1:8b",
+    # api_key="sk-..."   # only if the endpoint requires auth (omit otherwise)
 )
 ```
 
@@ -354,11 +351,10 @@ guard = AIGuard(
 ```python
 from ai_guard import AIGuard, Backend
 
-guard = AIGuard(
-    use_llm=True,
-    llm_backend=Backend.TRANSFORMERS,
-    llm_model="meta-llama/Llama-3.1-8B-Instruct",
-    llm_load_in_8bit=True,  # optional: reduce VRAM usage
+guard = AIGuard(salt="s").with_llm(
+    backend=Backend.TRANSFORMERS,
+    model="meta-llama/Llama-3.1-8B-Instruct",
+    load_in_8bit=True,  # optional: reduce VRAM usage
 )
 ```
 
@@ -366,15 +362,12 @@ guard = AIGuard(
 
 #### Ensemble adjudication
 
-By default the three layers run independently and their findings are merged (union). With `llm_adjudicate=True`, the engine instead sends the regex/NER candidates to the LLM, which — in a **single call** — verifies each one (keep / relabel / drop) and adds any PII the other layers missed. Deterministic, checksum-validated regex spans are always kept regardless of the LLM verdict. This sharply reduces NER noise (e.g. job titles mislabeled as names, or a model run on the wrong language):
+By default the three layers run independently and their findings are merged (union). With `with_llm(adjudicate=True)`, the engine instead sends the regex/NER candidates to the LLM, which — in a **single call** — verifies each one (keep / relabel / drop) and adds any PII the other layers missed. Deterministic, checksum-validated regex spans are always kept regardless of the LLM verdict. This sharply reduces NER noise (e.g. job titles mislabeled as names, or a model run on the wrong language):
 
 ```python
-guard = AIGuard(
-    use_ner=True,
-    spacy_model="de_core_news_sm",
-    use_llm=True,
-    llm_model="gemma3:12b",
-    llm_adjudicate=True,   # LLM acts as detector + arbiter in one call
+guard = AIGuard(use_ner=True, spacy_model="de_core_news_sm").with_llm(
+    model="gemma3:12b",
+    adjudicate=True,   # LLM acts as detector + arbiter in one call
 )
 ```
 
@@ -547,7 +540,7 @@ For text that mixes several languages you have two options:
 1. **LLM layer (recommended, no extra models).** The LLM prompt is multilingual, so a single LLM-enabled guard detects names across languages without loading any SpaCy model:
 
    ```python
-   guard = AIGuard(use_llm=True, llm_model="llama3.1:8b")  # handles EN+DE+FR+TR in one call
+   guard = AIGuard().with_llm(model="llama3.1:8b")  # handles EN+DE+FR+TR in one call
    ```
 
 2. **Multiple SpaCy models.** Pass a list of languages — ai-guard loads one NER model per language and the engine merges their results. Each model adds RAM and roughly multiplies NER scan time, so this is opt-in:
@@ -622,7 +615,7 @@ Salt prevents rainbow table attacks. Set it via environment variable in producti
 
 ```python
 import os
-guard = AIGuard(salt=os.environ["AIGUARD_SALT"])
+guard = AIGuard(salt=os.environ["AIGUARD_SALT"]).add_entity("CREDIT_CARD", "hash")
 ```
 
 > Never hardcode the salt in source code or config files.
@@ -650,7 +643,7 @@ Inputs exceeding **500 KB** raise a `ValueError`. Split large documents into sma
 ## Environment Variables (CLI only)
 
 > **The library never reads environment variables.** When you use `ai_guard` as a
-> library, pass everything explicitly — `AIGuard(salt=..., llm_base_url=..., llm_allow_http=...)`
+> library, pass everything explicitly — `AIGuard(salt=...).with_llm(base_url=..., allow_http=...)`
 > or a YAML `config_path`. Read secrets from the environment in *your* application
 > and hand them to the constructor. The variables below are read **only by the
 > `ai-guard` CLI** (which is an application), as defaults for the matching flags.
@@ -663,7 +656,7 @@ Inputs exceeding **500 KB** raise a `ValueError`. Split large documents into sma
 | `AIGUARD_LLM_API_KEY` | `--llm-api-key` | API key for OpenAI-compatible backends |
 
 To allow plaintext HTTP to a **remote** LLM (blocked by default), pass
-`AIGuard(llm_allow_http=True)` — there is no env var for this.
+`with_llm(allow_http=True)` — there is no env var for this.
 
 ---
 
@@ -741,7 +734,7 @@ uv run pytest --cov=src/ai_guard --cov-report=term-missing
 | Multilingual NER | One SpaCy model loads per instance — set `spacy_model` to match the text language; auto language detection is not yet built in |
 | European addresses | Regex requires a recognizable street-type keyword (Straße, Rue, Calle…); unnumbered informal addresses may be missed |
 | Turkish NER (`tr_core_news_trf`) | Transformer model incompatible with SpaCy 3.5+ — use `tr_core_news_md` or `tr_core_news_lg` |
-| Turkish NER quality | `tr_core_news_md/lg` trained on news text; may miss names in non-standard contexts. For best results combine with `use_llm=True` |
+| Turkish NER quality | `tr_core_news_md/lg` trained on news text; may miss names in non-standard contexts. For best results combine with `.with_llm(...)` |
 
 ---
 

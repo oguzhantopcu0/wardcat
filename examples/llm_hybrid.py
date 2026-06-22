@@ -22,12 +22,8 @@ def main() -> None:
     guard = AIGuard(
         use_ner=True,
         spacy_model="en_core_web_sm",
-        use_llm=True,
-        llm_backend="ollama",
-        llm_model="gemma3:12b",
-        llm_adjudicate=True,  # LLM acts as detector + arbiter in one call
         salt="example-salt",
-    )
+    ).with_llm(backend="ollama", model="gemma3:12b", adjudicate=True)
     # db_pass=... has no known prefix → only the LLM can flag it. Target the
     # LLM layer explicitly so it is not also enabled for regex.
     guard.add_entity("CUSTOM_SECRET", action="hash", layers=["llm"])
