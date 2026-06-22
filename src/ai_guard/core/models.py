@@ -3,8 +3,29 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TypedDict
 
 logger = logging.getLogger(__name__)
+
+
+class RedactedViolation(TypedDict):
+    """A single violation as returned by :meth:`ScanResult.redacted` — no raw PII."""
+
+    entity_type: str
+    start: int
+    end: int
+    action: str
+    replacement: str | None
+    confidence: float
+
+
+class RedactedResult(TypedDict):
+    """The PII-free dict returned by :meth:`ScanResult.redacted` (safe to log)."""
+
+    is_clean: bool
+    sanitized_text: str
+    scan_error: str | None
+    violations: list[RedactedViolation]
 
 
 class Action(str, Enum):
@@ -153,8 +174,8 @@ class ScanResult:
         """``True`` if no PII was detected."""
         return len(self.violations) == 0
 
-    def redacted(self) -> dict:
-        """Return a safe dict with no PII.
+    def redacted(self) -> RedactedResult:
+        """Return a safe :class:`RedactedResult` dict with no PII.
 
         Excludes the ``original_text`` and ``violations[].original`` fields.
         Use this method for logs, API responses, or database records::
@@ -163,9 +184,9 @@ class ScanResult:
             log.info("scan result: %s", result.redacted())
 
         Returns:
-            A dict containing ``sanitized_text``, ``is_clean``, and violation
-            metadata (entity_type, start, end, action, replacement).
-            Raw PII values are not included.
+            A :class:`RedactedResult` (``TypedDict``) containing ``sanitized_text``,
+            ``is_clean``, ``scan_error``, and violation metadata (entity_type,
+            start, end, action, replacement, confidence). Raw PII is not included.
         """
         return {
             "is_clean": self.is_clean,

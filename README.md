@@ -15,17 +15,19 @@ entities you want (or all of them with `add_entity(Entity.ALL, ...)`).
 
 ```python
 import os
-from ai_guard import AIGuard, Entity
+from ai_guard import AIGuard, Entity, Action
 
 # Read the salt from the environment — never hard-code it (see "Salt" below).
+# Use the Entity/Action constants for autocomplete + typo-proofing (plain
+# strings like "EMAIL"/"hash" work too).
 guard = (
     AIGuard(salt=os.environ.get("AIGUARD_SALT", ""))
-    .add_entity("CREDIT_CARD", action="hash")
-    .add_entity("EMAIL",       action="warn")
-    .add_entity("TC_ID",       action="hash")
+    .add_entity(Entity.CREDIT_CARD, Action.HASH)
+    .add_entity(Entity.EMAIL,       Action.WARN)
+    .add_entity(Entity.TC_ID,       Action.HASH)
 )
 # Or enable everything at once, then prune:
-#   AIGuard(salt=...).add_entity(Entity.ALL, action="hash").remove_entity(Entity.ORG)
+#   AIGuard(salt=...).add_entity(Entity.ALL, Action.HASH).remove_entity(Entity.ORG)
 
 result = guard.scan("Name: Ali Veli, card: 4532 0151 1283 0366, email: ali@example.com")
 print(result.sanitized_text)
@@ -112,13 +114,13 @@ uv run python -m ai_guard spacy installed
 ### Programmatic API
 
 ```python
-from ai_guard import AIGuard
+from ai_guard import AIGuard, Entity, Action
 
 guard = (
     AIGuard(salt="my-secret-salt")
-    .add_entity("CREDIT_CARD", action="hash")
-    .add_entity("EMAIL",       action="warn")
-    .add_entity("TC_ID",       action="hash")
+    .add_entity(Entity.CREDIT_CARD, Action.HASH)
+    .add_entity(Entity.EMAIL,       Action.WARN)
+    .add_entity(Entity.TC_ID,       Action.HASH)
 )
 
 result = guard.scan("""
@@ -241,6 +243,11 @@ To **inspect** the current policy at any point:
 guard.enabled_entities()            # {"CREDIT_CARD", "EMAIL", ...} — what's on
 guard.get_entity_action("EMAIL")    # "hash"  (None if the entity is not enabled)
 guard.entity_policy()               # {"CREDIT_CARD": "hash", "EMAIL": "warn", ...}
+
+# Discover what ai-guard *can* detect (and on which layer):
+AIGuard.supported_entities()        # every known entity type
+AIGuard.supported_entities("ner")   # {"PERSON", "ORG", "ADDRESS"}
+AIGuard.supported_entities("llm")   # contextual/semantic types
 ```
 
 > Removing an entity that was never enabled is a no-op (an unknown *name* logs a

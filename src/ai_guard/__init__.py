@@ -1,7 +1,15 @@
 import logging
 from importlib.metadata import PackageNotFoundError, version
 
-from ai_guard.core.models import KNOWN_ENTITY_TYPES, Action, Entity, ScanResult, Violation
+from ai_guard.core.models import (
+    KNOWN_ENTITY_TYPES,
+    Action,
+    Entity,
+    RedactedResult,
+    RedactedViolation,
+    ScanResult,
+    Violation,
+)
 from ai_guard.entity_groups import (
     all_entities,
     core_entities,
@@ -32,6 +40,8 @@ __all__ = [
     "AIGuard",
     "ScanResult",
     "Violation",
+    "RedactedResult",
+    "RedactedViolation",
     "Action",
     "Entity",
     "Language",
@@ -57,7 +67,7 @@ __all__ = [
 ]
 
 
-def redacted(result: "ScanResult") -> dict:  # noqa: F821
+def redacted(result: "ScanResult") -> "RedactedResult":  # noqa: F821
     """Convenience wrapper — equivalent to ``result.redacted()``."""
     return result.redacted()
 

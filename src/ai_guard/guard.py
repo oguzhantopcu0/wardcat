@@ -597,6 +597,27 @@ class AIGuard:
                 policy[name] = action
         return policy
 
+    @staticmethod
+    def supported_entities(layer: str | None = None) -> frozenset[str]:
+        """Return the entity types ai-guard can detect (discoverability helper).
+
+        ::
+
+            AIGuard.supported_entities()            # every known entity type
+            AIGuard.supported_entities("regex")     # only what the regex layer detects
+            AIGuard.supported_entities("ner")       # PERSON, ORG, ADDRESS
+            AIGuard.supported_entities("llm")       # contextual/semantic types
+
+        :param layer: ``None`` → all known types; or one of ``"regex"``,
+                      ``"ner"``, ``"llm"`` for that layer's set.
+        :raises ConfigError: if ``layer`` is not a known layer.
+        """
+        if layer is None:
+            return frozenset(KNOWN_ENTITY_TYPES)
+        if layer not in _LAYER_ENTITIES:
+            raise ConfigError(f"Unknown layer {layer!r}. Valid layers: {sorted(_VALID_LAYERS)}")
+        return _LAYER_ENTITIES[layer]
+
     # ------------------------------------------------------------------
     # Layer builders (fluent alternative to the constructor's llm_*/spacy_* args)
     # ------------------------------------------------------------------

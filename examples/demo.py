@@ -2,7 +2,7 @@
 ai-guard kullanım örnekleri.
 """
 
-from ai_guard import AIGuard
+from ai_guard import Action, AIGuard, Entity
 
 SAMPLE = """
 Merhaba, ben Ahmet Yılmaz. Şirketimizin sunucu IP'si 10.0.0.42.
@@ -19,10 +19,10 @@ def demo_programmatic_api():
 
     guard = (
         AIGuard(use_ner=False, salt="gizli-tuz-123")
-        .add_entity("EMAIL", action="warn")
-        .add_entity("CREDIT_CARD", action="hash")
-        .add_entity("IBAN", action="hash")
-        .add_entity("TC_ID", action="hash")
+        .add_entity(Entity.EMAIL, Action.WARN)
+        .add_entity(Entity.CREDIT_CARD, Action.HASH)
+        .add_entity(Entity.IBAN, Action.HASH)
+        .add_entity(Entity.TC_ID, Action.HASH)
     )
 
     result = guard.scan(SAMPLE)

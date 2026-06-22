@@ -426,3 +426,34 @@ def test_entity_policy_maps_enabled_to_action():
     assert guard.entity_policy() == {"CREDIT_CARD": "hash", "EMAIL": "warn"}
     guard.remove_entity(Entity.EMAIL)
     assert guard.entity_policy() == {"CREDIT_CARD": "hash"}
+
+
+# ---------------------------------------------------------------------------
+# Discoverability: AIGuard.supported_entities()
+# ---------------------------------------------------------------------------
+
+
+def test_supported_entities_all():
+    from ai_guard.core.models import KNOWN_ENTITY_TYPES
+
+    assert AIGuard.supported_entities() == frozenset(KNOWN_ENTITY_TYPES)
+
+
+def test_supported_entities_per_layer():
+    ner = AIGuard.supported_entities("ner")
+    assert ner == frozenset({"PERSON", "ORG", "ADDRESS"})
+    assert "EMAIL" in AIGuard.supported_entities("regex")
+    assert "SPECIAL_CATEGORY" in AIGuard.supported_entities("llm")
+
+
+def test_supported_entities_bad_layer_raises():
+    with pytest.raises(ConfigError, match="Unknown layer"):
+        AIGuard.supported_entities("bogus")
+
+
+def test_redacted_is_typed_and_pii_free():
+    guard = AIGuard(salt="s", use_ner=False).add_entity(Entity.EMAIL, Action.HASH)
+    d = guard.scan("mail a@b.com").redacted()
+    assert set(d.keys()) == {"is_clean", "sanitized_text", "scan_error", "violations"}
+    assert "a@b.com" not in str(d)  # no raw PII
+    assert d["violations"][0]["entity_type"] == "EMAIL"
