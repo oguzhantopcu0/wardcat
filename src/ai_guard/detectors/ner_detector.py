@@ -213,9 +213,7 @@ class NERDetector(BaseDetector):
         self.nlp = _load_model(model)
         self.enabled_entities = enabled_entities
 
-    def detect(
-        self, text: str, candidates: list[DetectedSpan] | None = None
-    ) -> list[DetectedSpan]:
+    def detect(self, text: str, candidates: list[DetectedSpan] | None = None) -> list[DetectedSpan]:
         """Return person, organization, and location spans detected by SpaCy NER."""
         doc = self.nlp(text)
         spans: list[DetectedSpan] = []

@@ -32,7 +32,7 @@ def main() -> None:
     print("Sanitized:\n" + result.sanitized_text)
     print("\nViolations:")
     for v in result.violations:
-        print(f"  [{v.action.value:6}] {v.entity_type:14} {v.original!r}")
+        print(f"  [{v.action:6}] {v.entity_type:14} {v.original!r}")
 
 
 if __name__ == "__main__":

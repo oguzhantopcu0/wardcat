@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from ai_guard.core.actions import registered_actions
 from ai_guard.exceptions import ConfigError
 from ai_guard.llm.backends.registry import registered_backends
 
@@ -70,8 +71,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "entities": {},
 }
 
-# Valid action values
-_VALID_ACTIONS = {"warn", "hash", "mask", "redact"}
 # Valid backends come from the live registry (built-in + any registered by the user).
 # Valid top-level config keys — used to catch typos in YAML files
 _KNOWN_CONFIG_KEYS = frozenset(
@@ -176,10 +175,10 @@ def validate_config(config: dict[str, Any]) -> None:
                 f"got {type(entity_cfg).__name__}."
             )
         action = entity_cfg.get("action", "warn")
-        if action not in _VALID_ACTIONS:
+        if action not in registered_actions():
             raise ConfigError(
                 f"Invalid action '{action}' (entity: {entity_name}). "
-                f"Valid values: {sorted(_VALID_ACTIONS)}"
+                f"Valid values: {sorted(registered_actions())}"
             )
 
     custom_patterns = config.get("custom_patterns", {})
@@ -194,10 +193,10 @@ def validate_config(config: dict[str, Any]) -> None:
         if not isinstance(pattern_cfg["pattern"], str):
             raise ConfigError(f"Custom pattern '{pattern_name}'.pattern must be a string.")
         action = pattern_cfg.get("action", "warn")
-        if action not in _VALID_ACTIONS:
+        if action not in registered_actions():
             raise ConfigError(
                 f"Invalid action '{action}' for custom pattern '{pattern_name}'. "
-                f"Valid values: {sorted(_VALID_ACTIONS)}"
+                f"Valid values: {sorted(registered_actions())}"
             )
         try:
             compiled = re.compile(pattern_cfg["pattern"])
@@ -274,10 +273,10 @@ def validate_config(config: dict[str, Any]) -> None:
                 f"got {type(entity_cfg).__name__}."
             )
         action = entity_cfg.get("action", "warn")
-        if action not in _VALID_ACTIONS:
+        if action not in registered_actions():
             raise ConfigError(
                 f"Invalid action '{action}' (llm_detector.entities['{entity_name}']). "
-                f"Valid values: {sorted(_VALID_ACTIONS)}"
+                f"Valid values: {sorted(registered_actions())}"
             )
 
 

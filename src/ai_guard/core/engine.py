@@ -6,83 +6,15 @@ import re
 import time
 from typing import Any
 
-from ai_guard.core.models import Action, ScanResult, Violation
+from ai_guard.core.anonymizer import Anonymizer
+from ai_guard.core.models import ScanResult
 from ai_guard.detectors.base import BaseDetector, DetectedSpan
-from ai_guard.utils.hashing import sha256_hash
 
 logger = logging.getLogger(__name__)
 
 # Default upper limit for safe input size.
 # If exceeded, scan() raises ValueError — does not lock the regex engine.
 _MAX_TEXT_BYTES = 500_000
-
-
-def _mask_value(entity_type: str, text: str) -> str:
-    """Produce an entity-aware masked version of *text*.
-
-    Masking rules per entity type:
-
-    ============== =================================================
-    CREDIT_CARD    Last 4 digits visible: ``************1111``
-    EMAIL          First char + stars + full domain: ``u***@example.com``
-    PHONE          Last 4 digits visible: ``*******5678``
-    SSN            Standard US format: ``***-**-6789``
-    IBAN           Country code + last 4: ``TR**...**1326``
-    TC_ID          Last 3 digits: ``********950``
-    NIN            Last 3: ``AB123***``
-    *default*      First 2 + stars + last 2: ``ab****cd``
-    ============== =================================================
-    """
-    n = len(text)
-    if entity_type == "CREDIT_CARD":
-        digits = re.sub(r"[^0-9]", "", text)
-        if len(digits) >= 4:
-            return "*" * (len(digits) - 4) + digits[-4:]
-        return "*" * n
-
-    if entity_type == "EMAIL":
-        at = text.find("@")
-        if at > 0:
-            local = text[:at]
-            domain = text[at:]
-            masked_local = local[0] + "*" * max(len(local) - 1, 1)
-            return masked_local + domain
-        return "*" * n
-
-    if entity_type == "PHONE":
-        digits = re.sub(r"[^0-9]", "", text)
-        if len(digits) >= 4:
-            return "*" * (n - 4) + text[-4:]
-        return "*" * n
-
-    if entity_type == "SSN":
-        digits = re.sub(r"[^0-9]", "", text)
-        if len(digits) >= 4:
-            return f"***-**-{digits[-4:]}"
-        return "*" * n
-
-    if entity_type == "IBAN":
-        # Keep country code (2 chars) + last 4
-        if n >= 6:
-            return text[:2] + "*" * (n - 6) + text[-4:]
-        return "*" * n
-
-    if entity_type == "TC_ID":
-        # Last 3 digits visible
-        if n >= 3:
-            return "*" * (n - 3) + text[-3:]
-        return "*" * n
-
-    if entity_type == "NIN":
-        # Last 3 chars visible
-        if n >= 3:
-            return "*" * (n - 3) + text[-3:]
-        return "*" * n
-
-    # Default: first 2 + stars + last 2
-    if n >= 4:
-        return text[:2] + "*" * (n - 4) + text[-2:]
-    return "*" * n
 
 
 class DetectionEngine:
@@ -111,6 +43,9 @@ class DetectionEngine:
         self._max_text_bytes: int = config.get("max_text_bytes", _MAX_TEXT_BYTES)
         self._allowlist: set[str] = set(config.get("allowlist", []))
         self._denylist: list[dict[str, str]] = config.get("denylist", [])
+        # Detection (this class) is kept separate from anonymization (applying the
+        # configured action to each span); the Anonymizer owns that stage.
+        self._anonymizer = Anonymizer(self.entity_config, self.salt)
 
         if not self.salt:
             logger.debug(
@@ -149,7 +84,7 @@ class DetectionEngine:
 
         raw_spans.extend(self._collect_denylist_spans(text))
         spans = self._filter_spans(raw_spans)
-        sanitized, violations = self._apply_actions(text, spans)
+        sanitized, violations = self._anonymizer.apply(text, spans)
 
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         logger.info(
@@ -186,7 +121,7 @@ class DetectionEngine:
             raw_spans = [s for batch in results for s in batch]
         raw_spans.extend(self._collect_denylist_spans(text))
         spans = self._filter_spans(raw_spans)
-        sanitized, violations = self._apply_actions(text, spans)
+        sanitized, violations = self._anonymizer.apply(text, spans)
 
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         logger.info(
@@ -216,48 +151,6 @@ class DetectionEngine:
         if self._allowlist:
             spans = [s for s in spans if s.text not in self._allowlist]
         return spans
-
-    def _compute_replacement(self, action: Action, span: DetectedSpan) -> str | None:
-        """Return the replacement string for *span* under *action*, or None for WARN."""
-        if action == Action.HASH:
-            digest = sha256_hash(span.text, self.salt)[:16]
-            return f"[{span.entity_type}:{digest}]"
-        if action == Action.REDACT:
-            return f"[{span.entity_type}]"
-        if action == Action.MASK:
-            return _mask_value(span.entity_type, span.text)
-        return None  # WARN
-
-    def _apply_actions(self, text: str, spans: list[DetectedSpan]) -> tuple[str, list[Violation]]:
-        """Apply configured actions to *spans* and return (sanitized_text, violations)."""
-        violations: list[Violation] = []
-        sanitized = text
-        offset = 0
-
-        for span in spans:
-            entity_cfg = self.entity_config.get(span.entity_type, {})
-            action = Action(entity_cfg.get("action", "warn"))
-            replacement = self._compute_replacement(action, span)
-
-            if replacement is not None:
-                adj_start = span.start + offset
-                adj_end = span.end + offset
-                sanitized = sanitized[:adj_start] + replacement + sanitized[adj_end:]
-                offset += len(replacement) - (span.end - span.start)
-
-            violations.append(
-                Violation(
-                    entity_type=span.entity_type,
-                    original=span.text,
-                    start=span.start,
-                    end=span.end,
-                    action=action,
-                    replacement=replacement,
-                    confidence=span.confidence,
-                )
-            )
-
-        return sanitized, violations
 
     def _collect_denylist_spans(self, text: str) -> list[DetectedSpan]:
         """Match denylist entries (exact value or regex pattern) against *text*."""

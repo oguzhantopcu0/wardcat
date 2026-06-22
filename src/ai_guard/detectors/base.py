@@ -40,9 +40,7 @@ class BaseDetector(ABC):
     can_adjudicate: bool = False
 
     @abstractmethod
-    def detect(
-        self, text: str, candidates: list[DetectedSpan] | None = None
-    ) -> list[DetectedSpan]:
+    def detect(self, text: str, candidates: list[DetectedSpan] | None = None) -> list[DetectedSpan]:
         """Scan *text* and return the spans found.
 
         :param candidates: spans found by the other detectors. Only meaningful for

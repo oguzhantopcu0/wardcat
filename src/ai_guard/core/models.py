@@ -129,8 +129,10 @@ class Violation:
     """Start index in the original text."""
     end: int
     """End index in the original text."""
-    action: Action
-    """Action that was applied."""
+    action: str
+    """Name of the action that was applied (``"warn"`` / ``"hash"`` / ``"redact"`` /
+    ``"mask"``, or a custom registered action). Compares equal to the matching
+    :class:`Action` constant (``v.action == Action.HASH``)."""
     replacement: str | None = None
     """Placeholder produced by the hash action; ``None`` for warn."""
     confidence: float = 1.0
@@ -197,7 +199,7 @@ class ScanResult:
                     "entity_type": v.entity_type,
                     "start": v.start,
                     "end": v.end,
-                    "action": v.action.value,
+                    "action": v.action,
                     "replacement": v.replacement,
                     "confidence": v.confidence,
                 }

@@ -362,13 +362,13 @@ class TestEntityAwareMask:
         assert "*" in replacement
 
     def test_ssn_mask_format(self):
-        from ai_guard.core.engine import _mask_value
+        from ai_guard.core.actions import _mask_value
 
         result = _mask_value("SSN", "123-45-6789")
         assert result == "***-**-6789"
 
     def test_iban_mask_shows_country_and_last4(self):
-        from ai_guard.core.engine import _mask_value
+        from ai_guard.core.actions import _mask_value
 
         iban = "TR330006100519786457841326"
         result = _mask_value("IBAN", iban)
@@ -377,14 +377,14 @@ class TestEntityAwareMask:
         assert "*" in result
 
     def test_tc_id_mask_shows_last3(self):
-        from ai_guard.core.engine import _mask_value
+        from ai_guard.core.actions import _mask_value
 
         result = _mask_value("TC_ID", "12345678950")
         assert result.endswith("950")
         assert result.startswith("*")
 
     def test_default_mask_first2_last2(self):
-        from ai_guard.core.engine import _mask_value
+        from ai_guard.core.actions import _mask_value
 
         result = _mask_value("UUID", "abcdefgh")
         assert result[:2] == "ab"
@@ -392,7 +392,7 @@ class TestEntityAwareMask:
         assert "*" in result
 
     def test_mask_very_short_value_all_stars(self):
-        from ai_guard.core.engine import _mask_value
+        from ai_guard.core.actions import _mask_value
 
         result = _mask_value("EMAIL", "ab")
         # shorter than 4 chars → all stars

@@ -276,14 +276,16 @@ class EntityPolicyMixin:
 
     @staticmethod
     def _normalize_action(action: str | Action) -> str:
-        """Validate and coerce an Action/str to its canonical string value."""
-        # ValueError: unknown string value; TypeError: unhashable type (e.g. list).
-        try:
-            return Action(action).value
-        except (ValueError, TypeError):
+        """Validate an Action/str against the action registry; return its name."""
+        from ai_guard.core.actions import registered_actions
+
+        name = action.value if isinstance(action, Action) else action
+        if not isinstance(name, str) or name not in registered_actions():
             raise ConfigError(
-                f"Invalid action {action!r}. Valid values: 'warn', 'hash', 'mask', 'redact'"
-            ) from None
+                f"Invalid action {action!r}. Registered actions: {sorted(registered_actions())}. "
+                "Add one with ai_guard.register_action(name, fn)."
+            )
+        return name
 
     def _warn_if_unknown(self, entity_type: str) -> None:
         """Log a warning if *entity_type* is neither a known nor a custom entity."""
@@ -371,7 +373,9 @@ class EntityPolicyMixin:
         else:
             invalid = set(layers) - VALID_LAYERS
             if invalid:
-                raise ConfigError(f"Invalid layer(s) {sorted(invalid)}. Valid: {sorted(VALID_LAYERS)}")
+                raise ConfigError(
+                    f"Invalid layer(s) {sorted(invalid)}. Valid: {sorted(VALID_LAYERS)}"
+                )
             target = list(layers)
 
         # config["entities"] holds the action (always, so the engine can apply it)

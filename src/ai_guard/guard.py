@@ -445,6 +445,7 @@ class AIGuard(EntityPolicyMixin):
                 )
             models.append(info.name)
         return list(dict.fromkeys(models))  # dedupe, preserve order
+
     def set_salt(self, salt: str) -> AIGuard:
         """Update the hash salt."""
         self._config["salt"] = salt

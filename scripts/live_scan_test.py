@@ -96,7 +96,7 @@ def run(label: str, guard: AIGuard, text: str) -> object:
         for v in result.violations:
             arrow = f"→ '{v.replacement}'" if v.replacement else ""
             print(
-                f"  {YELLOW}  [{v.action.value:4}] {v.entity_type:15} '{v.original}' {arrow}{RESET}"
+                f"  {YELLOW}  [{v.action:4}] {v.entity_type:15} '{v.original}' {arrow}{RESET}"
             )
     else:
         print(f"  {GREEN}  Temiz{RESET}")

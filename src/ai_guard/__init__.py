@@ -1,6 +1,7 @@
 import logging
 from importlib.metadata import PackageNotFoundError, version
 
+from ai_guard.core.actions import ActionContext, register_action, registered_actions
 from ai_guard.core.models import (
     KNOWN_ENTITY_TYPES,
     Action,
@@ -53,6 +54,9 @@ __all__ = [
     "BaseLLMBackend",
     "register_backend",
     "registered_backends",
+    "register_action",
+    "registered_actions",
+    "ActionContext",
     "KNOWN_ENTITY_TYPES",
     "__version__",
     "redacted",

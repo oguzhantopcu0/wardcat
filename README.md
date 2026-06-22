@@ -367,6 +367,25 @@ guard = AIGuard(salt="s").with_llm(
 
 > **Note:** HTTP connections to LLM backends (including localhost) log a warning. Use HTTPS in production via a reverse proxy (nginx, Caddy).
 
+#### Custom actions (extensible)
+
+Actions (`hash`/`redact`/`mask`/`warn`) come from a registry, so you can add your
+own — `tokenize`, `encrypt`, format-preserving masking — **without changing
+ai-guard**. An action maps a span to its replacement (or `None` to keep the text):
+
+```python
+from ai_guard import AIGuard, register_action
+
+# ctx carries the salt; the span has .entity_type, .text, .start, .end
+register_action("tokenize", lambda span, ctx: f"<{span.entity_type}:{vault.put(span.text)}>")
+
+guard = AIGuard(salt="s").add_entity("EMAIL", "tokenize")   # use it like any built-in
+```
+
+> Detection and anonymization are separate stages: `DetectionEngine` finds the
+> spans, and a standalone `Anonymizer` applies the actions — so you can reuse the
+> action registry or the `Anonymizer` independently.
+
 #### Custom backends (extensible)
 
 Backends are looked up in a registry, so you can add your own (e.g. Azure

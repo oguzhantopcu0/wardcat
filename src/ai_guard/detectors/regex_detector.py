@@ -578,9 +578,7 @@ class RegexDetector(BaseDetector):
             except re.error as exc:
                 logger.warning("Custom pattern %r could not be compiled: %s — skipped.", name, exc)
 
-    def detect(
-        self, text: str, candidates: list[DetectedSpan] | None = None
-    ) -> list[DetectedSpan]:
+    def detect(self, text: str, candidates: list[DetectedSpan] | None = None) -> list[DetectedSpan]:
         """Return all regex matches for enabled entity types."""
         spans: list[DetectedSpan] = []
 

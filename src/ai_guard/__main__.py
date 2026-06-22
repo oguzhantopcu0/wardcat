@@ -270,7 +270,7 @@ def _result_to_dict(result) -> dict:
                 "original": v.original,
                 "start": v.start,
                 "end": v.end,
-                "action": v.action.value,
+                "action": v.action,
                 "replacement": v.replacement,
                 "confidence": v.confidence,
             }
@@ -287,9 +287,9 @@ def _print_text(result, label: str | None = None) -> None:
         print(f"Violations ({len(result.violations)}):")
         for v in result.violations:
             if v.replacement:
-                print(f"  [{v.action.value:4}] {v.entity_type}: '{v.original}' → '{v.replacement}'")
+                print(f"  [{v.action:4}] {v.entity_type}: '{v.original}' → '{v.replacement}'")
             else:
-                print(f"  [{v.action.value:4}] {v.entity_type}: '{v.original}'")
+                print(f"  [{v.action:4}] {v.entity_type}: '{v.original}'")
     else:
         print("  No sensitive data found.")
 
