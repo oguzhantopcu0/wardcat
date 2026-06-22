@@ -32,10 +32,10 @@ class TestSpecialCategoryDefaults:
         assert "SPECIAL_CATEGORY" in KNOWN_ENTITY_TYPES
 
     def test_not_a_regex_entity(self):
-        from ai_guard.guard import _NER_ENTITIES, _REGEX_ENTITIES
+        from ai_guard.core.registry import NER_ENTITIES, REGEX_ENTITIES
 
-        assert "SPECIAL_CATEGORY" not in _REGEX_ENTITIES
-        assert "SPECIAL_CATEGORY" not in _NER_ENTITIES
+        assert "SPECIAL_CATEGORY" not in REGEX_ENTITIES
+        assert "SPECIAL_CATEGORY" not in NER_ENTITIES
 
 
 # ── Prompt ─────────────────────────────────────────────────────────────────
