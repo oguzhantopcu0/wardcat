@@ -4,14 +4,11 @@ import asyncio
 import logging
 import re
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any
 
 from ai_guard.core.models import Action, ScanResult, Violation
 from ai_guard.detectors.base import BaseDetector, DetectedSpan
 from ai_guard.utils.hashing import sha256_hash
-
-if TYPE_CHECKING:
-    from ai_guard.detectors.llm_detector import LLMDetector
 
 logger = logging.getLogger(__name__)
 
@@ -101,14 +98,14 @@ class DetectionEngine:
         # regex/NER spans are passed to the LLM as candidates to verify/relabel/
         # drop (one combined detection + adjudication call). Deterministic
         # (confidence >= 1.0) regex spans are always kept regardless of the LLM.
-        self._llm_detectors: list[LLMDetector] = cast(
-            "list[LLMDetector]",
-            [d for d in detectors if getattr(d, "can_adjudicate", False)],
-        )
-        self._other_detectors = [d for d in detectors if not getattr(d, "can_adjudicate", False)]
+        # Detectors are addressed only through BaseDetector — the engine never
+        # imports a concrete detector. Adjudicators advertise themselves via the
+        # can_adjudicate flag.
+        self._adjudicators = [d for d in detectors if d.can_adjudicate]
+        self._other_detectors = [d for d in detectors if not d.can_adjudicate]
         self._use_adjudication = bool(
             config.get("llm_detector", {}).get("adjudicate", False)
-        ) and bool(self._llm_detectors)
+        ) and bool(self._adjudicators)
         self.salt: str = config.get("salt", "")
         self.entity_config: dict[str, Any] = config.get("entities", {})
         self._max_text_bytes: int = config.get("max_text_bytes", _MAX_TEXT_BYTES)
@@ -135,8 +132,8 @@ class DetectionEngine:
             for detector in self._other_detectors:
                 candidate_spans.extend(detector.detect(text))
             raw_spans = [s for s in candidate_spans if s.confidence >= 1.0]
-            for llm in self._llm_detectors:
-                raw_spans.extend(llm.detect(text, candidates=candidate_spans))
+            for adjudicator in self._adjudicators:
+                raw_spans.extend(adjudicator.detect(text, candidates=candidate_spans))
         else:
             raw_spans = []
             for detector in self.detectors:
@@ -173,22 +170,19 @@ class DetectionEngine:
         t_start = time.perf_counter()
         self._check_size(text)
 
-        async def _run(detector: BaseDetector) -> list[DetectedSpan]:
-            if hasattr(detector, "detect_async"):
-                return await detector.detect_async(text)
-            return await asyncio.to_thread(detector.detect, text)
-
         if self._use_adjudication:
-            cand_results = await asyncio.gather(*(_run(d) for d in self._other_detectors))
+            cand_results = await asyncio.gather(
+                *(d.detect_async(text) for d in self._other_detectors)
+            )
             candidate_spans: list[DetectedSpan] = [s for batch in cand_results for s in batch]
             raw_spans = [s for s in candidate_spans if s.confidence >= 1.0]
-            llm_results = await asyncio.gather(
-                *(llm.detect_async(text, candidates=candidate_spans) for llm in self._llm_detectors)
+            adj_results = await asyncio.gather(
+                *(d.detect_async(text, candidates=candidate_spans) for d in self._adjudicators)
             )
-            for batch in llm_results:
+            for batch in adj_results:
                 raw_spans.extend(batch)
         else:
-            results = await asyncio.gather(*(_run(d) for d in self.detectors))
+            results = await asyncio.gather(*(d.detect_async(text) for d in self.detectors))
             raw_spans = [s for batch in results for s in batch]
         raw_spans.extend(self._collect_denylist_spans(text))
         spans = self._filter_spans(raw_spans)

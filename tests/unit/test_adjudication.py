@@ -28,7 +28,7 @@ class FakeDetector(BaseDetector):
     def __init__(self, spans: list[DetectedSpan]) -> None:
         self._spans = spans
 
-    def detect(self, text: str) -> list[DetectedSpan]:
+    def detect(self, text, candidates=None):
         return list(self._spans)
 
 

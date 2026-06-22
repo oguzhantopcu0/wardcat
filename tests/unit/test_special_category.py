@@ -80,7 +80,7 @@ class FakeDetector(BaseDetector):
     def __init__(self, spans):
         self._spans = spans
 
-    def detect(self, text):
+    def detect(self, text, candidates=None):
         return list(self._spans)
 
 

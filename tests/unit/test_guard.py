@@ -173,7 +173,7 @@ class TestMaskAction:
     def test_mask_short_value_all_stars(self):
         """Values shorter than 4 chars → all stars."""
         from ai_guard.core.engine import DetectionEngine
-        from ai_guard.detectors.base import DetectedSpan
+        from ai_guard.detectors.base import BaseDetector, DetectedSpan
 
         config = {
             "salt": "",
@@ -183,8 +183,8 @@ class TestMaskAction:
             "max_text_bytes": 500_000,
         }
 
-        class _FakeDetector:
-            def detect(self, text):
+        class _FakeDetector(BaseDetector):
+            def detect(self, text, candidates=None):
                 return [DetectedSpan("X", "ab", 0, 2)]
 
         engine = DetectionEngine(config, [_FakeDetector()])
