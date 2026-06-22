@@ -9,7 +9,7 @@ from typing import Any
 import yaml
 
 from ai_guard.exceptions import ConfigError
-from ai_guard.llm.backends.base import Backend
+from ai_guard.llm.backends.registry import registered_backends
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +72,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 # Valid action values
 _VALID_ACTIONS = {"warn", "hash", "mask", "redact"}
-# Valid backend values
-_VALID_BACKENDS = {b.value for b in Backend}
+# Valid backends come from the live registry (built-in + any registered by the user).
 # Valid top-level config keys — used to catch typos in YAML files
 _KNOWN_CONFIG_KEYS = frozenset(
     {
@@ -253,9 +252,10 @@ def validate_config(config: dict[str, Any]) -> None:
 
     llm_cfg = config.get("llm_detector", {})
     backend = llm_cfg.get("backend", "ollama")
-    if backend not in _VALID_BACKENDS:
+    valid_backends = registered_backends()
+    if backend not in valid_backends:
         raise ConfigError(
-            f"Invalid LLM backend '{backend}'. Valid values: {sorted(_VALID_BACKENDS)}"
+            f"Invalid LLM backend '{backend}'. Registered backends: {sorted(valid_backends)}"
         )
 
     timeout = llm_cfg.get("timeout", 60)

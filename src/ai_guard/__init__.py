@@ -28,7 +28,11 @@ from ai_guard.exceptions import (
     UnsupportedLanguageError,
 )
 from ai_guard.guard import AIGuard
-from ai_guard.llm.backends.base import Backend
+from ai_guard.llm.backends.base import Backend, BaseLLMBackend
+from ai_guard.llm.backends.registry import (
+    register_backend,
+    registered_backends,
+)
 from ai_guard.ner.spacy_catalog import Language
 
 try:
@@ -46,6 +50,9 @@ __all__ = [
     "Entity",
     "Language",
     "Backend",
+    "BaseLLMBackend",
+    "register_backend",
+    "registered_backends",
     "KNOWN_ENTITY_TYPES",
     "__version__",
     "redacted",

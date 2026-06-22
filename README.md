@@ -367,6 +367,27 @@ guard = AIGuard(salt="s").with_llm(
 
 > **Note:** HTTP connections to LLM backends (including localhost) log a warning. Use HTTPS in production via a reverse proxy (nginx, Caddy).
 
+#### Custom backends (extensible)
+
+Backends are looked up in a registry, so you can add your own (e.g. Azure
+OpenAI, Anthropic, a bespoke gateway) **without changing ai-guard**:
+
+```python
+from ai_guard import AIGuard, BaseLLMBackend, register_backend, registered_backends
+
+class MyBackend(BaseLLMBackend):
+    def complete(self, prompt, *, timeout=60): ...
+    def complete_messages(self, messages, *, timeout=60): ...
+    def list_models(self): return []
+    def pull_model(self, model, *, on_progress=None): ...
+
+# factory receives the llm config dict (base_url, model, api_key, allow_http, …)
+register_backend("my_backend", lambda cfg: MyBackend())
+
+registered_backends()   # frozenset({"ollama", "openai_compatible", "transformers", "my_backend"})
+guard = AIGuard(salt="s").with_llm(backend="my_backend", model="...")
+```
+
 #### Ensemble adjudication
 
 By default the three layers run independently and their findings are merged (union). With `with_llm(adjudicate=True)`, the engine instead sends the regex/NER candidates to the LLM, which — in a **single call** — verifies each one (keep / relabel / drop) and adds any PII the other layers missed. Deterministic, checksum-validated regex spans are always kept regardless of the LLM verdict. This sharply reduces NER noise (e.g. job titles mislabeled as names, or a model run on the wrong language):

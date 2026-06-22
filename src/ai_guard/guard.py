@@ -577,45 +577,12 @@ class AIGuard(EntityPolicyMixin):
     def _build_llm_detector(self, llm_cfg: dict[str, Any]) -> BaseDetector:
         """Build the LLM detector according to configuration."""
         from ai_guard.detectors.llm_detector import LLMDetector
-        from ai_guard.llm.backends.base import BaseLLMBackend
+        from ai_guard.llm.backends.registry import create_backend
 
-        backend: BaseLLMBackend
-        backend_name = llm_cfg.get("backend", "ollama")
-        model = llm_cfg.get("model", "llama3.2")
-        base_url = llm_cfg.get("base_url", "http://localhost:11434")
-        api_key = llm_cfg.get("api_key", "")
+        # The backend is built from the registry — adding a backend needs no
+        # change here (ai_guard.register_backend(name, factory)).
+        backend = create_backend(llm_cfg)
         timeout = llm_cfg.get("timeout", 60)
-        allow_http = llm_cfg.get("allow_http", False)
-
-        if backend_name == "ollama":
-            from ai_guard.llm.backends.ollama import OllamaBackend
-            from ai_guard.llm.model_manager import ModelManager
-
-            ollama_backend = OllamaBackend(base_url=base_url, model=model, allow_http=allow_http)
-            if llm_cfg.get("auto_pull", False):
-                mgr = ModelManager(ollama_backend)
-                mgr.ensure_available(model, verbose=True)
-            backend = ollama_backend
-        elif backend_name == "openai_compatible":
-            from ai_guard.llm.backends.openai_compat import OpenAICompatBackend
-
-            backend = OpenAICompatBackend(
-                base_url=base_url, model=model, api_key=api_key, allow_http=allow_http
-            )
-        elif backend_name == "transformers":
-            from ai_guard.llm.backends.transformers_backend import TransformersBackend
-
-            backend = TransformersBackend(
-                model=model,
-                device_map=llm_cfg.get("device_map", "auto"),
-                load_in_8bit=llm_cfg.get("load_in_8bit", False),
-                load_in_4bit=llm_cfg.get("load_in_4bit", False),
-            )
-        else:
-            raise ConfigError(
-                f"Unknown LLM backend: {backend_name!r}. "
-                "Valid values: 'ollama', 'openai_compatible', 'transformers'"
-            )
 
         entity_cfg = llm_cfg.get("entities", {})
         enabled = {e for e, cfg in entity_cfg.items() if cfg.get("enabled", True)}
