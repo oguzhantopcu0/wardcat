@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Static-analysis pass (bandit / radon / pip-audit):** flag the LLM cache-key MD5 as `usedforsecurity=False` (non-cryptographic, was bandit's only High); split the high-complexity `validate_config` (cyclomatic 32 → 1, via per-section helpers); bump vulnerable dev/test dependencies (idna, urllib3, requests, pytest, pygments) — `pip-audit` now reports no known vulnerabilities. Coverage 93%, no dead code.
 - **Broken `examples/batch_and_async.py`:** it scanned without enabling any entity, so after the opt-in change it silently reported everything as clean. Examples now enable entities, and a new smoke test (`tests/test_examples.py`) runs the offline examples in CI and asserts they actually detect PII — so examples can't rot silently again.
 - **Default-action warning noise:** when `add_entity()` / `add_entities()` default a missing action to `hash`, the warning is now logged **once per guard** instead of on every call — it stays visible without spamming logs when many entities are added.
 - **Misleading install hint:** the LLM backends' missing-`httpx` error pointed at a non-existent `ai-guard[llm]` extra; `httpx` is a core dependency, so the message now says to reinstall ai-guard.

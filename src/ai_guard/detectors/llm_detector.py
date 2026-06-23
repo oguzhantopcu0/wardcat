@@ -236,7 +236,8 @@ class LLMDetector(BaseDetector):
 
     def _cache_key(self, text: str, candidates: list[DetectedSpan] | None) -> str:
         """Cache key over text + candidate set (different candidates → different verdict)."""
-        h = hashlib.md5(text.encode("utf-8", errors="replace"))
+        # MD5 is fine here: a non-cryptographic cache key, not a security hash.
+        h = hashlib.md5(text.encode("utf-8", errors="replace"), usedforsecurity=False)
         if candidates:
             for s in sorted(candidates, key=lambda c: (c.start, c.end, c.entity_type)):
                 h.update(f"|{s.entity_type}:{s.start}:{s.end}".encode("utf-8", errors="replace"))
