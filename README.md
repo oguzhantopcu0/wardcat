@@ -44,7 +44,6 @@ print(result.sanitized_text)
 - **Checksum validation** — TC_ID (Nüfus İdaresi algorithm), IBAN (mod-97), and CREDIT_CARD (Luhn mod-10) validated before flagging — eliminates false positives
 - **Rainbow table protection** — user-defined salt for all hashes
 - **Two APIs** — method chaining (programmatic) and YAML (declarative)
-- **CLI** — `ai-guard scan`, `ai-guard batch`, `ai-guard models`
 - **Multilingual support** — Turkish, English, German, and French for names, addresses, birth dates, and phone numbers; plus Spanish, Italian, Dutch address patterns; TC_ID, IBAN, SSN, NIN, DNI/NIE, UK postcodes, US ZIP+4, EU VAT numbers and more
 - **Secret detection** — API keys and tokens (OpenAI, Anthropic, Stripe, AWS, Google, GitHub, GitLab, Slack, Twilio, SendGrid, npm) and PEM private keys
 - **Passport detection** — contextual passport number detection (regex keyword-based + LLM) for any country
@@ -80,26 +79,26 @@ pip install "ai-guard[ner] @ git+https://github.com/oguzhantopcu0/ai-guard.git"
 pip install "ai-guard[all] @ git+https://github.com/oguzhantopcu0/ai-guard.git"
 ```
 
-To use SpaCy NER (PERSON, ORG, ADDRESS detection):
+To use SpaCy NER (PERSON, ORG, ADDRESS detection) you need a language model.
+The simplest path is to let ai-guard resolve and download it for you via the
+`language=` builder:
 
-```bash
-# List available models
-uv run python -m ai_guard spacy list
+```python
+from ai_guard import AIGuard, Language
 
-# List Turkish models
-uv run python -m ai_guard spacy list --lang tr
-
-# Download English model (recommended)
-uv run python -m ai_guard spacy download en_core_web_sm
-
-# Download Turkish model (recommended)
-uv run python -m ai_guard spacy download tr_core_news_md
-
-# Check installed models
-uv run python -m ai_guard spacy installed
+# Turns NER on, picks the right model from the catalog, and downloads it if missing
+guard = AIGuard(language=Language.EN)                   # → en_core_web_sm
+guard = AIGuard(language=Language.TR, spacy_size="md")  # → tr_core_news_md
 ```
 
-> If the requested SpaCy model is not installed, ai-guard automatically falls back to any installed model of the same language and logs a warning. SpaCy is not required if you only need regex-based detection.
+Or download a model yourself with SpaCy's own CLI:
+
+```bash
+uv run python -m spacy download en_core_web_sm     # English (recommended)
+uv run python -m spacy download tr_core_news_md    # Turkish (recommended)
+```
+
+> If a requested SpaCy model is not installed, ai-guard automatically falls back to any installed model of the same language and logs a warning. SpaCy is not required if you only need regex-based detection.
 
 ---
 
@@ -435,77 +434,6 @@ Runnable scripts in [`examples/`](examples/):
 
 ---
 
-## CLI
-
-### Scanning
-
-```bash
-# Scan a single text
-ai-guard scan --text "TC: 12345678950 card: 4111111111111111"
-
-# Scan from file, JSON output
-ai-guard scan --file input.txt --format json
-
-# Disable NER (regex-only, fastest)
-ai-guard scan --text "..." --salt "my-salt" --no-ner
-
-# Use Turkish SpaCy model
-ai-guard scan --text "..." --model tr_core_news_md
-
-# Batch — each line is scanned independently
-ai-guard batch --file lines.txt --format json
-```
-
-### SpaCy NER Model Management
-
-```bash
-# List all supported SpaCy models
-ai-guard spacy list
-
-# Filter by language code
-ai-guard spacy list --lang tr
-ai-guard spacy list --lang en
-
-# Download a model
-ai-guard spacy download en_core_web_sm      # English (default)
-ai-guard spacy download tr_core_news_md     # Turkish (recommended)
-ai-guard spacy download tr_core_news_lg     # Turkish (higher accuracy, ~318 MB)
-
-# Show installed models
-ai-guard spacy installed
-```
-
-### On-prem LLM Model Management
-
-```bash
-# List available on-prem models
-ai-guard models list --recommended
-
-# Download a model via Ollama
-ai-guard models pull llama3.1:8b
-```
-
-### Example JSON output
-
-```json
-{
-  "is_clean": false,
-  "sanitized_text": "card: [CREDIT_CARD:c5a992a8ea782818]",
-  "violations": [
-    {
-      "entity_type": "CREDIT_CARD",
-      "original": "4111111111111111",
-      "start": 6,
-      "end": 22,
-      "action": "hash",
-      "replacement": "[CREDIT_CARD:c5a992a8ea782818]"
-    }
-  ]
-}
-```
-
----
-
 ## Supported Entity Types
 
 ### Regex (built-in, no dependencies)
@@ -574,11 +502,7 @@ guard = AIGuard(spacy_model="en_core_web_sm")
 guard = AIGuard(spacy_model=["en_core_web_sm", "de_core_news_sm"])
 ```
 
-Supported languages: `Language.EN`, `DE`, `FR`, `ES`, `IT`, `NL`, `PT`, `TR` (plain ISO codes like `"de"` are also accepted). If the requested size is unavailable for a language, the recommended model is used. The same works from the CLI:
-
-```bash
-ai-guard scan --lang de --spacy-size md --spacy-auto-download --text "..."
-```
+Supported languages: `Language.EN`, `DE`, `FR`, `ES`, `IT`, `NL`, `PT`, `TR` (plain ISO codes like `"de"` are also accepted). If the requested size is unavailable for a language, the recommended model is used.
 
 #### Multi-language text
 
@@ -687,23 +611,15 @@ Inputs exceeding **500 KB** raise a `ValueError`. Split large documents into sma
 
 ---
 
-## Environment Variables (CLI only)
+## Configuration
 
-> **The library never reads environment variables.** When you use `ai_guard` as a
-> library, pass everything explicitly — `AIGuard(salt=...).with_llm(base_url=..., allow_http=...)`
-> or a YAML `config_path`. Read secrets from the environment in *your* application
-> and hand them to the constructor. The variables below are read **only by the
-> `ai-guard` CLI** (which is an application), as defaults for the matching flags.
-
-| Variable (CLI) | Flag | Description |
-|---|---|---|
-| `AIGUARD_SALT` | `--salt` | Hash salt |
-| `AIGUARD_LLM_URL` | `--llm-url` | LLM service base URL |
-| `AIGUARD_LLM_MODEL` | `--llm-model` | LLM model name |
-| `AIGUARD_LLM_API_KEY` | `--llm-api-key` | API key for OpenAI-compatible backends |
+> **The library never reads environment variables.** Pass everything explicitly —
+> `AIGuard(salt=...).with_llm(base_url=..., allow_http=...)` or a YAML
+> `config_path`. Read secrets from the environment in *your* application and hand
+> them to the constructor; ai-guard itself does no implicit environment lookup.
 
 To allow plaintext HTTP to a **remote** LLM (blocked by default), pass
-`with_llm(allow_http=True)` — there is no env var for this.
+`with_llm(allow_http=True)`.
 
 ---
 
@@ -713,7 +629,6 @@ To allow plaintext HTTP to a **remote** LLM (blocked by default), pass
 ai-guard/
 ├── src/ai_guard/
 │   ├── guard.py              # AIGuard — main interface
-│   ├── __main__.py           # CLI entry point
 │   ├── core/
 │   │   ├── engine.py         # DetectionEngine — overlap resolution, action application
 │   │   └── models.py         # Action, Violation, ScanResult

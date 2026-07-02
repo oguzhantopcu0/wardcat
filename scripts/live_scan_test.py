@@ -9,7 +9,7 @@ Ollama servisinin çalışıyor ve llama3.1:8b modelinin kurulu olması gerekir.
     uv run python live_scan_test.py 2>&1 | tee live_test_results.txt
 
 Hazırlık:
-    python -m ai_guard models pull llama3.1:8b
+    ollama pull llama3.1:8b
 """
 
 from __future__ import annotations
@@ -95,9 +95,7 @@ def run(label: str, guard: AIGuard, text: str) -> object:
     if result.violations:
         for v in result.violations:
             arrow = f"→ '{v.replacement}'" if v.replacement else ""
-            print(
-                f"  {YELLOW}  [{v.action:4}] {v.entity_type:15} '{v.original}' {arrow}{RESET}"
-            )
+            print(f"  {YELLOW}  [{v.action:4}] {v.entity_type:15} '{v.original}' {arrow}{RESET}")
     else:
         print(f"  {GREEN}  Temiz{RESET}")
     print(f"  {YELLOW}  ⏱  {elapsed:.1f}s{RESET}")

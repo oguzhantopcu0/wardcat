@@ -20,7 +20,7 @@ SpaCy model (`en_core_web_sm`).
 
 ```bash
 # Turkish NER (used by some tests)
-uv run python -m ai_guard spacy download tr_core_news_md
+uv run python -m spacy download tr_core_news_md
 
 # Live LLM tests (optional) — install Ollama, then pull a small model
 ollama pull llama3.2:1b

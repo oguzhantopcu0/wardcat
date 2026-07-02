@@ -1,8 +1,9 @@
 """
 Catalog of supported SpaCy NER models.
 
-Used by the ``ai-guard spacy list`` and ``ai-guard spacy download`` CLI commands.
-Model names are the official SpaCy package names passed to ``python -m spacy download``.
+Used to resolve a language/size to a concrete model and to drive the
+auto-download path. Model names are the official SpaCy package names passed to
+``python -m spacy download``.
 """
 
 from __future__ import annotations

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **The command-line interface is gone.** The `ai-guard` console script and the `python -m ai_guard` entry point (`scan`, `batch`, `spacy`, `models` sub-commands) were removed, along with the `[project.scripts]` entry point and the `AIGUARD_*` environment-variable handling that only the CLI used. `ai-guard` is a **library**; drive it from Python (`from ai_guard import AIGuard`). Manage models with their native tools instead: SpaCy models via `python -m spacy download <model>` (or the `language=` builder, which auto-downloads), and on-prem LLMs via `ollama pull <model>` (or `with_llm(model=..., auto_pull=True)`).
+
+### Changed
+
+- **Overlap resolution is confidence-first and robust to chained overlaps.** When detected spans overlap, the engine now keeps the strongest span — highest confidence first (a checksum/regex `1.0` span beats a longer fuzzy NER/LLM `0.85` span), then longest, then earliest — instead of blindly keeping the longest. Every candidate is checked against **all** already-kept spans, closing a gap where a chained/nested overlap could let a span slip through. This prevents a Luhn-validated card from being lost to an overlapping `ADDRESS` guess.
+
 ---
 
 ## [0.4.0] — 2026-06-21

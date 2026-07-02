@@ -46,9 +46,7 @@ def _resolve_spacy_model(model: str) -> str:
     if not installed:
         logger.warning(
             "SpaCy model %r is not installed and no models are available. "
-            "Install with: python -m spacy download %s  "
-            "or: python -m ai_guard spacy download %s",
-            model,
+            "Install with: python -m spacy download %s",
             model,
             model,
         )
@@ -62,7 +60,7 @@ def _resolve_spacy_model(model: str) -> str:
     logger.warning(
         "SpaCy model %r is not installed — falling back to %r.\n"
         "  Installed models: %s\n"
-        "  To install the correct model: python -m ai_guard spacy download %s",
+        "  To install the correct model: python -m spacy download %s",
         model,
         fallback,
         installed,
@@ -102,8 +100,8 @@ class AIGuard(EntityPolicyMixin):
         result = guard.scan(text)
 
     Configuration is explicit: pass constructor arguments or a YAML ``config_path``.
-    The library does **not** read environment variables (the ``ai-guard`` CLI does,
-    as it is an application — see ``AIGUARD_*`` in ``python -m ai_guard --help``).
+    The library does **not** read environment variables — read any secrets in your
+    own application and hand them to the constructor.
 
     LLM detector — configured with :meth:`with_llm` (or a YAML ``config_path``),
     not constructor arguments::
@@ -440,8 +438,7 @@ class AIGuard(EntityPolicyMixin):
                     )
                 supported = sorted({m.lang_code for m in SPACY_CATALOG})
                 raise UnsupportedLanguageError(
-                    f"Unsupported language {code!r}. Supported: {supported}. "
-                    "See: python -m ai_guard spacy list"
+                    f"Unsupported language {code!r}. Supported: {supported}."
                 )
             models.append(info.name)
         return list(dict.fromkeys(models))  # dedupe, preserve order

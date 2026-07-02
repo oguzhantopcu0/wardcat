@@ -2,7 +2,8 @@
 #
 # LLM dedektörü hızlı başlangıç:
 #   1. Ollama kur: https://ollama.com
-#   2. Modeli indir: python -m ai_guard models pull llama3.2
+#   2. Modeli indir: ollama pull llama3.2
+#      (veya AIGuard(...).with_llm(model="llama3.2", auto_pull=True) ile otomatik)
 #   3. Bu dosyada llm_detector.enabled: true yap
 # Bu dosyayı kopyalayarak projenize özel politika oluşturabilirsiniz.
 #

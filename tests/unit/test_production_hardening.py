@@ -335,53 +335,6 @@ class TestSaltWarning:
         assert "AIGUARD_SALT" not in caplog.text
 
 
-# ── CLI Encoding Error Handling ───────────────────────────────────────────────
-
-
-class TestCLIEncodingError:
-    def test_utf8_file_read_ok(self, tmp_path):
-        f = tmp_path / "test.txt"
-        f.write_text("ali@example.com", encoding="utf-8")
-        from ai_guard.__main__ import _read_file
-
-        content = _read_file(f)
-        assert "ali@example.com" in content
-
-    def test_nonexistent_file_raises(self, tmp_path):
-        from ai_guard.__main__ import _read_file
-
-        with pytest.raises(FileNotFoundError):
-            _read_file(tmp_path / "yok.txt")
-
-    def test_invalid_utf8_raises_valueerror(self, tmp_path):
-        f = tmp_path / "bad.txt"
-        f.write_bytes(b"\xff\xfe invalid utf-8 \x80\x81")
-        from ai_guard.__main__ import _read_file
-
-        with pytest.raises(ValueError, match="UTF-8"):
-            _read_file(f)
-
-    def test_cli_scan_invalid_utf8_exits_with_error(self, tmp_path):
-        """cmd_scan → ValueError; main() catches it and calls sys.exit(1)."""
-        f = tmp_path / "bad.txt"
-        f.write_bytes(b"\xff\xfe bad encoding")
-        from ai_guard.__main__ import _build_parser, cmd_scan
-
-        parser = _build_parser()
-        args = parser.parse_args(["scan", "--file", str(f), "--no-ner"])
-        # cmd_scan raises ValueError directly (main() catches it and calls sys.exit(1))
-        with pytest.raises(ValueError, match="UTF-8"):
-            cmd_scan(args)
-
-    def test_cli_scan_missing_file_raises_file_not_found(self, tmp_path):
-        from ai_guard.__main__ import _build_parser, cmd_scan
-
-        parser = _build_parser()
-        args = parser.parse_args(["scan", "--file", str(tmp_path / "missing.txt"), "--no-ner"])
-        with pytest.raises(FileNotFoundError):
-            cmd_scan(args)
-
-
 # ── Logging Integration ───────────────────────────────────────────────────────
 
 

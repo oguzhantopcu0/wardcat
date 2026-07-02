@@ -62,9 +62,6 @@ all = [
 # (install with `uv sync --dev`), not as a project extra — there is a single
 # source of truth for dev dependencies.
 
-[project.scripts]
-ai-guard = "ai_guard.__main__:main"
-
 [project.urls]
 "Homepage"    = "https://github.com/oguzhantopcu0/ai-guard"
 "Bug Tracker" = "https://github.com/oguzhantopcu0/ai-guard/issues"

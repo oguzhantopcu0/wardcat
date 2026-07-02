@@ -1,8 +1,7 @@
 """
 Programmatic SpaCy model installation.
 
-Shared by the ``ai-guard spacy download`` CLI command and by
-:class:`~ai_guard.guard.AIGuard`'s auto-download path (when a language is
+Drives :class:`~ai_guard.guard.AIGuard`'s auto-download path (when a language is
 selected). Handles the awkward cases:
 
 * models hosted on HuggingFace via an explicit wheel URL (e.g. Turkish),
@@ -149,6 +148,5 @@ def download_model(model_name: str, *, verbose: bool = False) -> None:
         raise ModelDownloadError(
             f"SpaCy model download failed: {model_name!r}\n"
             "The model may not be compatible with your installed SpaCy version.\n"
-            "Check available models:  python -m ai_guard spacy list\n"
             "Check SpaCy version:     python -m spacy info"
         )

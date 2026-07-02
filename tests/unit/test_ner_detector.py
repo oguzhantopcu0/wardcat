@@ -21,7 +21,7 @@ pytestmark = pytest.mark.ner  # tag: uv run pytest -m ner
 _INSTALLED = set(spacy.util.get_installed_models())
 needs_tr = pytest.mark.skipif(
     not any(m.startswith("tr_") for m in _INSTALLED),
-    reason="No Turkish SpaCy model installed (run: python -m ai_guard spacy download tr_core_news_md)",
+    reason="No Turkish SpaCy model installed (run: python -m spacy download tr_core_news_md)",
 )
 
 

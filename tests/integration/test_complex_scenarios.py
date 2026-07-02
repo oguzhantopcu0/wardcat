@@ -21,18 +21,15 @@ Scope:
   S17 — International phone formats
   S18 — Address with Turkish special characters
   S19 — Postal code boundary values
-  S20 — CLI JSON output schema validation
 """
 
 from __future__ import annotations
 
-import json
 import time
 
 import pytest
 
 from ai_guard import AIGuard
-from ai_guard.__main__ import _build_parser, cmd_scan
 from ai_guard.core.models import Action
 
 # ── helper ───────────────────────────────────────────────────────────────────
@@ -545,32 +542,6 @@ class TestS19PostalCodeBoundary:
     def test_invalid_postal_code_not_detected(self, invalid):
         result = _guard().scan(f"posta: {invalid}")
         assert "POSTAL_CODE" not in _types(result), f"False positive: {invalid}"
-
-
-# ── S20: CLI JSON output schema validation ────────────────────────────────────
-
-
-class TestS20CLIJsonSchema:
-    def test_scan_json_schema(self, capsys):
-        args = _build_parser().parse_args(
-            ["scan", "--text", CUSTOMER_SUPPORT_PROMPT, "--no-ner", "--format", "json"]
-        )
-        cmd_scan(args)
-        data = json.loads(capsys.readouterr().out)
-
-        assert isinstance(data["is_clean"], bool)
-        assert isinstance(data["sanitized_text"], str)
-        assert isinstance(data["violations"], list)
-
-        for v in data["violations"]:
-            assert "entity_type" in v
-            assert "original" in v
-            assert "start" in v
-            assert "end" in v
-            assert "action" in v
-            assert "replacement" in v
-            assert v["action"] in ("warn", "hash")
-            assert v["end"] > v["start"]
 
 
 # ── S21: New global entity types ─────────────────────────────────────────────
