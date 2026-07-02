@@ -214,7 +214,11 @@ class TransformersBackend(BaseLLMBackend):
             "task": "text-generation",
             "model": self._model_name,
             "device_map": self._device_map,
-            "dtype": torch.bfloat16,
+            # ``torch_dtype`` is the pipeline kwarg across transformers 4.40–4.x
+            # (renamed to ``dtype`` only in 4.56+, where ``torch_dtype`` still
+            # works). Passing ``dtype`` on older versions is silently forwarded
+            # to ``generate()`` and rejected — breaking real inference.
+            "torch_dtype": torch.bfloat16,
         }
 
         if self._load_in_8bit:

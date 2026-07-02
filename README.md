@@ -772,7 +772,7 @@ uv run pytest --cov=src/ai_guard --cov-report=term-missing
 | `4111.1111.1111.1111` | Dot separator not supported |
 | Adjacent IBANs | Two IBANs without separator cannot be parsed separately |
 | Cyrillic homoglyphs | `аli@test.com` (Cyrillic `а`) bypasses ASCII regex |
-| Transformers backend | Not tested with a real model — mock-only unit tests |
+| Transformers backend | Unit tests are mock-only; smoke-tested once against a real model (Qwen2.5-1.5B-Instruct) but not exercised in CI |
 | `US_ZIP_CODE` | Plain 5-digit ZIPs only matched with a `ZIP:` keyword; otherwise ZIP+4 (`12345-6789`) required to avoid false positives |
 | `EU_NATIONAL_ID` | Spanish DNI/NIE and French INSEE via regex; German IDs need the LLM layer |
 | `PASSPORT` | Regex requires a passport keyword (`passport no:`, `pasaport`, `Reisepass`, `passeport`); the LLM layer catches unlabeled cases |

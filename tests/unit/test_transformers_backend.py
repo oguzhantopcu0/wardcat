@@ -317,3 +317,26 @@ class TestChatTemplateValidation:
 
         chat_template_warnings = [r for r in caplog.records if "chat_template" in r.message]
         assert len(chat_template_warnings) == 0
+
+
+class TestLoadPipelineKwargs:
+    """Regression: the pipeline must be built with ``torch_dtype`` — using
+    ``dtype`` breaks real inference on transformers < 4.56 (it is forwarded to
+    ``generate()`` and rejected). Caught only with a real model, never by the
+    other mock tests."""
+
+    def test_passes_torch_dtype_not_dtype(self):
+        fake_torch = MagicMock()
+        fake_torch.bfloat16 = "bf16"
+        fake_transformers = MagicMock()
+        fake_pipeline = MagicMock(return_value="PIPE")
+        fake_transformers.pipeline = fake_pipeline
+
+        backend = TransformersBackend("some-model", device_map="cpu")
+        with patch.dict(sys.modules, {"torch": fake_torch, "transformers": fake_transformers}):
+            pipe = backend._load_pipeline()
+
+        assert pipe == "PIPE"
+        _, kwargs = fake_pipeline.call_args
+        assert kwargs.get("torch_dtype") == "bf16"
+        assert "dtype" not in kwargs
