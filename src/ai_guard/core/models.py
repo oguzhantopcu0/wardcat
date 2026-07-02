@@ -25,6 +25,7 @@ class RedactedResult(TypedDict):
     is_clean: bool
     sanitized_text: str
     scan_error: str | None
+    warnings: list[str]
     violations: list[RedactedViolation]
 
 
@@ -170,6 +171,11 @@ class ScanResult:
     """Set when this item failed during :meth:`~ai_guard.AIGuard.scan_batch`.
     The original text is returned unchanged. Non-None means the scan result
     is incomplete — callers should not treat the text as clean."""
+    warnings: list[str] = field(default_factory=list)
+    """Non-fatal issues during this scan — e.g. a detector layer that could not
+    run (LLM backend unreachable). The scan still returns results from the other
+    layers, but a non-empty list means detection was **degraded**: some PII may
+    be missed. Empty when every configured layer ran."""
 
     @property
     def is_clean(self) -> bool:
@@ -194,6 +200,7 @@ class ScanResult:
             "is_clean": self.is_clean,
             "sanitized_text": self.sanitized_text,
             "scan_error": self.scan_error,
+            "warnings": list(self.warnings),
             "violations": [
                 {
                     "entity_type": v.entity_type,

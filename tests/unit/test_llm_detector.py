@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
+import pytest
+
 from ai_guard.detectors.llm_detector import LLMDetector
 from ai_guard.llm.backends.base import BaseLLMBackend
 from ai_guard.llm.prompt import build_prompt
@@ -177,18 +179,15 @@ class TestEntityFilter:
 
 
 class TestErrorHandling:
-    def test_connection_error_returns_empty_with_warning(self, caplog):
-        import logging
-
+    def test_connection_error_propagates(self):
+        # A backend-unreachable error propagates so the engine can surface it on
+        # the result (ScanResult.warnings), instead of being silently swallowed.
         backend = MagicMock(spec=BaseLLMBackend)
         backend.complete_messages.side_effect = ConnectionError("Connection refused")
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
 
-        with caplog.at_level(logging.WARNING, logger="ai_guard.detectors.llm_detector"):
-            spans = det.detect("a@b.com")
-
-        assert spans == []
-        assert any("connection error" in r.message.lower() for r in caplog.records)
+        with pytest.raises(ConnectionError):
+            det.detect("a@b.com")
 
     def test_generic_exception_returns_empty_with_warning(self, caplog):
         import logging
@@ -373,9 +372,9 @@ class TestDetectAsync:
         asyncio.run(det.detect_async("email: a@b.com"))
         assert backend.complete_messages_async.call_count == 1
 
-    def test_detect_async_connection_error_returns_empty(self):
+    def test_detect_async_connection_error_propagates(self):
         backend = MagicMock(spec=BaseLLMBackend)
         backend.complete_messages_async = AsyncMock(side_effect=ConnectionError("refused"))
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
-        spans = asyncio.run(det.detect_async("a@b.com"))
-        assert spans == []
+        with pytest.raises(ConnectionError):
+            asyncio.run(det.detect_async("a@b.com"))

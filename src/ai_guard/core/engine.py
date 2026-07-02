@@ -69,25 +69,20 @@ class DetectionEngine:
         t_start = time.perf_counter()
         self._check_size(text)
 
+        warnings: list[str] = []
         if self._use_adjudication:
             candidate_spans: list[DetectedSpan] = []
             for detector in self._other_detectors:
-                candidate_spans.extend(detector.detect(text))
+                candidate_spans.extend(self._safe_detect(detector, text, warnings))
             raw_spans = [s for s in candidate_spans if s.confidence >= 1.0]
             for adjudicator in self._adjudicators:
-                raw_spans.extend(adjudicator.detect(text, candidates=candidate_spans))
+                raw_spans.extend(
+                    self._safe_detect(adjudicator, text, warnings, candidates=candidate_spans)
+                )
         else:
             raw_spans = []
             for detector in self.detectors:
-                t_det = time.perf_counter()
-                spans = detector.detect(text)
-                logger.debug(
-                    "%s: %d span(s) detected (%.1f ms)",
-                    type(detector).__name__,
-                    len(spans),
-                    (time.perf_counter() - t_det) * 1000,
-                )
-                raw_spans.extend(spans)
+                raw_spans.extend(self._safe_detect(detector, text, warnings))
 
         raw_spans.extend(self._collect_denylist_spans(text))
         spans = self._filter_spans(raw_spans, text)
@@ -100,7 +95,9 @@ class DetectionEngine:
             len(text),
             elapsed_ms,
         )
-        return ScanResult(original_text=text, sanitized_text=sanitized, violations=violations)
+        return ScanResult(
+            original_text=text, sanitized_text=sanitized, violations=violations, warnings=warnings
+        )
 
     async def scan_async(self, text: str) -> ScanResult:
         """Async variant — uses native async for I/O-bound detectors (LLM backend).
@@ -112,20 +109,30 @@ class DetectionEngine:
         t_start = time.perf_counter()
         self._check_size(text)
 
+        warnings: list[str] = []
         if self._use_adjudication:
             cand_results = await asyncio.gather(
-                *(d.detect_async(text) for d in self._other_detectors)
+                *(self._safe_detect_async(d, text) for d in self._other_detectors)
             )
-            candidate_spans: list[DetectedSpan] = [s for batch in cand_results for s in batch]
+            candidate_spans: list[DetectedSpan] = [s for spans, _ in cand_results for s in spans]
+            warnings.extend(w for _, w in cand_results if w)
             raw_spans = [s for s in candidate_spans if s.confidence >= 1.0]
             adj_results = await asyncio.gather(
-                *(d.detect_async(text, candidates=candidate_spans) for d in self._adjudicators)
+                *(
+                    self._safe_detect_async(d, text, candidates=candidate_spans)
+                    for d in self._adjudicators
+                )
             )
-            for batch in adj_results:
-                raw_spans.extend(batch)
+            for spans, w in adj_results:
+                raw_spans.extend(spans)
+                if w:
+                    warnings.append(w)
         else:
-            results = await asyncio.gather(*(d.detect_async(text) for d in self.detectors))
-            raw_spans = [s for batch in results for s in batch]
+            results = await asyncio.gather(
+                *(self._safe_detect_async(d, text) for d in self.detectors)
+            )
+            raw_spans = [s for spans, _ in results for s in spans]
+            warnings.extend(w for _, w in results if w)
         raw_spans.extend(self._collect_denylist_spans(text))
         spans = self._filter_spans(raw_spans, text)
         sanitized, violations = self._anonymizer.apply(text, spans)
@@ -137,11 +144,52 @@ class DetectionEngine:
             len(text),
             elapsed_ms,
         )
-        return ScanResult(original_text=text, sanitized_text=sanitized, violations=violations)
+        return ScanResult(
+            original_text=text, sanitized_text=sanitized, violations=violations, warnings=warnings
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _safe_detect(
+        self,
+        detector: BaseDetector,
+        text: str,
+        warnings: list[str],
+        candidates: list[DetectedSpan] | None = None,
+    ) -> list[DetectedSpan]:
+        """Run one detector, turning a failure into a warning instead of aborting.
+
+        A layer that cannot run (e.g. the LLM backend is unreachable) must not
+        block the others — its error is recorded on the result so the caller
+        knows detection was degraded rather than silently missing PII.
+        """
+        try:
+            if candidates is None:
+                return detector.detect(text)
+            return detector.detect(text, candidates=candidates)
+        except Exception as exc:
+            msg = f"{type(detector).__name__} did not run: {exc}"
+            logger.warning("scan: detector layer skipped — %s", msg)
+            warnings.append(msg)
+            return []
+
+    async def _safe_detect_async(
+        self,
+        detector: BaseDetector,
+        text: str,
+        candidates: list[DetectedSpan] | None = None,
+    ) -> tuple[list[DetectedSpan], str | None]:
+        """Async :meth:`_safe_detect` — returns ``(spans, warning_or_None)``."""
+        try:
+            if candidates is None:
+                return await detector.detect_async(text), None
+            return await detector.detect_async(text, candidates=candidates), None
+        except Exception as exc:
+            msg = f"{type(detector).__name__} did not run: {exc}"
+            logger.warning("scan_async: detector layer skipped — %s", msg)
+            return [], msg
 
     def _check_size(self, text: str) -> None:
         byte_len = len(text.encode("utf-8", errors="replace"))

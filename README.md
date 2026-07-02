@@ -621,6 +621,7 @@ class ScanResult:
     sanitized_text: str               # anonymized output — safe to forward to LLM
     violations:     List[Violation]   # all detected violations
     is_clean:       bool              # True if no violations found
+    warnings:       List[str]         # non-fatal issues — a layer that could not run
 
     def redacted(self) -> dict:       # PII-free dict — safe for logging and APIs
         ...
@@ -635,6 +636,18 @@ class Violation:
     replacement: str | None   # "[TYPE:16hex]" for hash, "[TYPE]" for redact, masked value for mask, None for warn
     confidence:  float        # 1.0 regex/checksum · 0.85 NER/LLM
 ```
+
+> **Degraded scans — check `warnings`.** If a detector layer cannot run (most
+> commonly the LLM backend being unreachable), the scan still returns the other
+> layers' results but records the failure in `result.warnings`. A non-empty
+> `warnings` means detection was **degraded** — some PII may have been missed —
+> so you are not silently misled into thinking every layer ran:
+>
+> ```python
+> result = guard.scan(text)
+> if result.warnings:
+>     logger.warning("PII scan degraded: %s", result.warnings)
+> ```
 
 ---
 

@@ -454,6 +454,6 @@ def test_supported_entities_bad_layer_raises():
 def test_redacted_is_typed_and_pii_free():
     guard = AIGuard(salt="s", use_ner=False).add_entity(Entity.EMAIL, Action.HASH)
     d = guard.scan("mail a@b.com").redacted()
-    assert set(d.keys()) == {"is_clean", "sanitized_text", "scan_error", "violations"}
+    assert set(d.keys()) == {"is_clean", "sanitized_text", "scan_error", "warnings", "violations"}
     assert "a@b.com" not in str(d)  # no raw PII
     assert d["violations"][0]["entity_type"] == "EMAIL"

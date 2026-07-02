@@ -352,15 +352,19 @@ class TestLogging:
             engine.scan("test@example.com")
         assert "scan completed" in caplog.text
 
-    def test_llm_detector_logs_on_connection_error(self, caplog):
+    def test_llm_backend_error_surfaced_and_logged(self, caplog):
         from unittest.mock import MagicMock
 
+        from ai_guard.core.engine import DetectionEngine
         from ai_guard.detectors.llm_detector import LLMDetector
 
         backend = MagicMock()
         backend.complete_messages.side_effect = ConnectionError("no connection")
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
-        with caplog.at_level(logging.WARNING, logger="ai_guard.detectors.llm_detector"):
-            result = det.detect("test@example.com")
-        assert result == []
-        assert "connection error" in caplog.text.lower()
+        engine = DetectionEngine({"salt": "", "entities": {}}, [det])
+        with caplog.at_level(logging.WARNING, logger="ai_guard.core.engine"):
+            result = engine.scan("test@example.com")
+        # The backend failure is surfaced on the result and logged by the engine,
+        # not silently swallowed by the detector.
+        assert result.warnings and "did not run" in result.warnings[0]
+        assert "skipped" in caplog.text.lower()

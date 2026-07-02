@@ -153,8 +153,13 @@ class LLMDetector(BaseDetector):
                     len(chunk_text),
                     len(chunk_spans),
                 )
-            except ConnectionError as exc:
-                logger.warning("LLM detector connection error (offset=%d): %s", offset, exc)
+            # A ConnectionError (backend unreachable) propagates so the engine can
+            # surface it on the result — the whole layer is unavailable, not just
+            # this chunk. (ConnectionError is an OSError subclass, so re-raise it
+            # explicitly before the transient-error catch below.)
+            except ConnectionError:
+                raise
+            # Per-chunk transient errors are swallowed to keep scanning.
             except (TimeoutError, ValueError, OSError) as exc:
                 logger.warning("LLM detector failed (offset=%d): %s", offset, exc)
 
@@ -197,9 +202,13 @@ class LLMDetector(BaseDetector):
                 raw = await self.backend.complete_messages_async(messages, timeout=self.timeout)
                 entities = self._parse_llm_response(raw)
                 return self._offset_spans(self._locate_spans(chunk_text, entities), offset)
-            except ConnectionError as exc:
-                logger.warning("LLM detector connection error (offset=%d): %s", offset, exc)
-                return []
+            # ConnectionError propagates (the whole layer is unavailable); the
+            # engine records it as a scan warning. (It is an OSError subclass, so
+            # re-raise before the transient-error catch below.)
+            except ConnectionError:
+                raise
+            # Transient per-chunk errors are swallowed so one bad chunk does not
+            # lose the rest.
             except (TimeoutError, ValueError, OSError) as exc:
                 logger.warning("LLM detector failed (offset=%d): %s", offset, exc)
                 return []
