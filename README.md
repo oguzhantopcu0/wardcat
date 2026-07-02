@@ -38,7 +38,7 @@ print(result.sanitized_text)
 
 ## Features
 
-- **Hybrid detection** — Regex + SpaCy NER + on-prem LLM (Ollama, OpenAI-compatible, HuggingFace Transformers)
+- **Hybrid detection** — Regex + SpaCy NER + GLiNER (zero-shot transformer NER) + on-prem LLM (Ollama, OpenAI-compatible, HuggingFace Transformers)
 - **Ensemble adjudication** (optional) — the LLM verifies/relabels/drops regex & NER candidates and adds what they missed, in one call; deterministic regex results are always protected
 - **Four actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt; the default when `action` is omitted), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking)
 - **Checksum validation** — TC_ID (Nüfus İdaresi algorithm), IBAN (mod-97), and CREDIT_CARD (Luhn mod-10) validated before flagging — eliminates false positives
@@ -63,6 +63,7 @@ git clone https://github.com/oguzhantopcu0/ai-guard.git
 cd ai-guard
 uv sync                 # base: regex + Ollama/OpenAI-compatible LLM backend
 uv sync --extra ner     # + SpaCy NER (PERSON, ORG, ADDRESS)
+uv sync --extra gliner  # + GLiNER zero-shot NER (pulls in torch)
 uv sync --extra all     # + HuggingFace Transformers backend
 ```
 
@@ -165,11 +166,11 @@ guard.add_entities({
 
 ### Choosing which filters run, and on which layer
 
-Each entity can be detected by one or more of three layers — `regex`
-(deterministic), `ner` (SpaCy), and `llm` (contextual/semantic). When you enable
-an entity it runs on every layer that supports it; pass `layers=[...]` to target
-a specific layer — for example, keep a semantic-only entity off the regex/NER
-path:
+Each entity can be detected by one or more of four layers — `regex`
+(deterministic), `ner` (SpaCy), `gliner` (zero-shot transformer NER), and `llm`
+(contextual/semantic). When you enable an entity it runs on every layer that
+supports it; pass `layers=[...]` to target a specific layer — for example, keep a
+semantic-only entity off the regex/NER path:
 
 ```python
 # Detect EMAIL with regex only; leave SPECIAL_CATEGORY (GDPR Art. 9) to the LLM
@@ -296,6 +297,52 @@ for r in results:
 # False 1
 # True  0
 ```
+
+### GLiNER (zero-shot NER)
+
+[GLiNER](https://github.com/urchade/GLiNER) is a lightweight bidirectional-encoder
+NER model — a middle ground between SpaCy NER (fast, fixed labels) and an on-prem
+LLM (slow, contextual). ai-guard wraps the PII-tuned **GLiNER2** model and maps
+its labels onto ai-guard entity types. Use it as a **SpaCy alternative**, or
+**alongside** SpaCy (the engine merges both layers' spans; a checksum-validated
+regex span always wins an overlap).
+
+Install the extra (it pulls in torch), then enable the layer with `with_gliner()`.
+Entity types are **opt-in**, exactly like NER — enabling the layer alone detects
+nothing:
+
+```bash
+uv sync --extra gliner   # or: pip install "ai-guard[gliner]"
+```
+
+```python
+from ai_guard import AIGuard, Entity, Action
+
+guard = (
+    AIGuard(salt="s")
+    .with_gliner()                               # GLiNER layer on
+    .add_entity(Entity.PERSON, Action.HASH)
+    .add_entity(Entity.EMAIL,  Action.REDACT)
+)
+result = guard.scan("Contact John Smith at john@acme.com")
+
+# Run GLiNER *and* SpaCy together — both contribute spans:
+guard = AIGuard(salt="s").with_ner(language="en").with_gliner().add_entity(Entity.PERSON)
+
+# Discover what GLiNER can detect:
+AIGuard.supported_entities("gliner")   # {"PERSON", "EMAIL", "PHONE", "IBAN", ...}
+```
+
+`with_gliner()` accepts `model=` (default `fastino/gliner2-privacy-filter-PII-multi`),
+`threshold=` (drop spans below this confidence, default `0.5`), `quantize=`
+(smaller/faster, slightly lower quality), and `chunk_size=` (default `1500` — long
+inputs are split into overlapping windows so the model's fixed max length doesn't
+silently truncate a long document).
+
+> **Language note:** the default GLiNER model covers **EN/FR/ES/DE/IT/PT/NL — not
+> Turkish**. For Turkish text keep the regex layer (TC_ID/IBAN/… are checksum-validated)
+> and, for names, the LLM layer. GLiNER is a probabilistic layer, so its spans
+> never override a deterministic regex match.
 
 ### On-prem LLM
 

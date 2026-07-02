@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **GLiNER zero-shot NER layer.** A new detector layer wraps the PII-tuned **GLiNER2** model (`fastino/gliner2-privacy-filter-PII-multi`, Apache-2.0) — a lightweight bidirectional-encoder NER that sits between SpaCy NER and the LLM. Enable it with the chainable `with_gliner()` builder (mirrors `with_ner()`/`with_llm()`); entity types are opt-in via `add_entity(...)`. It runs as a **SpaCy alternative or alongside SpaCy** — the engine merges both layers' spans and a checksum-validated regex span always wins an overlap (GLiNER spans are capped at 0.99 confidence). The new `"gliner"` layer is selectable via `layers=["gliner"]` and `supported_entities("gliner")`. Ships as an optional extra — `pip install "ai-guard[gliner]"` (pulls in torch via `gliner2[local]`); the base install stays `pyyaml` + `httpx`. The default model covers EN/FR/ES/DE/IT/PT/NL (not Turkish — keep the regex/LLM layers for Turkish text). **Long inputs are automatically chunked** (`chunk_size`, default 1500 chars) so the model's fixed maximum length does not silently truncate long documents. Configurable via YAML under `gliner_detector:` (`enabled`, `model`, `threshold`, `quantize`, `chunk_size`).
+
 ### Removed
 
 - **The command-line interface is gone.** The `ai-guard` console script and the `python -m ai_guard` entry point (`scan`, `batch`, `spacy`, `models` sub-commands) were removed, along with the `[project.scripts]` entry point and the `AIGUARD_*` environment-variable handling that only the CLI used. `ai-guard` is a **library**; drive it from Python (`from ai_guard import AIGuard`). Manage models with their native tools instead: SpaCy models via `python -m spacy download <model>` (or the `language=` builder, which auto-downloads), and on-prem LLMs via `ollama pull <model>` (or `with_llm(model=..., auto_pull=True)`).

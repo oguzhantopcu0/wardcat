@@ -10,7 +10,13 @@ from ai_guard._entity_policy import EntityPolicyMixin
 from ai_guard.config.loader import load_config
 from ai_guard.core.engine import DetectionEngine
 from ai_guard.core.models import KNOWN_ENTITY_TYPES, ScanResult
-from ai_guard.core.registry import LAYER_ENTITIES, NER_ENTITIES, REGEX_ENTITIES, VALID_LAYERS
+from ai_guard.core.registry import (
+    GLINER_ENTITIES,
+    LAYER_ENTITIES,
+    NER_ENTITIES,
+    REGEX_ENTITIES,
+    VALID_LAYERS,
+)
 from ai_guard.detectors.base import BaseDetector
 from ai_guard.detectors.regex_detector import RegexDetector
 from ai_guard.exceptions import ConfigError, UnsupportedLanguageError
@@ -304,10 +310,11 @@ class AIGuard(EntityPolicyMixin):
             AIGuard.supported_entities()            # every known entity type
             AIGuard.supported_entities("regex")     # only what the regex layer detects
             AIGuard.supported_entities("ner")       # PERSON, ORG, ADDRESS
+            AIGuard.supported_entities("gliner")    # zero-shot NER (PII types)
             AIGuard.supported_entities("llm")       # contextual/semantic types
 
         :param layer: ``None`` → all known types; or one of ``"regex"``,
-                      ``"ner"``, ``"llm"`` for that layer's set.
+                      ``"ner"``, ``"gliner"``, ``"llm"`` for that layer's set.
         :raises ConfigError: if ``layer`` is not a known layer.
         """
         if layer is None:
@@ -408,6 +415,55 @@ class AIGuard(EntityPolicyMixin):
                 "load_in_4bit": load_in_4bit,
             }
         )
+        self._rebuild()
+        return self
+
+    def with_gliner(
+        self,
+        *,
+        model: str = "fastino/gliner2-privacy-filter-PII-multi",
+        threshold: float = 0.5,
+        quantize: bool = False,
+        chunk_size: int = 1500,
+    ) -> AIGuard:
+        """
+        Enable the GLiNER zero-shot NER layer. Supports chaining; mirrors
+        :meth:`with_ner`.
+
+        GLiNER is a lightweight transformer NER that sits between SpaCy NER and
+        the LLM: it detects prompt-given entity types with better context than
+        SpaCy, far cheaper than an LLM. It runs *alongside* SpaCy when both are
+        enabled — the engine merges their spans and a checksum-validated regex
+        span always wins an overlap.
+
+        Like NER, the entity types it scans for are **opt-in** — enabling the
+        layer alone detects nothing; add the entities you want::
+
+            guard = (
+                AIGuard(salt="s")
+                .with_gliner()                 # GLiNER layer on
+                .add_entity(Entity.PERSON, Action.HASH)
+                .add_entity(Entity.EMAIL, Action.REDACT)
+            )
+
+        Needs the ``gliner`` extra (``pip install "ai-guard[gliner]"``). The
+        default model is multilingual (EN/FR/ES/DE/IT/PT/NL) but **not Turkish**
+        — keep the regex/LLM layers for Turkish text.
+
+        :param model:      GLiNER2 model id (HuggingFace).
+        :param threshold:  drop detected spans below this confidence (0–1).
+        :param quantize:   load a quantized model (less memory, slightly lower quality).
+        :param chunk_size: split longer input into overlapping windows of this many
+                           characters — GLiNER truncates long text, so this keeps it
+                           from silently missing PII late in a document.
+        """
+        self._config["gliner_detector"] = {
+            "enabled": True,
+            "model": model,
+            "threshold": threshold,
+            "quantize": quantize,
+            "chunk_size": chunk_size,
+        }
         self._rebuild()
         return self
 
@@ -564,6 +620,39 @@ class AIGuard(EntityPolicyMixin):
                             model,
                             exc,
                         )
+
+        # GLiNER detector (optional). A zero-shot transformer NER; runs alongside
+        # SpaCy NER when both are on. Entity types are opt-in (shared with the
+        # regex/NER policy), so the layer only fires for enabled entities it
+        # supports. Loaded lazily and skipped (with a warning) if the optional
+        # gliner dependency or model is unavailable.
+        gliner_cfg = self._config.get("gliner_detector", {})
+        if gliner_cfg.get("enabled", False):
+            enabled_gliner = {
+                e for e in GLINER_ENTITIES if entity_cfg.get(e, {}).get("enabled", False)
+            }
+            if enabled_gliner:
+                try:
+                    from ai_guard.detectors.gliner_detector import GLiNERDetector
+
+                    self._detectors.append(
+                        GLiNERDetector(
+                            enabled_gliner,
+                            model=gliner_cfg.get(
+                                "model", "fastino/gliner2-privacy-filter-PII-multi"
+                            ),
+                            threshold=gliner_cfg.get("threshold", 0.5),
+                            quantize=gliner_cfg.get("quantize", False),
+                            chunk_size=gliner_cfg.get("chunk_size", 1500),
+                        )
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "GLiNER model %r could not be loaded, skipping it. "
+                        "Install the extra with: pip install 'ai-guard[gliner]'. Error: %s",
+                        gliner_cfg.get("model"),
+                        exc,
+                    )
 
         # LLM detector (optional)
         llm_cfg = self._config.get("llm_detector", {})

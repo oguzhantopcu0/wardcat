@@ -130,11 +130,13 @@ class TestGuardMultiLanguage:
         if not {"en_core_web_sm", "tr_core_news_md"} <= installed:
             pytest.skip("en_core_web_sm and tr_core_news_md must be installed")
 
+        # Detection is opt-in: enable a NER entity first, then each language's
+        # model yields its own detector.
         g = AIGuard(language=["en", "tr"], spacy_auto_download=False)
+        g.add_entity("PERSON", action="redact")
         ner_detectors = [d for d in g._detectors if isinstance(d, NERDetector)]
         assert len(ner_detectors) == 2
 
-        g.add_entity("PERSON", action="redact")
         result = g.scan("John Smith ve Ahmet Yılmaz toplantıdaydı.")
         persons = {v.original for v in result.violations if v.entity_type == "PERSON"}
         assert "John Smith" in persons  # English model

@@ -378,11 +378,12 @@ class EntityPolicyMixin:
                 )
             target = list(layers)
 
-        # config["entities"] holds the action (always, so the engine can apply it)
-        # and the regex/NER enabled flag.
-        non_llm = ("regex" in target) or ("ner" in target)
+        # config["entities"] holds the action (always, so the engine can apply
+        # it) and the shared enabled flag for the regex/NER/GLiNER layers (each
+        # of which only fires when its own layer switch is on).
+        uses_shared_map = ("regex" in target) or ("ner" in target) or ("gliner" in target)
         self._config.setdefault("entities", {})[entity_type] = {
-            "enabled": enabled and non_llm,
+            "enabled": enabled and uses_shared_map,
             "action": action,
         }
         # The LLM layer keeps its own enabled set.
