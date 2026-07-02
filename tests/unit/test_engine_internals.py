@@ -115,6 +115,63 @@ class TestResolveOverlaps:
         assert "A" in types
         assert "C" in types
 
+    # Confidence priority — a checksum/regex span beats a longer fuzzy one
+    def test_higher_confidence_beats_longer(self):
+        """A high-confidence (regex/checksum) span wins over a longer NER/LLM span."""
+        card = DetectedSpan("CREDIT_CARD", "4532015112830366", 0, 16, confidence=1.0)
+        addr = DetectedSpan("ADDRESS", "4532015112830366 Main St", 0, 24, confidence=0.85)
+        result = self._engine()._resolve_overlaps([addr, card])
+        assert len(result) == 1
+        assert result[0].entity_type == "CREDIT_CARD"
+
+    def test_equal_confidence_falls_back_to_length(self):
+        """With equal confidence the longer span still wins."""
+        long = DetectedSpan("L", "x", 0, 11, confidence=0.85)
+        short = DetectedSpan("S", "x", 0, 5, confidence=0.85)
+        result = self._engine()._resolve_overlaps([short, long])
+        assert result[0].entity_type == "L"
+
+    # Chained / nested overlaps — every candidate is checked against all kept spans
+    def test_chained_partial_overlaps_no_span_slips_through(self):
+        """The winner's neighbours drop even when they don't overlap each other.
+
+        A[0,4) and C[7,11) do not overlap one another, but both overlap the
+        longest span B[2,9). A naive resolver that only compares against the
+        previously kept span could let one of them slip through; checking every
+        kept span drops both.
+        """
+        spans = [
+            DetectedSpan("A", "x", 0, 4, confidence=1.0),
+            DetectedSpan("B", "x", 2, 9, confidence=1.0),  # longest → wins
+            DetectedSpan("C", "x", 7, 11, confidence=1.0),
+        ]
+        result = self._engine()._resolve_overlaps(sorted(spans, key=lambda s: s.start))
+        assert len(result) == 1
+        assert result[0].entity_type == "B"
+
+    def test_partial_overlap_does_not_leak_via_replacement(self):
+        """Two spans overlapping only at their edge: the weaker one is dropped, not
+        silently replaced in a way that resurrects a third overlapping span."""
+        # High-confidence B[3,6) sits inside a low-confidence A[0,10). Even though A
+        # is longer, B's higher confidence wins; the leftover A region does not
+        # smuggle a second span back in.
+        a = DetectedSpan("A", "x", 0, 10, confidence=0.85)
+        b = DetectedSpan("B", "x", 3, 6, confidence=1.0)
+        result = self._engine()._resolve_overlaps(sorted([a, b], key=lambda s: s.start))
+        assert len(result) == 1
+        assert result[0].entity_type == "B"
+
+    def test_result_sorted_by_start(self):
+        """Output is always sorted by start regardless of ranking order."""
+        spans = [
+            DetectedSpan("C", "x", 20, 25, confidence=1.0),
+            DetectedSpan("A", "x", 0, 5, confidence=0.85),
+            DetectedSpan("B", "x", 10, 15, confidence=0.85),
+        ]
+        result = self._engine()._resolve_overlaps(spans)
+        assert [s.entity_type for s in result] == ["A", "B", "C"]
+        assert [s.start for s in result] == sorted(s.start for s in result)
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Offset tracking — text integrity after multiple replacements

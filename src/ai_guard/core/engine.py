@@ -146,8 +146,8 @@ class DetectionEngine:
             )
 
     def _filter_spans(self, raw_spans: list[DetectedSpan]) -> list[DetectedSpan]:
-        """Sort, resolve overlaps, and apply allowlist filter."""
-        spans = self._resolve_overlaps(sorted(raw_spans, key=lambda s: s.start))
+        """Resolve overlaps (returns start-sorted spans) and apply the allowlist."""
+        spans = self._resolve_overlaps(raw_spans)
         if self._allowlist:
             spans = [s for s in spans if s.text not in self._allowlist]
         return spans
@@ -200,15 +200,32 @@ class DetectionEngine:
         return spans
 
     def _resolve_overlaps(self, spans: list[DetectedSpan]) -> list[DetectedSpan]:
-        """Keeps the longer span when overlapping spans are found."""
+        """Select a non-overlapping subset, preferring the strongest span.
+
+        The anonymizer requires non-overlapping spans, so when candidates
+        overlap we must drop all but one. Spans are ranked and accepted greedily:
+        a candidate is kept only if it overlaps none of the already-accepted
+        (higher-ranked) spans. Ranking, most-preferred first:
+
+        1. **Confidence** — a checksum/regex span (``1.0``) beats a fuzzy NER/LLM
+           span (``0.85``) even when the latter is longer, so a Luhn-validated
+           card is never lost to an overlapping ADDRESS guess.
+        2. **Length** — the longer span wins among equal confidence.
+        3. **Start** — earlier first, purely for a stable, deterministic result.
+
+        Every candidate is checked against *all* kept spans (not just the last),
+        so chained/nested overlaps cannot slip a span through.
+        """
         if not spans:
             return spans
-        result: list[DetectedSpan] = [spans[0]]
-        for span in spans[1:]:
-            last = result[-1]
-            if span.start < last.end:
-                if (span.end - span.start) > (last.end - last.start):
-                    result[-1] = span
-            else:
-                result.append(span)
-        return result
+        ranked = sorted(
+            spans,
+            key=lambda s: (-s.confidence, -(s.end - s.start), s.start),
+        )
+        kept: list[DetectedSpan] = []
+        for span in ranked:
+            if any(span.start < k.end and k.start < span.end for k in kept):
+                continue  # overlaps an already-accepted, higher-ranked span
+            kept.append(span)
+        kept.sort(key=lambda s: s.start)
+        return kept
