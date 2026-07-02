@@ -1,10 +1,12 @@
 name: CI
 
 on:
+  # Post-merge verification on the trunk.
   push:
     branches: ["main"]
+  # The gate: run on every pull request (any base branch) so nothing reaches
+  # main without a green lint + test + build run.
   pull_request:
-    branches: ["main"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
