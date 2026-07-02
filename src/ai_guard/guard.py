@@ -549,6 +549,30 @@ class AIGuard(EntityPolicyMixin):
         self._rebuild()
         return self
 
+    def with_propagation(self, *, enabled: bool = True, min_length: int = 3) -> AIGuard:
+        """Redact **every** occurrence of a value once any layer detects it.
+
+        Model-based layers (GLiNER/NER/LLM) often report a repeated value only
+        once, which would leave the other occurrences unredacted. With
+        propagation on, a value detected anywhere is anonymized at every
+        whole-token occurrence in the text — using that value's entity type and
+        action. Deterministic regex spans still win overlaps, so a propagated
+        match never displaces a checksum-validated one. Chainable::
+
+            guard = AIGuard(salt="s").with_gliner().add_entity("PERSON").with_propagation()
+
+        It can over-redact (e.g. a short common name), so it is **off by default**
+        and only exact, token-bounded matches at least ``min_length`` chars long
+        are propagated.
+
+        :param enabled:    turn propagation on (default) or off.
+        :param min_length: skip values shorter than this many characters.
+        """
+        self._config["propagate_matches"] = enabled
+        self._config["propagate_min_length"] = min_length
+        self._rebuild()
+        return self
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------

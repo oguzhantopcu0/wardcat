@@ -27,6 +27,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "custom_patterns": {},  # user-defined regex patterns
     "allowlist": [],  # exact values to never flag (e.g. ["no-reply@company.com"])
     "denylist": [],  # always-flag entries: [{value, entity_type}]
+    # Propagation: redact every occurrence of a value once any layer detects it
+    # (fills in repeats a model-based layer reports only once). Off by default.
+    "propagate_matches": False,
+    "propagate_min_length": 3,  # skip values shorter than this to avoid over-redaction
     # ── LLM detector configuration ────────────────────────────────────────
     "llm_detector": {
         "enabled": False,
@@ -99,6 +103,8 @@ _KNOWN_CONFIG_KEYS = frozenset(
         "entities",
         "allowlist",
         "denylist",
+        "propagate_matches",
+        "propagate_min_length",
     }
 )
 

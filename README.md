@@ -344,6 +344,30 @@ silently truncate a long document).
 > and, for names, the LLM layer. GLiNER is a probabilistic layer, so its spans
 > never override a deterministic regex match.
 
+### Catching every occurrence (value propagation)
+
+Model-based layers (GLiNER, SpaCy NER, the LLM) sometimes report a value that
+repeats in a document only **once**, which would leave the other occurrences
+unredacted. Enable `with_propagation()` so that once *any* layer detects a value,
+**every** whole-token occurrence of it is anonymized — with that value's entity
+type and action:
+
+```python
+guard = (
+    AIGuard(salt="s")
+    .with_gliner()
+    .add_entity(Entity.PERSON, Action.REDACT)
+    .with_propagation()          # a name caught once → redacted everywhere
+)
+```
+
+It is **off by default** because it can over-redact (e.g. a short, common name).
+Only exact, token-bounded matches at least `min_length` chars long (default 3)
+are propagated, and deterministic regex spans still win overlaps — a propagated
+match never displaces a checksum-validated one. Structural PII (email, phone,
+IBAN…) is already caught exhaustively by the regex layer, so propagation mainly
+helps names and other model-only entities.
+
 ### On-prem LLM
 
 > **Fluent setup (recommended).** Instead of passing a dozen `llm_*` / `spacy_*`

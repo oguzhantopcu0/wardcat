@@ -43,6 +43,13 @@ class DetectionEngine:
         self._max_text_bytes: int = config.get("max_text_bytes", _MAX_TEXT_BYTES)
         self._allowlist: set[str] = set(config.get("allowlist", []))
         self._denylist: list[dict[str, str]] = config.get("denylist", [])
+        # Value propagation: once any layer detects a value, redact every other
+        # whole-token occurrence of that exact value too. Closes the gap where a
+        # model-based layer (GLiNER/NER/LLM) reports a repeated value only once.
+        # Opt-in — it can over-redact, so short values are skipped and matches
+        # must be token-bounded.
+        self._propagate: bool = bool(config.get("propagate_matches", False))
+        self._propagate_min_len: int = config.get("propagate_min_length", 3)
         # Detection (this class) is kept separate from anonymization (applying the
         # configured action to each span); the Anonymizer owns that stage.
         self._anonymizer = Anonymizer(self.entity_config, self.salt)
@@ -83,7 +90,7 @@ class DetectionEngine:
                 raw_spans.extend(spans)
 
         raw_spans.extend(self._collect_denylist_spans(text))
-        spans = self._filter_spans(raw_spans)
+        spans = self._filter_spans(raw_spans, text)
         sanitized, violations = self._anonymizer.apply(text, spans)
 
         elapsed_ms = (time.perf_counter() - t_start) * 1000
@@ -120,7 +127,7 @@ class DetectionEngine:
             results = await asyncio.gather(*(d.detect_async(text) for d in self.detectors))
             raw_spans = [s for batch in results for s in batch]
         raw_spans.extend(self._collect_denylist_spans(text))
-        spans = self._filter_spans(raw_spans)
+        spans = self._filter_spans(raw_spans, text)
         sanitized, violations = self._anonymizer.apply(text, spans)
 
         elapsed_ms = (time.perf_counter() - t_start) * 1000
@@ -145,12 +152,65 @@ class DetectionEngine:
                 "Split the text into smaller chunks."
             )
 
-    def _filter_spans(self, raw_spans: list[DetectedSpan]) -> list[DetectedSpan]:
-        """Resolve overlaps (returns start-sorted spans) and apply the allowlist."""
+    def _filter_spans(self, raw_spans: list[DetectedSpan], text: str) -> list[DetectedSpan]:
+        """Resolve overlaps (returns start-sorted spans), apply the allowlist, and
+        optionally propagate each detected value to its other occurrences."""
         spans = self._resolve_overlaps(raw_spans)
         if self._allowlist:
             spans = [s for s in spans if s.text not in self._allowlist]
+        if self._propagate:
+            spans = self._propagate_values(spans, text)
         return spans
+
+    def _propagate_values(self, spans: list[DetectedSpan], text: str) -> list[DetectedSpan]:
+        """Add a span for every other whole-token occurrence of each detected value.
+
+        A model-based layer often reports a repeated value only once; this fills
+        in the misses so every occurrence is anonymized. Only exact, token-bounded
+        matches of values at least ``propagate_min_length`` chars long are added,
+        to avoid over-redacting short or substring matches. New spans inherit the
+        original's entity type/action; overlaps are re-resolved so a propagated
+        match never displaces a stronger (e.g. checksum-regex) span.
+        """
+        if not spans:
+            return spans
+        occupied = {(s.start, s.end) for s in spans}
+        # One value → the highest-confidence span for it (so propagated copies
+        # inherit the best entity type/confidence when a value was seen twice).
+        best: dict[str, DetectedSpan] = {}
+        for s in spans:
+            if len(s.text) < self._propagate_min_len:
+                continue
+            cur = best.get(s.text)
+            if cur is None or s.confidence > cur.confidence:
+                best[s.text] = s
+
+        extra: list[DetectedSpan] = []
+        for value, template in best.items():
+            for m in re.finditer(re.escape(value), text):
+                start, end = m.start(), m.end()
+                if (start, end) in occupied or not self._token_bounded(text, start, end):
+                    continue
+                occupied.add((start, end))
+                extra.append(
+                    DetectedSpan(
+                        entity_type=template.entity_type,
+                        text=value,
+                        start=start,
+                        end=end,
+                        confidence=template.confidence,
+                    )
+                )
+        if not extra:
+            return spans
+        return self._resolve_overlaps(spans + extra)
+
+    @staticmethod
+    def _token_bounded(text: str, start: int, end: int) -> bool:
+        """True if the match is not glued to an alphanumeric character on either side."""
+        before = text[start - 1] if start > 0 else " "
+        after = text[end] if end < len(text) else " "
+        return not before.isalnum() and not after.isalnum()
 
     def _collect_denylist_spans(self, text: str) -> list[DetectedSpan]:
         """Match denylist entries (exact value or regex pattern) against *text*."""
