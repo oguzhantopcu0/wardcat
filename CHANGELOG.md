@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.5.0] — 2026-07-04
+
 > **⚠ BREAKING — the project was renamed `ai-guard` → `wardcat`.** The import
 > package is now `wardcat` (`from wardcat import Wardcat`), the main class
 > `AIGuard` is now **`Wardcat`**, and the distribution and its extras are

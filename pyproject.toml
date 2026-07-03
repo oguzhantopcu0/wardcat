@@ -1,7 +1,7 @@
 [project]
 name = "wardcat"
-version = "0.4.0"
-description = "PII detection and anonymization for LLM inputs — regex, NER and on-prem LLM hybrid engine"
+version = "0.5.0"
+description = "PII detection and anonymization for LLM inputs — regex, NER, GLiNER and on-prem LLM hybrid engine"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }

@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in wardcat behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **Do not paste real PII.** Redact or use fake values in your examples.
+        For security vulnerabilities, use the [security advisory](../security/advisories/new) flow instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: A short code snippet (with fake data) that reproduces it.
+      render: python
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: wardcat version
+      placeholder: "0.5.0"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12"
+    validations:
+      required: true
+  - type: dropdown
+    id: layers
+    attributes:
+      label: Which detection layer(s)?
+      multiple: true
+      options: [regex, ner, gliner, llm, "not sure"]

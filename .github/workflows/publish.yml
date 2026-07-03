@@ -9,6 +9,10 @@ jobs:
   publish:
     name: Build & publish
     runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      # OIDC token for PyPI Trusted Publishing — no long-lived API token needed.
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +39,7 @@ jobs:
       - name: Check distribution
         run: uv run --with twine twine check dist/*
 
-      - name: Publish to PyPI
-        run: uv publish
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+      - name: Publish to PyPI (Trusted Publishing)
+        # Uses the OIDC id-token above — configure a Trusted Publisher for the
+        # project on PyPI (Publishing → Add a new pending publisher). No secret.
+        run: uv publish --trusted-publishing always

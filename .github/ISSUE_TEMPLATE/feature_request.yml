@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest an entity type, layer, action, or capability
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What are you trying to do that wardcat doesn't support today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would the API or behaviour look like?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
