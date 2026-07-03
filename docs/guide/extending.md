@@ -46,7 +46,7 @@ guard = Wardcat(salt="s").with_llm(backend="my_backend", model="...")
 Every layer implements `BaseDetector` — the engine talks to detectors only
 through it and never imports a concrete one. To add a whole new detector (say, a
 different token-classifier model), implement `detect()` returning `DetectedSpan`s;
-give model-based spans a confidence below `1.0` so checksum-regex still wins
-overlaps.
+give model-based spans a confidence below `1.0` so a deterministic regex span
+still wins overlaps.
 
 See the [detectors & backends reference](../reference/internals.md).

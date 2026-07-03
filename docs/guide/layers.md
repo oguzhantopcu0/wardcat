@@ -10,8 +10,7 @@ guard.add_entity("SPECIAL_CATEGORY", action="redact", layers=["llm"])
 ```
 
 The engine merges every layer's spans and resolves overlaps **confidence-first**:
-a checksum-validated regex span (`1.0`) always wins over a fuzzy NER/GLiNER/LLM
-span (`≤0.99`).
+a deterministic regex span (`1.0`) beats a fuzzy NER/GLiNER/LLM span (`≤0.99`).
 
 Discover what each layer can detect:
 
@@ -22,11 +21,11 @@ Wardcat.supported_entities("gliner")  # {"PERSON", "EMAIL", "PHONE", "IBAN", ...
 
 ## Regex
 
-Deterministic, exhaustive, and free — the backbone. 25+ patterns with
-**checksum validation** (TC_ID · Nüfus İdaresi, IBAN · mod-97, CREDIT_CARD ·
-Luhn) so structural PII is flagged with no false positives. Covers cards, IBAN,
-SSN, NIN, TC_ID, EU national IDs, secrets/API keys, JWT, UUID, IPs, and more.
-Always on for any enabled regex-supported entity; no extra dependency.
+Deterministic, exhaustive, and free — the backbone. 25+ patterns; TC_ID (Nüfus
+İdaresi), IBAN (mod-97) and CREDIT_CARD (Luhn) are **checksum-validated**, so
+those are flagged with no false positives. Covers cards, IBAN, SSN, NIN, TC_ID,
+EU national IDs, secrets/API keys, JWT, UUID, IPs, and more. Always on for any
+enabled regex-supported entity; no extra dependency.
 
 ## SpaCy NER (`ner`)
 
@@ -65,11 +64,14 @@ guard = (
 ## On-prem LLM (`llm`)
 
 The strongest context — detects semantic PII the others can't: GDPR Article 9
-special categories ("HIV positive", religion…), contextual secrets
-(`password=…`), unlabeled passports. Never trusted blindly: the model returns
+special-category data (a stated health condition, religious or political
+affiliation, trade-union membership), contextual secrets (`password=…`),
+unlabeled passports. It is never trusted blindly: the model returns
 `{"type","text"}` JSON, which is filtered by structural validators and located
-back in the original text; on any failure the layer is skipped and recorded in
-`ScanResult.warnings`.
+back in the original text. If the backend is unreachable the whole layer is
+skipped and recorded in `ScanResult.warnings`; a transient per-chunk error
+(timeout, malformed JSON) is logged and that chunk is skipped while the rest
+continue.
 
 ```python
 from wardcat import Wardcat, Backend

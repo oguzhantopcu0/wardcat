@@ -608,7 +608,7 @@ For text that mixes several languages you have two options:
 | `SPECIAL_CATEGORY` | `redact` | GDPR Art.9 special-category data — health, religion, ethnicity, political opinion, sexual orientation, trade-union, genetic/biometric. **Off by default** (semantic, LLM-only) |
 | *(any above)* | — | LLM supplements and verifies all regex/NER entity types |
 
-> **GDPR special categories:** `SPECIAL_CATEGORY` flags sensitive statements that have no pattern (e.g. "HIV positive", "practising Muslim", "trade-union member") — only the LLM can detect them. It is off by default; enable it under `llm_detector.entities`. Because it is semantic and subjective, expect lower precision than structural entities.
+> **GDPR special categories:** `SPECIAL_CATEGORY` flags sensitive statements that have no pattern — a stated health condition, religious or political affiliation, or trade-union membership — which only the LLM can detect. It is off by default; enable it under `llm_detector.entities`. Because it is semantic and subjective, expect lower precision than structural entities.
 
 ---
 

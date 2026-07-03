@@ -13,7 +13,7 @@ layers are pulled in as extras.
     uv sync                 # base: regex + Ollama/OpenAI-compatible LLM backend
     uv sync --extra ner     # + SpaCy NER (PERSON, ORG, ADDRESS)
     uv sync --extra gliner  # + GLiNER zero-shot NER (pulls in torch)
-    uv sync --extra all     # + HuggingFace Transformers backend
+    uv sync --extra all     # everything: SpaCy + GLiNER + Transformers
     ```
 
 === "pip (from Git)"

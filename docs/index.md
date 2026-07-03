@@ -36,7 +36,7 @@ print(result.sanitized_text)
 ## Highlights
 
 - **Hybrid detection** across four cooperating layers, merged with a
-  confidence-first overlap resolver (a checksum-validated regex span always wins).
+  confidence-first overlap resolver (a deterministic regex span always wins).
 - **Checksum validation** — TC_ID, IBAN, and CREDIT_CARD are mathematically
   verified before flagging, eliminating false positives.
 - **Four actions** — `warn`, `hash` (salted SHA-256), `redact`, `mask` — all
