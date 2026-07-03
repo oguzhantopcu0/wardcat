@@ -1,12 +1,11 @@
-name: Nightly (real-model tests)
+name: Real-model tests (manual)
 
 # Model-based backends are mock-only in the normal suite. This job installs the
 # heavy extras and runs the `slow` tests against real models — catching bugs
-# (like a wrong pipeline kwarg) that mocks cannot see. It runs on a schedule and
-# on demand, so the fast PR CI stays fast.
+# (like a wrong pipeline kwarg) that mocks cannot see. Run it on demand from the
+# Actions tab (or locally: `uv run --extra transformers pytest -m slow`). No
+# schedule, so it never runs on its own and the fast PR CI stays fast.
 on:
-  schedule:
-    - cron: "0 4 * * *" # 04:00 UTC daily
   workflow_dispatch:
 
 jobs:
