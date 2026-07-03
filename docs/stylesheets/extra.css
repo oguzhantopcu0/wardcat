@@ -1,0 +1,44 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   wardcat — dark neon theme tweaks
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Bigger header logo, with a soft neon glow that matches the mark. */
+.md-header__button.md-logo {
+  padding: 0.2rem 0.4rem 0.2rem 0;
+}
+.md-header__button.md-logo img {
+  height: 2.6rem;
+  width: auto;
+  filter: drop-shadow(0 0 8px rgba(224, 77, 255, 0.65));
+}
+
+/* Neon accents for the dark (slate) scheme. */
+[data-md-color-scheme="slate"] {
+  --md-hue: 265;
+  --md-default-bg-color: hsl(265, 30%, 7%); /* deep dark purple-black */
+  --md-accent-fg-color: #e04dff; /* neon magenta */
+  --md-typeset-a-color: #d36bff; /* links */
+}
+
+/* Near-black header/tabs so the neon logo pops. */
+[data-md-color-scheme="slate"] .md-header,
+[data-md-color-scheme="slate"] .md-tabs {
+  background-color: hsl(265, 40%, 6%);
+  box-shadow: 0 0 0 1px rgba(224, 77, 255, 0.12);
+}
+
+/* Neon glow on hovered links and the active nav item. */
+[data-md-color-scheme="slate"] .md-typeset a:hover {
+  text-shadow: 0 0 6px rgba(224, 77, 255, 0.6);
+}
+[data-md-color-scheme="slate"] .md-nav__link--active {
+  color: var(--md-accent-fg-color);
+  text-shadow: 0 0 6px rgba(224, 77, 255, 0.45);
+}
+
+/* Neon underline accent under the search box + section headings. */
+[data-md-color-scheme="slate"] .md-typeset h1,
+[data-md-color-scheme="slate"] .md-typeset h2 {
+  border-bottom: 1px solid rgba(224, 77, 255, 0.18);
+  padding-bottom: 0.2em;
+}
