@@ -142,3 +142,11 @@ class TestEngineAdjudication:
         types = {v.entity_type for v in result.violations}
         assert "PERSON" in types
         assert "CREDIT_CARD" in types
+
+
+def test_date_of_birth_is_an_llm_entity():
+    # DATE_OF_BIRTH must be a supported LLM entity so the LLM layer can catch
+    # birth dates the regex misses (e.g. "14.03.1985 doğumlu").
+    from wardcat.llm.prompt import SUPPORTED_ENTITIES
+
+    assert "DATE_OF_BIRTH" in SUPPORTED_ENTITIES

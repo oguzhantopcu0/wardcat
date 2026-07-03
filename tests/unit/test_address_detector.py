@@ -39,3 +39,23 @@ class TestAddressPattern:
     def test_bulvar(self):
         spans = detector().detect("Cumhuriyet Bulvarı 34. sokak")
         assert any(s.entity_type == "ADDRESS" for s in spans)
+
+
+class TestTurkishAddressBoundaries:
+    def test_no_backward_overcapture_across_sentence(self):
+        # The street name must not swallow lowercase filler / cross a sentence.
+        text = (
+            "adresinden iletişime geçilebilir. İkamet adresi "
+            "Bağdat Caddesi No:127 Daire:8, Kadıköy/İstanbul"
+        )
+        addrs = [s.text for s in detector().detect(text) if s.entity_type == "ADDRESS"]
+        assert "Bağdat Caddesi No:127 Daire:8" in addrs
+        assert not any("iletişime" in a or "geçilebilir" in a or "İkamet" in a for a in addrs)
+
+    def test_captures_no_and_daire_tail(self):
+        addrs = [
+            s.text
+            for s in detector().detect("Moda Caddesi No:42 Kat:3")
+            if s.entity_type == "ADDRESS"
+        ]
+        assert any("No:42" in a and "Kat:3" in a for a in addrs)

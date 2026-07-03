@@ -90,10 +90,14 @@ _PATTERNS: dict[str, tuple[str, int]] = {
     # Dutch: compound street names (straat, weg, gracht, etc.)
     # German: compound street names (straße, gasse, weg, platz, etc.)
     "ADDRESS": (
-        # Turkish address patterns
-        r"(?:[A-ZÇĞİÖŞÜa-zçğışöşü0-9\.]+\s+){1,5}"
+        # Turkish: 1-3 *capitalized* words before the street-type keyword (so it
+        # can't swallow lowercase filler like "iletişime geçilebilir adresi" or
+        # cross a sentence boundary), then an optional No:/Daire:/Kat: tail.
+        r"(?:[A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğışöşü0-9]*\s+){1,3}"
         r"(?:Mahallesi|Mah\.|Caddesi|Cad\.|Sokağı|Sokak|Sok\.|Bulvarı|Blv\."
         r"|Apartmanı|Apt\.|Sitesi)"
+        r"(?:\s+No[:.]?\s*\d+[A-Za-z]?)?"
+        r"(?:\s+(?:Kat|Daire|Blok|D)[:.]?\s*\d+)?"
         r"|"
         # English/international: number + name + street type keyword
         r"\b\d{1,5}[A-Za-z]?\s+[A-Za-z][A-Za-z\s\.]{2,25}"

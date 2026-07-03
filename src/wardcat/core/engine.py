@@ -29,7 +29,9 @@ class DetectionEngine:
         # Ensemble adjudication: when enabled and an LLM detector is present,
         # regex/NER spans are passed to the LLM as candidates to verify/relabel/
         # drop (one combined detection + adjudication call). Deterministic
-        # (confidence >= 1.0) regex spans are always kept regardless of the LLM.
+        # (confidence >= 1.0) regex spans are always kept regardless of the LLM —
+        # dropping that protection lets a weak adjudicator LLM leak reliable
+        # structural PII (email, financial amounts) it fails to re-detect.
         # Detectors are addressed only through BaseDetector — the engine never
         # imports a concrete detector. Adjudicators advertise themselves via the
         # can_adjudicate flag.

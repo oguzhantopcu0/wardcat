@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Turkish `ADDRESS` regex over-capture.** The pattern grabbed 1–5 words of *any* case before the street-type keyword, so it swallowed lowercase filler and crossed sentence boundaries (e.g. `"iletişime geçilebilir. İkamet adresi Bağdat Caddesi"`) while missing the `No:`/`Daire:` tail. It now takes only 1–3 **capitalized** preceding words and optionally captures a `No:`/`Daire:`/`Kat:` suffix — `"… Bağdat Caddesi No:127 Daire:8"` is captured cleanly.
+- **`DATE_OF_BIRTH` is now an LLM entity.** It was only a `regex`/`gliner` entity, so the LLM layer was never asked for birth dates — a date the regex missed (e.g. `"14.03.1985 doğumlu"`, keyword *after* the date) fell through both active layers. Added a `DATE_OF_BIRTH` description to the LLM prompt so the LLM catches contextual birth dates. (The prompt already had few-shot examples for it.)
 - **Transformers backend real inference (`dtype` → `torch_dtype`).** The HuggingFace pipeline was built with a `dtype=` kwarg, which only exists in transformers ≥ 4.56; on the pinned `>=4.40,<5` range it was silently forwarded to `generate()` and rejected — so real inference failed with *"model_kwargs are not used: ['dtype']"* on every call. The backend now uses `torch_dtype` (valid across the whole range). This was never caught because the backend's tests are mock-only and it had not been run against a real model; a regression test now asserts the pipeline is built with `torch_dtype`.
 
 ### Removed

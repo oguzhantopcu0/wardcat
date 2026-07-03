@@ -23,6 +23,12 @@ _ENTITY_DESCRIPTIONS: dict[str, str] = {
     "IP_ADDRESS": "IPv4 address (e.g. '192.168.1.1')",
     "POSTAL_CODE": "postal/ZIP code (e.g. '34100')",
     "ADDRESS": "physical street address including street name and number (e.g. 'Atatürk Cad. No:5')",
+    "DATE_OF_BIRTH": (
+        "a person's stated date of birth, in any language's convention "
+        "(e.g. '14.03.1985 doğumlu', '15. März 1988 geboren', 'né le 3 février 1990', "
+        "'born on 12 May 1979'). Extract only the date. NOT a general calendar date, "
+        "event date, deadline, or effective date."
+    ),
     "UUID": "UUID / GUID identifier (e.g. '550e8400-e29b-41d4-a716-446655440000')",
     "SSN": "US Social Security Number — format: 3-2-4 digits with dashes (e.g. '123-45-6789')",
     "MAC_ADDRESS": "network hardware (MAC) address — colon or dash separated hex pairs (e.g. '00:1A:2B:3C:4D:5E')",
