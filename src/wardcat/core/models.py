@@ -137,16 +137,20 @@ class Violation:
     replacement: str | None = None
     """Placeholder produced by the hash action; ``None`` for warn."""
     confidence: float = 1.0
-    """Detection confidence in [0.0, 1.0].
+    """Detection confidence in [0.0, 1.0], tiered by how certain the match is:
 
-    - Regex-based (structural patterns): ``1.0`` — deterministic, no false positives.
-    - Checksum-validated (IBAN, TC_ID): ``1.0`` — mathematically verified.
-    - NER (SpaCy): ``0.85`` — model-based, occasionally mis-labels entities.
-    - LLM: ``0.85`` — passed hallucination filter, but still model-based.
+    - Checksum-validated regex (``TC_ID``, ``IBAN``, ``CREDIT_CARD``): ``1.0`` —
+      mathematically verified.
+    - High-precision structural regex (email, JWT, IP, secrets, …): ``0.97``.
+    - Fuzzy regex (``ADDRESS``, ``VEHICLE_PLATE``): ``0.90`` — a distinctive but
+      ambiguous, heuristic match.
+    - GLiNER: ``≤ 0.88``. NER (SpaCy) / LLM: ``0.85`` — model-based.
 
-    Use this field to apply confidence thresholds in post-processing::
+    The engine resolves overlaps highest-confidence-first, so a regex span always
+    beats a model guess, and in adjudication every regex span is protected while
+    the model layers may be overridden. Use this field to threshold::
 
-        high_confidence = [v for v in result.violations if v.confidence >= 1.0]
+        certain = [v for v in result.violations if v.confidence >= 1.0]  # checksum only
     """
 
 

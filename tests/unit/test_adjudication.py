@@ -134,6 +134,41 @@ class TestEngineAdjudication:
         assert "CREDIT_CARD" in types
         assert "PERSON" not in types
 
+    def test_all_regex_tiers_kept_model_overridable(self):
+        # Every regex tier (fuzzy ADDRESS 0.90, structural EMAIL 0.97, checksum
+        # CREDIT_CARD 1.0) is protected in adjudication; only a model-based
+        # candidate (PERSON 0.85) is dropped when the LLM is silent. For a PII
+        # tool, never letting the LLM drop a deterministic match avoids leaks.
+        from wardcat.core.engine import DetectionEngine
+        from wardcat.detectors.regex_detector import CONF_CHECKSUM, CONF_FUZZY, CONF_STRUCTURAL
+
+        text = "Adres Bağdat Caddesi, mail a@b.com, kart 4111 1111 1111 1111, kişi Ali Veli"
+
+        def _span(etype, val, conf):
+            i = text.find(val)
+            return DetectedSpan(etype, val, i, i + len(val), confidence=conf)
+
+        cands = FakeDetector(
+            [
+                _span("ADDRESS", "Bağdat Caddesi", CONF_FUZZY),
+                _span("EMAIL", "a@b.com", CONF_STRUCTURAL),
+                _span("CREDIT_CARD", "4111 1111 1111 1111", CONF_CHECKSUM),
+                _span("PERSON", "Ali Veli", 0.85),  # model-based
+            ]
+        )
+        llm = _mock_llm("[]", {"ADDRESS", "EMAIL", "CREDIT_CARD", "PERSON"})  # silent
+        config = {
+            "salt": "",
+            "entities": {
+                e: {"enabled": True, "action": "redact"}
+                for e in ("ADDRESS", "EMAIL", "CREDIT_CARD", "PERSON")
+            },
+            "llm_detector": {"adjudicate": True},
+        }
+        types = {v.entity_type for v in DetectionEngine(config, [cands, llm]).scan(text).violations}
+        assert {"ADDRESS", "EMAIL", "CREDIT_CARD"} <= types  # all regex tiers kept
+        assert "PERSON" not in types  # model-based — silent LLM dropped it
+
     def test_union_mode_keeps_ner_false_positive(self):
         # With adjudication OFF, the NER false positive survives (current behaviour).
         llm = _mock_llm("[]", {"PERSON", "EMAIL", "CREDIT_CARD"})

@@ -9,8 +9,11 @@ guard.add_entity("EMAIL", action="redact", layers=["regex"])
 guard.add_entity("SPECIAL_CATEGORY", action="redact", layers=["llm"])
 ```
 
-The engine merges every layer's spans and resolves overlaps **confidence-first**:
-a deterministic regex span (`1.0`) beats a fuzzy NER/GLiNER/LLM span (`≤0.99`).
+The engine merges every layer's spans and resolves overlaps **confidence-first**.
+Regex spans are tiered by certainty — checksum `1.0`, high-precision `0.97`,
+fuzzy `0.90` — and all sit above the model layers (GLiNER `≤0.88`, NER/LLM
+`0.85`), so a regex match always wins an overlap and is never dropped by
+adjudication.
 
 Discover what each layer can detect:
 

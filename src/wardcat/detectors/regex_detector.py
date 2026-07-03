@@ -565,6 +565,25 @@ _VALIDATORS: dict[str, Callable[[str], bool]] = {
     "CREDIT_CARD": _validate_luhn,
 }
 
+# ── Confidence tiers ──────────────────────────────────────────────────────────
+# Not all regex matches are equally certain. Tiering the confidence lets the
+# engine keep a proven match while letting a fuzzy one be overridden by the LLM
+# adjudicator. Checksum > high-precision structural > fuzzy > (model layers 0.85).
+CONF_CHECKSUM = 1.0  # mathematically verified — TC_ID / IBAN / CREDIT_CARD
+CONF_STRUCTURAL = 0.97  # distinctive, high-precision format — email, JWT, IP, secrets…
+CONF_FUZZY = 0.90  # distinctive-but-ambiguous — can over/under-match
+
+# Entities whose regex is inherently fuzzy (keyword/heuristic, not a rigid format).
+_FUZZY_ENTITIES: frozenset[str] = frozenset({"ADDRESS", "VEHICLE_PLATE"})
+
+
+def _regex_confidence(entity_type: str) -> float:
+    if entity_type in _VALIDATORS:
+        return CONF_CHECKSUM
+    if entity_type in _FUZZY_ENTITIES:
+        return CONF_FUZZY
+    return CONF_STRUCTURAL
+
 
 class RegexDetector(BaseDetector):
     """Detects structural PII patterns using regex (CC, IBAN, TC_ID, email, …)."""
@@ -640,4 +659,9 @@ class RegexDetector(BaseDetector):
                         end=match.end(),
                     )
                 )
+        # Tier the confidence by how certain the match is, so overlap resolution
+        # and LLM adjudication can treat a fuzzy match differently from a proven
+        # one (a checksum span is never overridable; a fuzzy ADDRESS is).
+        for s in spans:
+            s.confidence = _regex_confidence(s.entity_type)
         return spans

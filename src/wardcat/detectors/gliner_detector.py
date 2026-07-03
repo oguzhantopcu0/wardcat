@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 # PT/NL — not Turkish; keep the regex/LLM layers for Turkish text.
 DEFAULT_GLINER_MODEL = "fastino/gliner2-privacy-filter-PII-multi"
 
-# GLiNER is model-based (not deterministic), so its spans are capped below the
-# regex/checksum confidence of 1.0 — a validated regex span always wins an
-# overlap. The cap also keeps GLiNER just above SpaCy NER (0.85) so the richer
-# model wins when only those two overlap.
-_MAX_CONFIDENCE = 0.99
+# GLiNER is model-based (not deterministic), so its spans are capped below every
+# regex tier (checksum 1.0, structural 0.97, fuzzy 0.90) — a regex match always
+# wins an overlap and is never dropped by adjudication — while staying above
+# SpaCy NER / the LLM (0.85) so the richer model wins when only those overlap.
+_MAX_CONFIDENCE = 0.88
 
 # GLiNER has a fixed maximum input length (~512 tokens); text beyond it is
 # silently truncated by the model. To scan long documents we split the input
@@ -72,7 +72,9 @@ def _ensure_transformers_compat() -> None:
                 self.extra_special_tokens = special_tokens
             return _orig(self, special_tokens)
 
-        _B._set_model_specific_special_tokens = _patched
+        # setattr (not direct assignment) so mypy doesn't flag a method override
+        # when transformers is installed — the shim is deliberate.
+        setattr(_B, "_set_model_specific_special_tokens", _patched)  # noqa: B010
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("Could not apply transformers extra_special_tokens shim: %s", exc)
     _COMPAT_PATCHED = True

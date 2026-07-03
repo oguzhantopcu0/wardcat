@@ -636,7 +636,7 @@ class Violation:
     end:         int          # end index in original text
     action:      Action       # WARN | HASH | REDACT | MASK
     replacement: str | None   # "[TYPE:16hex]" for hash, "[TYPE]" for redact, masked value for mask, None for warn
-    confidence:  float        # 1.0 regex/checksum · 0.85 NER/LLM
+    confidence:  float        # checksum 1.0 · structural regex 0.97 · fuzzy regex 0.90 · GLiNER ≤0.88 · NER/LLM 0.85
 ```
 
 > **Degraded scans — check `warnings`.** If a detector layer cannot run (most

@@ -16,6 +16,14 @@ logger = logging.getLogger(__name__)
 # If exceeded, scan() raises ValueError — does not lock the regex engine.
 _MAX_TEXT_BYTES = 500_000
 
+# In adjudication, spans at or above this confidence are always kept regardless
+# of the LLM verdict. It is set to the lowest regex tier (fuzzy = 0.90) so that
+# ALL regex layers — including a fuzzy ADDRESS match — are protected, while the
+# model layers (GLiNER ≤ 0.88, NER/LLM 0.85) are candidates the LLM may
+# drop/relabel. For a PII tool, never letting the LLM drop a deterministic match
+# is the safe default: over-redaction beats a leak.
+_ADJUDICATION_KEEP_CONFIDENCE = 0.90
+
 
 class DetectionEngine:
     """
@@ -28,10 +36,11 @@ class DetectionEngine:
         self.detectors = detectors
         # Ensemble adjudication: when enabled and an LLM detector is present,
         # regex/NER spans are passed to the LLM as candidates to verify/relabel/
-        # drop (one combined detection + adjudication call). Deterministic
-        # (confidence >= 1.0) regex spans are always kept regardless of the LLM —
-        # dropping that protection lets a weak adjudicator LLM leak reliable
-        # structural PII (email, financial amounts) it fails to re-detect.
+        # drop (one combined detection + adjudication call). Every regex span
+        # (confidence >= _ADJUDICATION_KEEP_CONFIDENCE) is always kept regardless
+        # of the LLM — a weak adjudicator that fails to re-detect a real match
+        # would otherwise leak it. Only the model layers (GLiNER/NER/LLM) are
+        # candidates the LLM may drop/relabel.
         # Detectors are addressed only through BaseDetector — the engine never
         # imports a concrete detector. Adjudicators advertise themselves via the
         # can_adjudicate flag.
@@ -76,7 +85,9 @@ class DetectionEngine:
             candidate_spans: list[DetectedSpan] = []
             for detector in self._other_detectors:
                 candidate_spans.extend(self._safe_detect(detector, text, warnings))
-            raw_spans = [s for s in candidate_spans if s.confidence >= 1.0]
+            raw_spans = [
+                s for s in candidate_spans if s.confidence >= _ADJUDICATION_KEEP_CONFIDENCE
+            ]
             for adjudicator in self._adjudicators:
                 raw_spans.extend(
                     self._safe_detect(adjudicator, text, warnings, candidates=candidate_spans)
@@ -118,7 +129,9 @@ class DetectionEngine:
             )
             candidate_spans: list[DetectedSpan] = [s for spans, _ in cand_results for s in spans]
             warnings.extend(w for _, w in cand_results if w)
-            raw_spans = [s for s in candidate_spans if s.confidence >= 1.0]
+            raw_spans = [
+                s for s in candidate_spans if s.confidence >= _ADJUDICATION_KEEP_CONFIDENCE
+            ]
             adj_results = await asyncio.gather(
                 *(
                     self._safe_detect_async(d, text, candidates=candidate_spans)

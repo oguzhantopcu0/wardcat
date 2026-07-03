@@ -97,9 +97,18 @@ def test_scan_result_redacted_no_raw_pii(guard):
         assert "original" not in v
 
 
-def test_confidence_is_1_for_regex_detections(guard):
-    result = guard.scan("a@b.com")
-    assert all(v.confidence == 1.0 for v in result.violations)
+def test_regex_confidence_is_tiered(guard):
+    from wardcat.detectors.regex_detector import CONF_CHECKSUM, CONF_STRUCTURAL
+
+    guard.add_entity("EMAIL").add_entity("TC_ID")
+
+    # High-precision structural regex (email) is below the checksum tier.
+    emails = [v for v in guard.scan("a@b.com").violations if v.entity_type == "EMAIL"]
+    assert emails and all(v.confidence == CONF_STRUCTURAL for v in emails)
+
+    # Checksum-validated (TC_ID) is fully certain.
+    tcs = [v for v in guard.scan("TC: 12345678950").violations if v.entity_type == "TC_ID"]
+    assert tcs and all(v.confidence == CONF_CHECKSUM for v in tcs)
 
 
 def test_redacted_convenience_wrapper(guard):
