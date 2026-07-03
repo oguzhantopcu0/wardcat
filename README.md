@@ -10,6 +10,8 @@
 
 `ai-guard` scans text for personally identifiable information (PII) before it reaches an LLM, and either warns about or replaces the sensitive data with salted SHA-256 hashes. It supports Turkish, English, German, and French out of the box.
 
+> **📖 Documentation** lives in [`docs/`](docs/) (MkDocs + Material, with an auto-generated API reference). Preview it locally with `uv run --group docs mkdocs serve`.
+
 **Detection is opt-in:** a bare `AIGuard()` detects nothing — you enable the
 entities you want (or all of them with `add_entity(Entity.ALL, ...)`).
 

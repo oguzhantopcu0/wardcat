@@ -104,6 +104,13 @@ dev = [
     "spacy>=3.8.0,<4",
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
 ]
+# Documentation site (MkDocs + Material + auto API reference from docstrings).
+# Build with: uv run --group docs mkdocs build --strict   (preview: mkdocs serve)
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.26",
+]
 
 [tool.ruff]
 line-length = 100

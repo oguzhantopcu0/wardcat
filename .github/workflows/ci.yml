@@ -91,3 +91,18 @@ jobs:
           name: dist
           path: dist/
           retention-days: 7
+
+  docs:
+    name: Docs build (strict)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Build docs (strict — fails on broken links/refs)
+        run: uv run --group docs mkdocs build --strict

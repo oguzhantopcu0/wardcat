@@ -14,3 +14,6 @@ wheels/
 *_results.txt
 filter_coverage_results.txt
 live_test_results.txt
+
+# MkDocs build output
+site/
