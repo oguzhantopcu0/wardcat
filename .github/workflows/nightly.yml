@@ -1,0 +1,29 @@
+name: Nightly (real-model tests)
+
+# Model-based backends are mock-only in the normal suite. This job installs the
+# heavy extras and runs the `slow` tests against real models — catching bugs
+# (like a wrong pipeline kwarg) that mocks cannot see. It runs on a schedule and
+# on demand, so the fast PR CI stays fast.
+on:
+  schedule:
+    - cron: "0 4 * * *" # 04:00 UTC daily
+  workflow_dispatch:
+
+jobs:
+  slow-tests:
+    name: Real-model slow tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install with the transformers extra
+        run: uv sync --extra transformers --dev
+
+      - name: Run slow tests (real models; auto-skip what's unavailable)
+        run: uv run pytest -m slow tests/integration/ --tb=short -q
