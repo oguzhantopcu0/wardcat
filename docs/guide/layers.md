@@ -16,8 +16,8 @@ span (`≤0.99`).
 Discover what each layer can detect:
 
 ```python
-AIGuard.supported_entities()          # every known type
-AIGuard.supported_entities("gliner")  # {"PERSON", "EMAIL", "PHONE", "IBAN", ...}
+Wardcat.supported_entities()          # every known type
+Wardcat.supported_entities("gliner")  # {"PERSON", "EMAIL", "PHONE", "IBAN", ...}
 ```
 
 ## Regex
@@ -34,10 +34,10 @@ Names, organisations, and locations via SpaCy. Off by default and ships no
 default model — enable with a language (recommended) or an explicit model:
 
 ```python
-from ai_guard import AIGuard, Language
+from wardcat import Wardcat, Language
 
-guard = AIGuard(salt="s").with_ner(language=Language.TR).add_entity("PERSON")
-guard = AIGuard(salt="s").with_ner(spacy_model=["en_core_web_sm", "de_core_news_sm"])
+guard = Wardcat(salt="s").with_ner(language=Language.TR).add_entity("PERSON")
+guard = Wardcat(salt="s").with_ner(spacy_model=["en_core_web_sm", "de_core_news_sm"])
 ```
 
 A multilingual gazetteer filters out job titles and abbreviations that NER models
@@ -52,8 +52,8 @@ chunked automatically so the model's fixed max length doesn't truncate them.
 
 ```python
 guard = (
-    AIGuard(salt="s")
-    .with_gliner()                 # needs: pip install "ai-guard[gliner]"
+    Wardcat(salt="s")
+    .with_gliner()                 # needs: pip install "wardcat[gliner]"
     .add_entity("PERSON").add_entity("EMAIL")
 )
 ```
@@ -72,13 +72,13 @@ back in the original text; on any failure the layer is skipped and recorded in
 `ScanResult.warnings`.
 
 ```python
-from ai_guard import AIGuard, Backend
+from wardcat import Wardcat, Backend
 
 # Ollama (default): needs a running Ollama service
-guard = AIGuard(salt="s").with_llm(backend=Backend.OLLAMA, model="llama3.1:8b")
+guard = Wardcat(salt="s").with_llm(backend=Backend.OLLAMA, model="llama3.1:8b")
 
-# In-process HuggingFace Transformers (no daemon): pip install "ai-guard[transformers]"
-guard = AIGuard(salt="s").with_llm(backend=Backend.TRANSFORMERS,
+# In-process HuggingFace Transformers (no daemon): pip install "wardcat[transformers]"
+guard = Wardcat(salt="s").with_llm(backend=Backend.TRANSFORMERS,
                                    model="Qwen/Qwen2.5-3B-Instruct")
 ```
 
@@ -89,4 +89,4 @@ candidates **and** adds what they missed, in a single call — cleaning NER nois
 (e.g. a job title mislabeled as a name). Deterministic regex spans are always
 kept regardless of the LLM verdict.
 
-See the full API on the [AIGuard reference page](../reference/aiguard.md).
+See the full API on the [Wardcat reference page](../reference/aiguard.md).

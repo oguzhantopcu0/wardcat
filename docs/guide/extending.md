@@ -1,6 +1,6 @@
 # Extending
 
-ai-guard is built around registries so you can add behaviour **without changing
+wardcat is built around registries so you can add behaviour **without changing
 the library** (Open/Closed).
 
 ## Custom actions
@@ -10,12 +10,12 @@ Register your own — `tokenize`, `encrypt`, format-preserving masking — and u
 like any built-in:
 
 ```python
-from ai_guard import AIGuard, register_action
+from wardcat import Wardcat, register_action
 
 # ctx carries the salt; span has .entity_type, .text, .start, .end
 register_action("tokenize", lambda span, ctx: f"<{span.entity_type}:{vault.put(span.text)}>")
 
-guard = AIGuard(salt="s").add_entity("EMAIL", "tokenize")
+guard = Wardcat(salt="s").add_entity("EMAIL", "tokenize")
 ```
 
 Detection and anonymization are separate stages: `DetectionEngine` finds spans, a
@@ -27,7 +27,7 @@ Backends are looked up in a registry, so you can add Azure OpenAI, Anthropic, or
 bespoke gateway:
 
 ```python
-from ai_guard import AIGuard, BaseLLMBackend, register_backend, registered_backends
+from wardcat import Wardcat, BaseLLMBackend, register_backend, registered_backends
 
 class MyBackend(BaseLLMBackend):
     def complete(self, prompt, *, timeout=60): ...
@@ -38,7 +38,7 @@ class MyBackend(BaseLLMBackend):
 register_backend("my_backend", lambda cfg: MyBackend())
 registered_backends()   # frozenset({"ollama", "openai_compatible", "transformers", "my_backend"})
 
-guard = AIGuard(salt="s").with_llm(backend="my_backend", model="...")
+guard = Wardcat(salt="s").with_llm(backend="my_backend", model="...")
 ```
 
 ## Custom detectors

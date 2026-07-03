@@ -1,4 +1,4 @@
-from ai_guard.detectors.regex_detector import RegexDetector
+from wardcat.detectors.regex_detector import RegexDetector
 
 ADDR_ENTITIES = {"ADDRESS", "POSTAL_CODE"}
 

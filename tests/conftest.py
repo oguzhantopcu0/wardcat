@@ -12,9 +12,9 @@ from collections.abc import Callable
 
 import pytest
 
-from ai_guard import AIGuard
+from wardcat import Wardcat
 
-# entity → action policy ai-guard enabled by default before 0.4.0 made detection
+# entity → action policy wardcat enabled by default before 0.4.0 made detection
 # opt-in. (ORG, FINANCIAL_AMOUNT, SPECIAL_CATEGORY were off back then.)
 LEGACY_POLICY: dict[str, str] = {
     "CREDIT_CARD": "hash",
@@ -44,14 +44,14 @@ LEGACY_POLICY: dict[str, str] = {
 }
 
 
-def make_legacy_guard(**kwargs) -> AIGuard:
-    """Build an ``AIGuard`` pre-loaded with the pre-0.4.0 default entity policy."""
-    guard = AIGuard(**kwargs)
+def make_legacy_guard(**kwargs) -> Wardcat:
+    """Build an ``Wardcat`` pre-loaded with the pre-0.4.0 default entity policy."""
+    guard = Wardcat(**kwargs)
     guard.add_entities(LEGACY_POLICY)
     return guard
 
 
 @pytest.fixture
-def legacy_guard() -> Callable[..., AIGuard]:
+def legacy_guard() -> Callable[..., Wardcat]:
     """Factory fixture: ``legacy_guard(use_ner=False)`` → guard with the old policy."""
     return make_legacy_guard

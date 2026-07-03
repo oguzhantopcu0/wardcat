@@ -11,7 +11,7 @@ installed — so a normal ``pytest`` run (and CI without Ollama) is unaffected.
 Run explicitly:
     uv run pytest -m slow tests/integration/test_llm_live.py
 Pick the model:
-    AIGUARD_TEST_LLM_MODEL=llama3.2:1b uv run pytest -m slow ...
+    WARDCAT_TEST_LLM_MODEL=llama3.2:1b uv run pytest -m slow ...
 
 Non-determinism note: assertions target only unambiguous PII (full names,
 emails, card numbers, explicitly labeled secrets) detected at temperature 0.
@@ -23,12 +23,12 @@ import os
 
 import pytest
 
-from ai_guard import AIGuard
-from ai_guard.llm.backends.ollama import OllamaBackend
+from wardcat import Wardcat
+from wardcat.llm.backends.ollama import OllamaBackend
 
 pytestmark = pytest.mark.slow
 
-_OLLAMA_URL = os.environ.get("AIGUARD_TEST_OLLAMA_URL", "http://localhost:11434")
+_OLLAMA_URL = os.environ.get("WARDCAT_TEST_OLLAMA_URL", "http://localhost:11434")
 
 # Smallest-first preference — CI can install a tiny model; locally we use
 # whatever is present. Matched by prefix so quantized tags (…-instruct-qX) hit.
@@ -51,7 +51,7 @@ def _pick_model() -> str | None:
         return None
     if not models:
         return None
-    override = os.environ.get("AIGUARD_TEST_LLM_MODEL")
+    override = os.environ.get("WARDCAT_TEST_LLM_MODEL")
     if override:
         return override if override in models else None
     for pref in _PREFERRED:
@@ -65,14 +65,14 @@ _MODEL = _pick_model()
 
 needs_ollama = pytest.mark.skipif(
     _MODEL is None,
-    reason="Ollama not reachable or no model installed (set AIGUARD_TEST_LLM_MODEL to choose).",
+    reason="Ollama not reachable or no model installed (set WARDCAT_TEST_LLM_MODEL to choose).",
 )
 
 
 @pytest.fixture(scope="module")
-def llm_guard() -> AIGuard:
+def llm_guard() -> Wardcat:
     """LLM-only guard (NER off) — so PERSON detection proves the LLM ran."""
-    return AIGuard(
+    return Wardcat(
         use_ner=False,
         use_llm=True,
         llm_model=_MODEL,
@@ -92,7 +92,7 @@ class TestLiveLLMDetection:
 
     def test_detects_contextual_secret(self):
         # db_pass=VALUE has no known prefix → regex can't catch it; only the LLM can.
-        guard = AIGuard(use_ner=False, salt="s").with_llm(model=_MODEL, timeout=120)
+        guard = Wardcat(use_ner=False, salt="s").with_llm(model=_MODEL, timeout=120)
         guard._config["llm_detector"]["entities"]["CUSTOM_SECRET"] = {
             "enabled": True,
             "action": "hash",
@@ -113,7 +113,7 @@ class TestLiveAdjudication:
     def test_deterministic_kept_and_pipeline_runs(self):
         # Full stack (regex + NER + LLM adjudication). spaCy is required here.
         pytest.importorskip("spacy")
-        guard = AIGuard(
+        guard = Wardcat(
             use_ner=True,
             spacy_model="en_core_web_sm",
             use_llm=True,

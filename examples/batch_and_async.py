@@ -7,7 +7,7 @@ Batch and async scanning — regex-only (no external services required).
 
 import asyncio
 
-from ai_guard import AIGuard
+from wardcat import Wardcat
 
 TEXTS = [
     "Email me at ali@example.com",
@@ -17,9 +17,9 @@ TEXTS = [
 ]
 
 
-def _build_guard() -> AIGuard:
+def _build_guard() -> Wardcat:
     # Detection is opt-in: enable the entities you care about.
-    return AIGuard(use_ner=False, salt="example-salt").add_entities(
+    return Wardcat(use_ner=False, salt="example-salt").add_entities(
         {"EMAIL": "warn", "CREDIT_CARD": "hash", "IBAN": "hash"}
     )
 

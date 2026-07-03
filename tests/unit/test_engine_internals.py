@@ -10,8 +10,8 @@ Scope:
 
 from __future__ import annotations
 
-from ai_guard.core.engine import DetectionEngine
-from ai_guard.detectors.base import BaseDetector, DetectedSpan
+from wardcat.core.engine import DetectionEngine
+from wardcat.detectors.base import BaseDetector, DetectedSpan
 
 # ── Helper: fake detector that returns a fixed span list ────────────────────
 
@@ -303,9 +303,9 @@ class TestViolationOrdering:
         assert entity_order == ["A", "B", "C"]
 
     def test_violation_start_positions_ascending(self):
-        from ai_guard import AIGuard
+        from wardcat import Wardcat
 
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         text = "a@a.com 0532 111 22 33 b@b.com"
         result = guard.scan(text)
         starts = [v.start for v in result.violations]

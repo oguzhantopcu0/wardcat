@@ -7,8 +7,8 @@ These tests catch regex patterns that are too broad and produce noise in product
 
 from __future__ import annotations
 
-from ai_guard import AIGuard
-from ai_guard.detectors.regex_detector import RegexDetector
+from wardcat import Wardcat
+from wardcat.detectors.regex_detector import RegexDetector
 
 
 def _regex(entities):
@@ -159,7 +159,7 @@ class TestFullPipelineFalsePositives:
     ]
 
     def test_clean_prose_no_violations(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         for text in self.CLEAN_TEXTS:
             result = guard.scan(text)
             assert result.is_clean, (
@@ -203,13 +203,13 @@ class TestAddressFalsePositives:
 class TestScanBatchWorkersConfig:
     def test_default_workers_from_config(self):
         """scan_batch should use config value when max_workers not specified."""
-        from ai_guard.config.loader import load_config
+        from wardcat.config.loader import load_config
 
         cfg = load_config()
         assert cfg["scan_batch_workers"] == 4
 
     def test_explicit_max_workers_override(self):
-        guard = AIGuard(use_ner=False).add_entity("EMAIL", "warn")
+        guard = Wardcat(use_ner=False).add_entity("EMAIL", "warn")
         texts = ["a@b.com"] * 8
         results = guard.scan_batch(texts, max_workers=2)
         assert len(results) == 8

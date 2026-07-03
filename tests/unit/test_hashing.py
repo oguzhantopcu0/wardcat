@@ -1,4 +1,4 @@
-from ai_guard.utils.hashing import sha256_hash
+from wardcat.utils.hashing import sha256_hash
 
 
 def test_deterministic():

@@ -1,22 +1,22 @@
-# ai-guard varsayılan politika dosyası
+# wardcat varsayılan politika dosyası
 #
 # LLM dedektörü hızlı başlangıç:
 #   1. Ollama kur: https://ollama.com
 #   2. Modeli indir: ollama pull llama3.2
-#      (veya AIGuard(...).with_llm(model="llama3.2", auto_pull=True) ile otomatik)
+#      (veya Wardcat(...).with_llm(model="llama3.2", auto_pull=True) ile otomatik)
 #   3. Bu dosyada llm_detector.enabled: true yap
 # Bu dosyayı kopyalayarak projenize özel politika oluşturabilirsiniz.
 #
 # Kullanım:
-#   from ai_guard import AIGuard
-#   guard = AIGuard(config_path="config/default.yaml")
+#   from wardcat import Wardcat
+#   guard = Wardcat(config_path="config/default.yaml")
 
 # Hash tuzlama değeri. Boş bırakılırsa salt kullanılmaz.
 # Üretim ortamında ortam değişkeninden okuyun, buraya yazmayın.
 salt: ""
 
 # NER varsayılan olarak KAPALIDIR. Açmak için bir model/dil belirtmelisiniz —
-# kod tarafında AIGuard(language=Language.EN) ya da AIGuard(spacy_model="en_core_web_sm"),
+# kod tarafında Wardcat(language=Language.EN) ya da Wardcat(spacy_model="en_core_web_sm"),
 # veya bu dosyada hem use_ner: true hem de bir spacy_model verin:
 # use_ner: true
 # spacy_model: "en_core_web_sm"   # tek model

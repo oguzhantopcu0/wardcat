@@ -10,10 +10,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ai_guard.llm.backends.base import BaseLLMBackend, PullProgress
-from ai_guard.llm.backends.ollama import OllamaBackend
-from ai_guard.llm.backends.openai_compat import OpenAICompatBackend
-from ai_guard.llm.model_manager import ModelManager
+from wardcat.llm.backends.base import BaseLLMBackend, PullProgress
+from wardcat.llm.backends.ollama import OllamaBackend
+from wardcat.llm.backends.openai_compat import OpenAICompatBackend
+from wardcat.llm.model_manager import ModelManager
 
 # ═══════════════════════════════════════════════════════════════════════════
 # OllamaBackend
@@ -224,7 +224,7 @@ class TestModelManager:
                 on_progress(PullProgress("success", 100, 100))
 
         backend.pull_model.side_effect = fake_pull
-        with caplog.at_level(logging.INFO, logger="ai_guard.llm.model_manager"):
+        with caplog.at_level(logging.INFO, logger="wardcat.llm.model_manager"):
             ModelManager(backend).pull("llama3.2", verbose=True)
         assert "llama3.2" in caplog.text
         assert capsys.readouterr().out != ""  # progress bar still printed
@@ -247,14 +247,14 @@ class TestHttpxImportError:
             backend.model = "llama3.2"
             # Patch _httpx directly
             with patch(
-                "ai_guard.llm.backends.ollama._httpx", side_effect=ImportError("httpx missing")
+                "wardcat.llm.backends.ollama._httpx", side_effect=ImportError("httpx missing")
             ):
                 with pytest.raises(ImportError, match="httpx"):
                     backend.complete("test")
 
     def test_openai_compat_httpx_missing_raises(self):
         with patch(
-            "ai_guard.llm.backends.openai_compat._httpx", side_effect=ImportError("httpx missing")
+            "wardcat.llm.backends.openai_compat._httpx", side_effect=ImportError("httpx missing")
         ):
             backend = OpenAICompatBackend.__new__(OpenAICompatBackend)
             backend.base_url = "http://localhost"
@@ -439,7 +439,7 @@ class TestBaseLLMBackendAsyncDefault:
         # Patch asyncio.to_thread to just call the function
         import asyncio
 
-        from ai_guard.llm.backends.base import BaseLLMBackend
+        from wardcat.llm.backends.base import BaseLLMBackend
 
         class _Concrete(BaseLLMBackend):
             def complete(self, prompt, *, timeout=60):
@@ -472,7 +472,7 @@ class TestAllowHttpParameter:
     def test_localhost_http_only_warns(self, caplog):
         import logging
 
-        with caplog.at_level(logging.WARNING, logger="ai_guard.llm.backends.ollama"):
+        with caplog.at_level(logging.WARNING, logger="wardcat.llm.backends.ollama"):
             OllamaBackend(base_url="http://localhost:11434")
         assert any("HTTP" in r.message for r in caplog.records)
 

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ai_guard.config.loader import DEFAULT_CONFIG, load_config
+from wardcat.config.loader import DEFAULT_CONFIG, load_config
 
 
 def test_load_defaults_when_no_path():
@@ -56,7 +56,7 @@ def test_missing_yaml_file_raises():
 
 
 def test_deep_copy_handles_list():
-    from ai_guard.config.loader import _deep_copy
+    from wardcat.config.loader import _deep_copy
 
     original = {"key": [1, 2, {"nested": True}]}
     copied = _deep_copy(original)
@@ -82,12 +82,12 @@ def test_custom_max_text_bytes_from_yaml(tmp_path: Path):
 
 def test_max_text_bytes_enforced_by_engine(tmp_path: Path):
     """Engine should use the configured max_text_bytes, not the hardcoded default."""
-    from ai_guard import AIGuard
+    from wardcat import Wardcat
 
     cfg = {"max_text_bytes": 10}
     cfg_file = tmp_path / "policy.yaml"
     cfg_file.write_text(yaml.dump(cfg))
-    guard = AIGuard(config_path=str(cfg_file), use_ner=False)
+    guard = Wardcat(config_path=str(cfg_file), use_ner=False)
     with pytest.raises(ValueError, match="too large"):
         guard.scan("x" * 11)
 
@@ -154,7 +154,7 @@ def test_custom_patterns_invalid_action_raises(tmp_path: Path):
 
 def test_custom_patterns_detected_in_scan(tmp_path: Path):
     """End-to-end: custom_patterns in YAML config flows through to detection."""
-    from ai_guard import AIGuard
+    from wardcat import Wardcat
 
     override = {
         "custom_patterns": {
@@ -166,7 +166,7 @@ def test_custom_patterns_detected_in_scan(tmp_path: Path):
     }
     cfg_file = tmp_path / "policy.yaml"
     cfg_file.write_text(yaml.dump(override))
-    guard = AIGuard(config_path=str(cfg_file), use_ner=False)
+    guard = Wardcat(config_path=str(cfg_file), use_ner=False)
     result = guard.scan("employee EMP-123456 logged in")
     assert any(v.entity_type == "EMPLOYEE_ID" for v in result.violations)
 
@@ -215,9 +215,7 @@ def test_check_redos_timeout_rejects_pattern(tmp_path: Path):
     mock_ctx.__exit__ = MagicMock(return_value=False)
 
     with (
-        patch(
-            "ai_guard.config.loader.concurrent.futures.ThreadPoolExecutor", return_value=mock_ctx
-        ),
+        patch("wardcat.config.loader.concurrent.futures.ThreadPoolExecutor", return_value=mock_ctx),
         pytest.raises(ValueError, match="catastrophic backtracking"),
     ):
         load_config(cfg_file)
@@ -225,8 +223,8 @@ def test_check_redos_timeout_rejects_pattern(tmp_path: Path):
 
 def test_load_config_does_not_read_env(monkeypatch):
     """The library loader ignores environment variables entirely."""
-    monkeypatch.setenv("AIGUARD_SALT", "env-salt")
-    monkeypatch.setenv("AIGUARD_LLM_TIMEOUT", "999")
+    monkeypatch.setenv("WARDCAT_SALT", "env-salt")
+    monkeypatch.setenv("WARDCAT_LLM_TIMEOUT", "999")
     config = load_config()
     assert config["salt"] == ""
     assert config["llm_detector"]["timeout"] == 60

@@ -1,8 +1,8 @@
-from ai_guard import AIGuard, Entity
+from wardcat import Entity, Wardcat
 
 
 def guard():
-    return AIGuard(use_ner=False).add_entity(Entity.ALL, action="warn")
+    return Wardcat(use_ner=False).add_entity(Entity.ALL, action="warn")
 
 
 def test_batch_returns_correct_count():

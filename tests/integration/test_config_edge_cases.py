@@ -1,5 +1,5 @@
 """
-Config loader and AIGuard configuration deep tests.
+Config loader and Wardcat configuration deep tests.
 
 Scope:
   - Malformed / missing YAML
@@ -18,8 +18,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ai_guard import AIGuard
-from ai_guard.config.loader import DEFAULT_CONFIG, _deep_merge, load_config
+from wardcat import Wardcat
+from wardcat.config.loader import DEFAULT_CONFIG, _deep_merge, load_config
 
 # ══════════════════════════════════════════════════════════════════════════
 # load_config — deep-merge logic
@@ -103,21 +103,21 @@ class TestLoadConfig:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# AIGuard programmatic API edge cases
+# Wardcat programmatic API edge cases
 # ══════════════════════════════════════════════════════════════════════════
 
 
 class TestProgrammaticAPIEdgeCases:
     def test_configure_unknown_entity_type(self):
         """Unknown entity type should be configurable (no effect without regex/NER)."""
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("MY_CUSTOM_PII", action="warn")
         # should not raise, scan should work
         result = guard.scan("bazı metin")
         assert result is not None
 
     def test_disable_all_entities(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         for entity in [
             "CREDIT_CARD",
             "EMAIL",
@@ -134,27 +134,27 @@ class TestProgrammaticAPIEdgeCases:
         assert result.is_clean
 
     def test_add_entity_returns_self(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         returned = guard.add_entity("EMAIL", action="warn")
         assert returned is guard
 
     def test_set_salt_returns_self(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         assert guard.set_salt("yeni-tuz") is guard
 
     def test_salt_in_constructor_overrides_yaml(self, tmp_path: Path):
         f = tmp_path / "cfg.yaml"
         f.write_text(yaml.dump({"salt": "yaml-tuz"}))
-        guard = AIGuard(config_path=f, salt="constructor-tuz", use_ner=False)
+        guard = Wardcat(config_path=f, salt="constructor-tuz", use_ner=False)
         assert guard._config["salt"] == "constructor-tuz"
 
     def test_set_salt_empty_string(self):
-        guard = AIGuard(use_ner=False, salt="mevcut")
+        guard = Wardcat(use_ner=False, salt="mevcut")
         guard.set_salt("")
         assert guard._config["salt"] == ""
 
     def test_readd_entity_midstream(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("EMAIL", action="warn")
         r1 = guard.scan("a@b.com")
         guard.add_entity("EMAIL", action="hash")
@@ -182,7 +182,7 @@ class TestEntityEnablement:
         ],
     )
     def test_disabled_entity_not_detected(self, entity, text):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.remove_entity(entity)
         result = guard.scan(text)
         assert not any(v.entity_type == entity for v in result.violations), (
@@ -198,7 +198,7 @@ class TestEntityEnablement:
         ],
     )
     def test_re_enabling_entity_works(self, entity, text):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.remove_entity(entity)
         guard.add_entity(entity, action="warn")
         result = guard.scan(text)
@@ -216,23 +216,23 @@ class TestYAMLAndProgrammaticCombined:
     def test_yaml_then_programmatic_override(self, tmp_path: Path):
         f = tmp_path / "cfg.yaml"
         f.write_text(yaml.dump({"entities": {"EMAIL": {"enabled": True, "action": "warn"}}}))
-        guard = AIGuard(config_path=f, use_ner=False)
+        guard = Wardcat(config_path=f, use_ner=False)
         guard.add_entity("EMAIL", action="hash")  # override
 
         result = guard.scan("a@b.com")
         v = next(v for v in result.violations if v.entity_type == "EMAIL")
-        from ai_guard.core.models import Action
+        from wardcat.core.models import Action
 
         assert v.action == Action.HASH
 
     def test_yaml_salt_and_programmatic_entity(self, tmp_path: Path):
         f = tmp_path / "cfg.yaml"
         f.write_text(yaml.dump({"salt": "yaml-tuz"}))
-        guard = AIGuard(config_path=f, use_ner=False)
+        guard = Wardcat(config_path=f, use_ner=False)
         guard.add_entity("TC_ID", action="hash")
 
         r1 = guard.scan("TC: 12345678950")
-        guard2 = AIGuard(config_path=f, salt="farkli-tuz", use_ner=False)
+        guard2 = Wardcat(config_path=f, salt="farkli-tuz", use_ner=False)
         guard2.add_entity("TC_ID", action="hash")
         r2 = guard2.scan("TC: 12345678950")
 

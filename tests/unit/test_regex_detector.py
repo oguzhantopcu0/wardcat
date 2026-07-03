@@ -1,6 +1,6 @@
 import pytest
 
-from ai_guard.detectors.regex_detector import RegexDetector
+from wardcat.detectors.regex_detector import RegexDetector
 
 ALL_ENTITIES = {
     "CREDIT_CARD",
@@ -146,7 +146,7 @@ class TestDisabledEntity:
         assert "EMAIL" in types
 
 
-from ai_guard.detectors.regex_detector import _validate_iban, _validate_tc_id
+from wardcat.detectors.regex_detector import _validate_iban, _validate_tc_id
 
 
 class TestValidateIBAN:
@@ -313,7 +313,7 @@ class TestCustomPatternsInRegexDetector:
         import re
         from unittest.mock import MagicMock, patch
 
-        from ai_guard.detectors.regex_detector import _safe_finditer
+        from wardcat.detectors.regex_detector import _safe_finditer
 
         pattern = re.compile(r"\w+")
         mock_future = MagicMock()
@@ -326,10 +326,10 @@ class TestCustomPatternsInRegexDetector:
 
         with (
             patch(
-                "ai_guard.detectors.regex_detector.concurrent.futures.ThreadPoolExecutor",
+                "wardcat.detectors.regex_detector.concurrent.futures.ThreadPoolExecutor",
                 return_value=mock_ctx,
             ),
-            caplog.at_level(logging.WARNING, logger="ai_guard.detectors.regex_detector"),
+            caplog.at_level(logging.WARNING, logger="wardcat.detectors.regex_detector"),
         ):
             result = _safe_finditer(pattern, "hello world")
 
@@ -366,22 +366,22 @@ class TestChecksumEdgeCases:
         assert not any(s.entity_type == "IBAN" for s in spans)
 
     def test_validate_iban_too_short(self):
-        from ai_guard.detectors.regex_detector import _validate_iban
+        from wardcat.detectors.regex_detector import _validate_iban
 
         assert _validate_iban("TR3") is False
 
     def test_validate_tc_id_too_short(self):
-        from ai_guard.detectors.regex_detector import _validate_tc_id
+        from wardcat.detectors.regex_detector import _validate_tc_id
 
         assert _validate_tc_id("1234") is False
 
     def test_validate_tc_id_starts_with_zero(self):
-        from ai_guard.detectors.regex_detector import _validate_tc_id
+        from wardcat.detectors.regex_detector import _validate_tc_id
 
         assert _validate_tc_id("01234567890") is False
 
     def test_validate_tc_id_non_digit(self):
-        from ai_guard.detectors.regex_detector import _validate_tc_id
+        from wardcat.detectors.regex_detector import _validate_tc_id
 
         assert _validate_tc_id("1234567890a") is False
 
@@ -392,7 +392,7 @@ class TestChecksumEdgeCases:
 class TestVehiclePlate:
     @pytest.fixture
     def detector(self):
-        from ai_guard.detectors.regex_detector import RegexDetector
+        from wardcat.detectors.regex_detector import RegexDetector
 
         return RegexDetector({"VEHICLE_PLATE"})
 
@@ -425,9 +425,9 @@ class TestVehiclePlate:
         assert not any(s.entity_type == "VEHICLE_PLATE" for s in spans), f"falsely detected: {text}"
 
     def test_vehicle_plate_in_guard(self):
-        from ai_guard import AIGuard
+        from wardcat import Wardcat
 
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("VEHICLE_PLATE", action="warn")
         result = guard.scan("Araç plakası: 34 ABC 123")
         assert any(v.entity_type == "VEHICLE_PLATE" for v in result.violations)
@@ -439,7 +439,7 @@ class TestVehiclePlate:
 class TestUSZipCode:
     @pytest.fixture
     def detector(self):
-        from ai_guard.detectors.regex_detector import RegexDetector
+        from wardcat.detectors.regex_detector import RegexDetector
 
         return RegexDetector({"US_ZIP_CODE"})
 
@@ -464,7 +464,7 @@ class TestUSZipCode:
 class TestFinancialAmount:
     @pytest.fixture
     def detector(self):
-        from ai_guard.detectors.regex_detector import RegexDetector
+        from wardcat.detectors.regex_detector import RegexDetector
 
         return RegexDetector({"FINANCIAL_AMOUNT"})
 
@@ -486,9 +486,9 @@ class TestFinancialAmount:
     def test_financial_amount_wired_into_guard(self):
         # Regression: the pattern existed but was missing from the guard's
         # _REGEX_ENTITIES set, so enabling it had no effect.
-        from ai_guard import AIGuard
+        from wardcat import Wardcat
 
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("FINANCIAL_AMOUNT", action="redact")
         result = guard.scan("Sözleşme bedeli 2.1 milyon TL olarak belirlendi.")
         assert any(v.entity_type == "FINANCIAL_AMOUNT" for v in result.violations)
@@ -500,7 +500,7 @@ class TestFinancialAmount:
 class TestCreditCardLuhn:
     @pytest.fixture
     def detector(self):
-        from ai_guard.detectors.regex_detector import RegexDetector
+        from wardcat.detectors.regex_detector import RegexDetector
 
         return RegexDetector({"CREDIT_CARD"})
 
@@ -529,7 +529,7 @@ class TestCreditCardLuhn:
         assert not any(s.entity_type == "CREDIT_CARD" for s in spans), card
 
     def test_validate_luhn_function(self):
-        from ai_guard.detectors.regex_detector import _validate_luhn
+        from wardcat.detectors.regex_detector import _validate_luhn
 
         assert _validate_luhn("4111111111111111") is True
         assert _validate_luhn("4111111111111112") is False
@@ -542,7 +542,7 @@ class TestCreditCardLuhn:
 class TestSecretFormats:
     @pytest.fixture
     def detector(self):
-        from ai_guard.detectors.regex_detector import RegexDetector
+        from wardcat.detectors.regex_detector import RegexDetector
 
         return RegexDetector({"CUSTOM_SECRET"})
 
@@ -577,7 +577,7 @@ class TestSecretFormats:
 class TestMultilingualDOB:
     @pytest.fixture
     def detector(self):
-        from ai_guard.detectors.regex_detector import RegexDetector
+        from wardcat.detectors.regex_detector import RegexDetector
 
         return RegexDetector({"DATE_OF_BIRTH"})
 
@@ -601,7 +601,7 @@ class TestMultilingualDOB:
 class TestMultilingualPhone:
     @pytest.fixture
     def detector(self):
-        from ai_guard.detectors.regex_detector import RegexDetector
+        from wardcat.detectors.regex_detector import RegexDetector
 
         return RegexDetector({"PHONE"})
 
@@ -624,7 +624,7 @@ class TestMultilingualPhone:
 class TestVatNumber:
     @pytest.fixture
     def detector(self):
-        from ai_guard.detectors.regex_detector import RegexDetector
+        from wardcat.detectors.regex_detector import RegexDetector
 
         return RegexDetector({"VAT_NUMBER"})
 
@@ -651,13 +651,13 @@ class TestVatNumber:
         assert not any(s.entity_type == "VAT_NUMBER" for s in spans)
 
     def test_vat_in_guard(self):
-        from ai_guard import AIGuard
+        from wardcat import Wardcat
 
-        guard = AIGuard(use_ner=False).add_entity("VAT_NUMBER", "warn")
+        guard = Wardcat(use_ner=False).add_entity("VAT_NUMBER", "warn")
         result = guard.scan("Firma USt-IdNr DE123456789 ile kayıtlı.")
         assert any(v.entity_type == "VAT_NUMBER" for v in result.violations)
 
     def test_vehicle_plate_in_turkish_entities(self):
-        from ai_guard.entity_groups import turkish_entities
+        from wardcat.entity_groups import turkish_entities
 
         assert "VEHICLE_PLATE" in turkish_entities()

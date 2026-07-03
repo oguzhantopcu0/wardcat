@@ -1,7 +1,7 @@
 """
 Model setup flow integration tests.
 
-Tests the AIGuard ``with_llm(auto_pull=...)`` flow with a mock Ollama backend.
+Tests the Wardcat ``with_llm(auto_pull=...)`` flow with a mock Ollama backend.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 def _mock_ollama(available: list[str]):
     """Mock OllamaBackend; no real HTTP calls are made."""
-    from ai_guard.llm.backends.ollama import OllamaBackend
+    from wardcat.llm.backends.ollama import OllamaBackend
 
     backend = MagicMock(spec=OllamaBackend)
     backend.base_url = "http://localhost:11434"
@@ -26,10 +26,10 @@ def _mock_ollama(available: list[str]):
     return backend
 
 
-# ── AIGuard auto_pull ───────────────────────────────────────────────────────
+# ── Wardcat auto_pull ───────────────────────────────────────────────────────
 
 
-class TestAIGuardAutoPull:
+class TestWardcatAutoPull:
     def test_auto_pull_true_model_missing_user_confirms(self):
         """
         auto_pull=True + model missing + user says 'y' → pull is called.
@@ -37,12 +37,12 @@ class TestAIGuardAutoPull:
         mock_backend = _mock_ollama([])
 
         with (
-            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
+            patch("wardcat.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
             patch("builtins.input", return_value="y"),
         ):
-            from ai_guard import AIGuard
+            from wardcat import Wardcat
 
-            AIGuard(use_ner=False).with_llm(model="llama3.1:8b", auto_pull=True)
+            Wardcat(use_ner=False).with_llm(model="llama3.1:8b", auto_pull=True)
 
         mock_backend.pull_model.assert_called_once()
         args, _ = mock_backend.pull_model.call_args
@@ -56,12 +56,12 @@ class TestAIGuardAutoPull:
         mock_backend = _mock_ollama([])
 
         with (
-            patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
+            patch("wardcat.llm.backends.ollama.OllamaBackend", return_value=mock_backend),
             patch("builtins.input", return_value="n"),
         ):
-            from ai_guard import AIGuard
+            from wardcat import Wardcat
 
-            AIGuard(use_ner=False).with_llm(model="llama3.1:8b", auto_pull=True)
+            Wardcat(use_ner=False).with_llm(model="llama3.1:8b", auto_pull=True)
 
         mock_backend.pull_model.assert_not_called()
 
@@ -71,10 +71,10 @@ class TestAIGuardAutoPull:
         """
         mock_backend = _mock_ollama(["llama3.1:8b"])
 
-        with patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend):
-            from ai_guard import AIGuard
+        with patch("wardcat.llm.backends.ollama.OllamaBackend", return_value=mock_backend):
+            from wardcat import Wardcat
 
-            AIGuard(use_ner=False).with_llm(model="llama3.1:8b", auto_pull=False)
+            Wardcat(use_ner=False).with_llm(model="llama3.1:8b", auto_pull=False)
 
         mock_backend.is_model_available.assert_not_called()
 
@@ -82,9 +82,9 @@ class TestAIGuardAutoPull:
         """Model already present → pull not called."""
         mock_backend = _mock_ollama(["llama3.1:8b"])
 
-        with patch("ai_guard.llm.backends.ollama.OllamaBackend", return_value=mock_backend):
-            from ai_guard import AIGuard
+        with patch("wardcat.llm.backends.ollama.OllamaBackend", return_value=mock_backend):
+            from wardcat import Wardcat
 
-            AIGuard(use_ner=False).with_llm(model="llama3.1:8b", auto_pull=True)
+            Wardcat(use_ner=False).with_llm(model="llama3.1:8b", auto_pull=True)
 
         mock_backend.pull_model.assert_not_called()

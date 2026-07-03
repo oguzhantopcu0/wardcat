@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from ai_guard import AIGuard
 from tests.conftest import make_legacy_guard
+from wardcat import Wardcat
 
 
 @pytest.fixture
@@ -223,7 +223,7 @@ class TestSanitizedIntegrity:
                 )
 
     def test_sanitized_text_length_accounts_for_replacements(self, g):
-        g2 = AIGuard(use_ner=False)
+        g2 = Wardcat(use_ner=False)
         g2.add_entity("EMAIL", action="hash")
         text = "prefix a@b.com suffix"
         result = g2.scan(text)

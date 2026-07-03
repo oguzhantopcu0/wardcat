@@ -22,7 +22,7 @@ never hard-code it:
 
 ```python
 import os
-guard = AIGuard(salt=os.environ["AIGUARD_SALT"]).add_entity("CREDIT_CARD", "hash")
+guard = Wardcat(salt=os.environ["WARDCAT_SALT"]).add_entity("CREDIT_CARD", "hash")
 ```
 
 ## Safe logging

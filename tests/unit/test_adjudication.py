@@ -13,11 +13,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from ai_guard.core.engine import DetectionEngine
-from ai_guard.detectors.base import BaseDetector, DetectedSpan
-from ai_guard.detectors.llm_detector import LLMDetector
-from ai_guard.llm.backends.base import BaseLLMBackend
-from ai_guard.llm.prompt import build_messages
+from wardcat.core.engine import DetectionEngine
+from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.detectors.llm_detector import LLMDetector
+from wardcat.llm.backends.base import BaseLLMBackend
+from wardcat.llm.prompt import build_messages
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 

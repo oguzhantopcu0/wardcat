@@ -12,9 +12,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ai_guard.detectors.llm_detector import LLMDetector
-from ai_guard.llm.backends.base import BaseLLMBackend
-from ai_guard.llm.prompt import build_prompt
+from wardcat.detectors.llm_detector import LLMDetector
+from wardcat.llm.backends.base import BaseLLMBackend
+from wardcat.llm.prompt import build_prompt
 
 # ── Mock backend helper ──────────────────────────────────────────────────────
 
@@ -196,7 +196,7 @@ class TestErrorHandling:
         backend.complete_messages.side_effect = OSError("Beklenmedik hata")
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
 
-        with caplog.at_level(logging.WARNING, logger="ai_guard.detectors.llm_detector"):
+        with caplog.at_level(logging.WARNING, logger="wardcat.detectors.llm_detector"):
             spans = det.detect("a@b.com")
 
         assert spans == []

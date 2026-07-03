@@ -7,10 +7,10 @@ is caught at edit time. They are interchangeable with the string forms
 (`Entity.EMAIL == "EMAIL"`).
 
 ```python
-from ai_guard import AIGuard, Entity, Action
+from wardcat import Wardcat, Entity, Action
 
 guard = (
-    AIGuard(salt="my-secret-salt")
+    Wardcat(salt="my-secret-salt")
     .add_entity(Entity.CREDIT_CARD, Action.HASH)
     .add_entity(Entity.EMAIL,       Action.WARN)
     .add_entity(Entity.TC_ID,       Action.HASH)
@@ -27,10 +27,10 @@ Enable many at once with `add_entities()` (a list, a `{name: action}` mapping, o
 a `{name: {action, layers}}` mapping), or turn on **everything** then prune:
 
 ```python
-from ai_guard import AIGuard, Entity
+from wardcat import Wardcat, Entity
 
 guard = (
-    AIGuard(salt="s")
+    Wardcat(salt="s")
     .add_entity(Entity.ALL, action="hash")   # everything on, hashed
     .remove_entity(Entity.ORG)               # …except organisation names
 )
@@ -39,8 +39,8 @@ guard = (
 ## Declarative API (YAML)
 
 ```python
-from ai_guard import AIGuard
-guard = AIGuard(config_path="config/my_policy.yaml")
+from wardcat import Wardcat
+guard = Wardcat(config_path="config/my_policy.yaml")
 ```
 
 ```yaml
@@ -53,7 +53,7 @@ entities:
 
 ## The result
 
-`scan()` returns a [`ScanResult`](reference/models.md#ai_guard.ScanResult):
+`scan()` returns a [`ScanResult`](reference/models.md#wardcat.ScanResult):
 
 ```python
 result = guard.scan(text)

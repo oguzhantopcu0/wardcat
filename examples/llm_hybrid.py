@@ -5,11 +5,11 @@ The LLM verifies the regex/NER candidates (dropping false positives, relabeling
 mistakes) and adds contextual PII the other layers miss — all in one call.
 
 Requires:
-    pip install "ai-guard[ner]"
+    pip install "wardcat[ner]"
     ollama pull gemma3:12b   # or any chat model; set the name below
 """
 
-from ai_guard import AIGuard
+from wardcat import Wardcat
 
 TEXT = """\
 Müşteri Ali Veli (ali.veli@firma.com) ile görüşüldü.
@@ -19,7 +19,7 @@ Kredi kartı 4111 1111 1111 1111 ile ödeme yapıldı.
 
 
 def main() -> None:
-    guard = AIGuard(
+    guard = Wardcat(
         use_ner=True,
         spacy_model="en_core_web_sm",
         salt="example-salt",

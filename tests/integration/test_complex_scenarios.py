@@ -29,8 +29,8 @@ import time
 
 import pytest
 
-from ai_guard import AIGuard
-from ai_guard.core.models import Action
+from wardcat import Wardcat
+from wardcat.core.models import Action
 
 # ── helper ───────────────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ def _originals(result) -> list[str]:
     return [v.original for v in result.violations]
 
 
-def _guard(**kw) -> AIGuard:
+def _guard(**kw) -> Wardcat:
     from tests.conftest import make_legacy_guard
 
     return make_legacy_guard(use_ner=False, **kw)

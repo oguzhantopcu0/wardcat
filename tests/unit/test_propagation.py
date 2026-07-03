@@ -2,13 +2,13 @@
 
 Closes the gap where a model-based layer (GLiNER/NER/LLM) reports a repeated
 value only once. Tested at the engine level with a fixed fake detector, plus
-the AIGuard config wiring.
+the Wardcat config wiring.
 """
 
 from __future__ import annotations
 
-from ai_guard.core.engine import DetectionEngine
-from ai_guard.detectors.base import BaseDetector, DetectedSpan
+from wardcat.core.engine import DetectionEngine
+from wardcat.detectors.base import BaseDetector, DetectedSpan
 
 
 class _Fixed(BaseDetector):
@@ -96,24 +96,24 @@ class TestPropagation:
 
 class TestGuardWiring:
     def test_with_propagation_sets_config(self):
-        from ai_guard import AIGuard
+        from wardcat import Wardcat
 
-        guard = AIGuard(use_ner=False).add_entity("EMAIL", "redact").with_propagation(min_length=4)
+        guard = Wardcat(use_ner=False).add_entity("EMAIL", "redact").with_propagation(min_length=4)
         assert guard._config["propagate_matches"] is True
         assert guard._config["propagate_min_length"] == 4
 
     def test_with_propagation_disabled(self):
-        from ai_guard import AIGuard
+        from wardcat import Wardcat
 
-        guard = AIGuard(use_ner=False).with_propagation(enabled=False)
+        guard = Wardcat(use_ner=False).with_propagation(enabled=False)
         assert guard._config["propagate_matches"] is False
 
     def test_end_to_end_regex_entity_all_occurrences(self):
         # EMAIL is regex (finds all anyway) — this checks propagation does not
         # break or double-count a value regex already covers exhaustively.
-        from ai_guard import AIGuard
+        from wardcat import Wardcat
 
-        guard = AIGuard(salt="s", use_ner=False).add_entity("EMAIL", "redact").with_propagation()
+        guard = Wardcat(salt="s", use_ner=False).add_entity("EMAIL", "redact").with_propagation()
         res = guard.scan("Mail a@b.com now, or a@b.com later.")
         emails = [v for v in res.violations if v.entity_type == "EMAIL"]
         assert len(emails) == 2

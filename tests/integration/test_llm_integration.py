@@ -1,7 +1,7 @@
 """
 LLM detector integration tests.
 
-Tests the cooperation of AIGuard + LLMDetector via a mock backend,
+Tests the cooperation of Wardcat + LLMDetector via a mock backend,
 without a real Ollama service.
 """
 
@@ -13,10 +13,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ai_guard import AIGuard
-from ai_guard.core.models import Action
-from ai_guard.detectors.llm_detector import LLMDetector
-from ai_guard.llm.backends.base import BaseLLMBackend
+from wardcat import Wardcat
+from wardcat.core.models import Action
+from wardcat.detectors.llm_detector import LLMDetector
+from wardcat.llm.backends.base import BaseLLMBackend
 
 
 def _mock_backend(response: str) -> BaseLLMBackend:
@@ -26,13 +26,13 @@ def _mock_backend(response: str) -> BaseLLMBackend:
     return b
 
 
-def _guard_with_llm(response: str, entities: set[str] | None = None) -> AIGuard:
+def _guard_with_llm(response: str, entities: set[str] | None = None) -> Wardcat:
     """
-    Returns an AIGuard with a mocked LLM backend.
-    Instead of patching AIGuard's _build_llm_detector directly,
+    Returns an Wardcat with a mocked LLM backend.
+    Instead of patching Wardcat's _build_llm_detector directly,
     we inject the detector afterwards.
     """
-    guard = AIGuard(use_ner=False)  # build without LLM first
+    guard = Wardcat(use_ner=False)  # build without LLM first
     enabled = entities or {
         "CREDIT_CARD",
         "EMAIL",
@@ -55,7 +55,7 @@ def _guard_with_llm(response: str, entities: set[str] | None = None) -> AIGuard:
     guard._config["entities"]["PERSON"] = {"enabled": True, "action": "hash"}
     guard._config["entities"]["CUSTOM_SECRET"] = {"enabled": True, "action": "hash"}
     guard._detectors.append(llm_det)
-    from ai_guard.core.engine import DetectionEngine
+    from wardcat.core.engine import DetectionEngine
 
     guard._engine = DetectionEngine(guard._config, guard._detectors)
     return guard
@@ -124,7 +124,7 @@ class TestLLMPlusRegex:
         llm_response = json.dumps([{"type": "CUSTOM_SECRET", "text": secret}])
         guard = _guard_with_llm(llm_response, {"CUSTOM_SECRET"})
         # Verify regex does not catch this first
-        regex_only = AIGuard(use_ner=False)
+        regex_only = Wardcat(use_ner=False)
         assert regex_only.scan(f"kod: {secret}").is_clean
 
         # LLM should catch it
@@ -178,10 +178,10 @@ class TestLLMFaultTolerance:
         failing_backend.complete.side_effect = ConnectionError("Ollama çevrimdışı")
         failing_backend.complete_messages.side_effect = ConnectionError("Ollama çevrimdışı")
 
-        guard = AIGuard(use_ner=False).add_entity("CREDIT_CARD", "warn")
+        guard = Wardcat(use_ner=False).add_entity("CREDIT_CARD", "warn")
         llm_det = LLMDetector(backend=failing_backend, enabled_entities={"PERSON"})
         guard._detectors.append(llm_det)
-        from ai_guard.core.engine import DetectionEngine
+        from wardcat.core.engine import DetectionEngine
 
         guard._engine = DetectionEngine(guard._config, guard._detectors)
 
@@ -205,19 +205,19 @@ class TestLLMFaultTolerance:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# AIGuard configuration — use_llm flag
+# Wardcat configuration — use_llm flag
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class TestAIGuardConfig:
+class TestWardcatConfig:
     def test_use_llm_false_no_llm_detector(self):
-        guard = AIGuard(use_ner=False)
-        from ai_guard.detectors.llm_detector import LLMDetector
+        guard = Wardcat(use_ner=False)
+        from wardcat.detectors.llm_detector import LLMDetector
 
         assert not any(isinstance(d, LLMDetector) for d in guard._detectors)
 
     def test_llm_config_stored_correctly(self):
-        guard = AIGuard(use_ner=False).with_llm(
+        guard = Wardcat(use_ner=False).with_llm(
             model="mistral",
             base_url="http://10.0.0.5:11434",
             allow_http=True,  # remote HTTP allowed for this config-only check (no connection)
@@ -227,7 +227,7 @@ class TestAIGuardConfig:
         assert cfg["base_url"] == "http://10.0.0.5:11434"
 
     def test_invalid_backend_raises(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard._config["llm_detector"]["enabled"] = True
         guard._config["llm_detector"]["backend"] = "bilinmeyen_backend"
         with pytest.raises(ValueError, match="bilinmeyen_backend"):

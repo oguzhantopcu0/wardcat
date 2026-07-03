@@ -4,23 +4,23 @@ from __future__ import annotations
 
 import pytest
 
-from ai_guard import (
-    AIGuard,
-    AIGuardError,
+from wardcat import (
     ConfigError,
     ModelDownloadError,
     UnsupportedLanguageError,
+    Wardcat,
+    WardcatError,
 )
-from ai_guard.config.loader import validate_config
+from wardcat.config.loader import validate_config
 
 
 class TestHierarchy:
     def test_config_error_is_aiguard_and_value_error(self):
-        assert issubclass(ConfigError, AIGuardError)
+        assert issubclass(ConfigError, WardcatError)
         assert issubclass(ConfigError, ValueError)  # backward compatibility
 
     def test_model_download_error_is_aiguard_and_runtime_error(self):
-        assert issubclass(ModelDownloadError, AIGuardError)
+        assert issubclass(ModelDownloadError, WardcatError)
         assert issubclass(ModelDownloadError, RuntimeError)  # backward compatibility
 
     def test_unsupported_language_is_config_error(self):
@@ -44,34 +44,34 @@ class TestConfigErrorRaised:
     def test_still_catchable_as_value_error(self):
         # Existing `except ValueError` code must keep working.
         with pytest.raises(ValueError):
-            AIGuard(use_ner=False).add_entity("EMAIL", action="nope")
+            Wardcat(use_ner=False).add_entity("EMAIL", action="nope")
 
     def test_catchable_as_aiguard_error(self):
-        with pytest.raises(AIGuardError):
-            AIGuard(use_ner=False).add_entity("EMAIL", layers=["bogus"])
+        with pytest.raises(WardcatError):
+            Wardcat(use_ner=False).add_entity("EMAIL", layers=["bogus"])
 
 
 class TestUnsupportedLanguage:
     def test_unsupported_language_raises_specific_type(self):
         with pytest.raises(UnsupportedLanguageError):
-            AIGuard(language="zz", use_ner=False)
+            Wardcat(language="zz", use_ner=False)
 
     def test_still_catchable_as_value_error(self):
         with pytest.raises(ValueError):
-            AIGuard(language="zz", use_ner=False)
+            Wardcat(language="zz", use_ner=False)
 
 
 class TestModelDownloadError:
     def test_incompatible_model_raises_model_download_error(self):
         pytest.importorskip("spacy")
-        from ai_guard.ner.downloader import download_model
+        from wardcat.ner.downloader import download_model
 
         with pytest.raises(ModelDownloadError, match="not compatible"):
             download_model("tr_core_news_trf")
 
     def test_still_catchable_as_runtime_error(self):
         pytest.importorskip("spacy")
-        from ai_guard.ner.downloader import download_model
+        from wardcat.ner.downloader import download_model
 
         with pytest.raises(RuntimeError):
             download_model("tr_core_news_trf")

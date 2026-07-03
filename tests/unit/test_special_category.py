@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from ai_guard.config.loader import DEFAULT_CONFIG
-from ai_guard.core.engine import DetectionEngine
-from ai_guard.detectors.base import BaseDetector, DetectedSpan
-from ai_guard.detectors.llm_detector import LLMDetector
-from ai_guard.llm.backends.base import BaseLLMBackend
-from ai_guard.llm.prompt import build_messages
+from wardcat.config.loader import DEFAULT_CONFIG
+from wardcat.core.engine import DetectionEngine
+from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.detectors.llm_detector import LLMDetector
+from wardcat.llm.backends.base import BaseLLMBackend
+from wardcat.llm.prompt import build_messages
 
 # ── Defaults: off by default ───────────────────────────────────────────────
 
@@ -27,12 +27,12 @@ class TestSpecialCategoryDefaults:
         assert sc["action"] == "redact"
 
     def test_known_entity_type(self):
-        from ai_guard.core.models import KNOWN_ENTITY_TYPES
+        from wardcat.core.models import KNOWN_ENTITY_TYPES
 
         assert "SPECIAL_CATEGORY" in KNOWN_ENTITY_TYPES
 
     def test_not_a_regex_entity(self):
-        from ai_guard.core.registry import NER_ENTITIES, REGEX_ENTITIES
+        from wardcat.core.registry import NER_ENTITIES, REGEX_ENTITIES
 
         assert "SPECIAL_CATEGORY" not in REGEX_ENTITIES
         assert "SPECIAL_CATEGORY" not in NER_ENTITIES

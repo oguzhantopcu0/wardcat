@@ -24,11 +24,11 @@ from unittest.mock import patch
 
 import pytest
 
-from ai_guard import AIGuard, __version__
-from ai_guard.config.loader import load_config, validate_config
-from ai_guard.core.models import KNOWN_ENTITY_TYPES, warn_unknown_entity
-from ai_guard.detectors.regex_detector import RegexDetector
 from tests.conftest import make_legacy_guard
+from wardcat import Wardcat, __version__
+from wardcat.config.loader import load_config, validate_config
+from wardcat.core.models import KNOWN_ENTITY_TYPES, warn_unknown_entity
+from wardcat.detectors.regex_detector import RegexDetector
 
 # ── __version__ ───────────────────────────────────────────────────────────────
 
@@ -119,7 +119,7 @@ class TestLargeInput:
         """Performance check: batch of 10 items each 10 KB."""
         texts = [("temiz metin " * 500) for _ in range(10)]
         t0 = time.perf_counter()
-        results = AIGuard(use_ner=False).scan_batch(texts)
+        results = Wardcat(use_ner=False).scan_batch(texts)
         elapsed = time.perf_counter() - t0
         assert len(results) == 10
         assert elapsed < 10.0, f"Batch too slow: {elapsed:.2f}s"
@@ -131,10 +131,10 @@ class TestLargeInput:
 class TestThreadSafety:
     def test_concurrent_scan_no_crash(self):
         """
-        The same AIGuard instance should be callable from 10 concurrent threads.
+        The same Wardcat instance should be callable from 10 concurrent threads.
         Results should be consistent and no exceptions should occur.
         """
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         texts = [
             "email: test@example.com",
             "kart: 4111111111111111",
@@ -165,7 +165,7 @@ class TestThreadSafety:
 
     def test_concurrent_scan_batch(self):
         """scan_batch should be callable concurrently."""
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         batch = ["a@b.com", "temiz", "4111111111111111"] * 10
         errors: list[Exception] = []
 
@@ -216,44 +216,44 @@ class TestScanBatchIsolation:
         assert any(v.entity_type == "EMAIL" for v in results[2].violations)
 
     def test_empty_batch_returns_empty(self):
-        assert AIGuard(use_ner=False).scan_batch([]) == []
+        assert Wardcat(use_ner=False).scan_batch([]) == []
 
 
 # ── Environment Variable Configuration ───────────────────────────────────────
 
 
 class TestLibraryIgnoresEnv:
-    """The library is config-explicit: load_config / AIGuard never read env vars.
+    """The library is config-explicit: load_config / Wardcat never read env vars.
 
-    (Reading AIGUARD_* env vars is the CLI's job — see tests/unit/test_cli.py.)
+    (Reading WARDCAT_* env vars is the CLI's job — see tests/unit/test_cli.py.)
     """
 
     def test_load_config_ignores_aiguard_salt(self):
-        with patch.dict(os.environ, {"AIGUARD_SALT": "env-test-salt"}):
+        with patch.dict(os.environ, {"WARDCAT_SALT": "env-test-salt"}):
             cfg = load_config()
         assert cfg["salt"] == ""  # not read from env
 
     def test_load_config_ignores_llm_env(self):
         with patch.dict(
             os.environ,
-            {"AIGUARD_LLM_URL": "http://remote:11434", "AIGUARD_LLM_MODEL": "mistral:7b"},
+            {"WARDCAT_LLM_URL": "http://remote:11434", "WARDCAT_LLM_MODEL": "mistral:7b"},
         ):
             cfg = load_config()
         assert cfg["llm_detector"]["base_url"] == "http://localhost:11434"
         assert cfg["llm_detector"]["model"] == "llama3.2"
 
     def test_aiguard_ignores_env_salt(self):
-        from ai_guard import AIGuard
+        from wardcat import Wardcat
 
-        with patch.dict(os.environ, {"AIGUARD_SALT": "env-salt"}):
-            guard = AIGuard(use_ner=False)
+        with patch.dict(os.environ, {"WARDCAT_SALT": "env-salt"}):
+            guard = Wardcat(use_ner=False)
         assert guard._config["salt"] == ""  # explicit only
 
     def test_explicit_salt_wins_over_env(self):
-        from ai_guard import AIGuard
+        from wardcat import Wardcat
 
-        with patch.dict(os.environ, {"AIGUARD_SALT": "env-salt"}):
-            guard = AIGuard(use_ner=False, salt="explicit-salt")
+        with patch.dict(os.environ, {"WARDCAT_SALT": "env-salt"}):
+            guard = Wardcat(use_ner=False, salt="explicit-salt")
         assert guard._config["salt"] == "explicit-salt"
 
 
@@ -293,7 +293,7 @@ class TestConfigValidation:
             validate_config(cfg)
 
     def test_add_entity_invalid_action_raises(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         with pytest.raises(ValueError, match="Invalid action"):
             guard.add_entity("EMAIL", action="delete")
 
@@ -303,19 +303,19 @@ class TestConfigValidation:
 
 class TestEntityTypeWarning:
     def test_known_types_no_warning(self, caplog):
-        with caplog.at_level(logging.WARNING, logger="ai_guard.core.models"):
+        with caplog.at_level(logging.WARNING, logger="wardcat.core.models"):
             for et in KNOWN_ENTITY_TYPES:
                 warn_unknown_entity(et)
         assert "Unknown" not in caplog.text
 
     def test_typo_logs_warning(self, caplog):
-        with caplog.at_level(logging.WARNING, logger="ai_guard.core.models"):
+        with caplog.at_level(logging.WARNING, logger="wardcat.core.models"):
             warn_unknown_entity("CREIDT_CARD")  # typo
         assert "CREIDT_CARD" in caplog.text
 
     def test_configure_unknown_entity_warns(self, caplog):
-        guard = AIGuard(use_ner=False)
-        with caplog.at_level(logging.WARNING, logger="ai_guard.core.models"):
+        guard = Wardcat(use_ner=False)
+        with caplog.at_level(logging.WARNING, logger="wardcat.core.models"):
             guard.add_entity("TYPO_ENTITY", action="warn")
         assert "TYPO_ENTITY" in caplog.text
 
@@ -325,14 +325,14 @@ class TestEntityTypeWarning:
 
 class TestSaltWarning:
     def test_empty_salt_with_hash_action_logs_warning(self, caplog):
-        with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
+        with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
             make_legacy_guard(use_ner=False, salt="")
-        assert "AIGUARD_SALT" in caplog.text
+        assert "WARDCAT_SALT" in caplog.text
 
     def test_nonempty_salt_no_warning(self, caplog):
-        with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
-            AIGuard(use_ner=False, salt="my-secret-salt")
-        assert "AIGUARD_SALT" not in caplog.text
+        with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
+            Wardcat(use_ner=False, salt="my-secret-salt")
+        assert "WARDCAT_SALT" not in caplog.text
 
 
 # ── Logging Integration ───────────────────────────────────────────────────────
@@ -340,29 +340,29 @@ class TestSaltWarning:
 
 class TestLogging:
     def test_engine_logs_scan_completion(self, caplog):
-        from ai_guard.config.loader import load_config
-        from ai_guard.core.engine import DetectionEngine
+        from wardcat.config.loader import load_config
+        from wardcat.core.engine import DetectionEngine
 
         cfg = load_config()
         cfg.setdefault("entities", {})["EMAIL"] = {"enabled": True, "action": "warn"}
-        from ai_guard.detectors.regex_detector import RegexDetector
+        from wardcat.detectors.regex_detector import RegexDetector
 
         engine = DetectionEngine(cfg, [RegexDetector({"EMAIL"})])
-        with caplog.at_level(logging.INFO, logger="ai_guard.core.engine"):
+        with caplog.at_level(logging.INFO, logger="wardcat.core.engine"):
             engine.scan("test@example.com")
         assert "scan completed" in caplog.text
 
     def test_llm_backend_error_surfaced_and_logged(self, caplog):
         from unittest.mock import MagicMock
 
-        from ai_guard.core.engine import DetectionEngine
-        from ai_guard.detectors.llm_detector import LLMDetector
+        from wardcat.core.engine import DetectionEngine
+        from wardcat.detectors.llm_detector import LLMDetector
 
         backend = MagicMock()
         backend.complete_messages.side_effect = ConnectionError("no connection")
         det = LLMDetector(backend=backend, enabled_entities={"EMAIL"})
         engine = DetectionEngine({"salt": "", "entities": {}}, [det])
-        with caplog.at_level(logging.WARNING, logger="ai_guard.core.engine"):
+        with caplog.at_level(logging.WARNING, logger="wardcat.core.engine"):
             result = engine.scan("test@example.com")
         # The backend failure is surfaced on the result and logged by the engine,
         # not silently swallowed by the detector.

@@ -1,18 +1,18 @@
 """
-Example: a self-contained ASGI middleware built on top of ai-guard.
+Example: a self-contained ASGI middleware built on top of wardcat.
 
-ai-guard is a *library* — it deliberately ships no web-framework code. If you
+wardcat is a *library* — it deliberately ships no web-framework code. If you
 want to scan request bodies automatically, copy this middleware into your app.
 It is pure ASGI (works with FastAPI, Starlette, Quart, …) and only depends on
-the public ai-guard API.
+the public wardcat API.
 
 Modes (on_pii_detected):
     "block"    → reject requests containing PII with HTTP 422
     "sanitize" → replace PII in the body before it reaches the route
-    "warn"     → pass through unchanged; result on scope["state"]["ai_guard_result"]
+    "warn"     → pass through unchanged; result on scope["state"]["wardcat_result"]
 
 Run:
-    pip install "ai-guard" fastapi uvicorn
+    pip install "wardcat" fastapi uvicorn
     uvicorn examples.asgi_middleware:app --reload
     curl -s -X POST localhost:8000/echo -H 'content-type: application/json' \
          -d '{"text":"my card is 4111 1111 1111 1111"}'
@@ -25,22 +25,22 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from ai_guard import AIGuard
-from ai_guard.core.models import ScanResult
+from wardcat import Wardcat
+from wardcat.core.models import ScanResult
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CONTENT_TYPES: tuple[str, ...] = ("application/json", "text/plain", "text/")
 
 
-class AIGuardMiddleware:
-    """ASGI middleware that scans HTTP request bodies for PII with an AIGuard."""
+class WardcatMiddleware:
+    """ASGI middleware that scans HTTP request bodies for PII with an Wardcat."""
 
     def __init__(
         self,
         app,
         *,
-        guard: AIGuard,
+        guard: Wardcat,
         on_pii_detected: str = "sanitize",
         scan_path_prefix: str | None = None,
         content_types: Sequence[str] = _DEFAULT_CONTENT_TYPES,
@@ -98,11 +98,11 @@ class AIGuardMiddleware:
                 result = await self.guard.scan_async(text)
                 sanitized_body = result.sanitized_text.encode("utf-8")
         except Exception as exc:
-            logger.warning("ai-guard: scan failed (%s) — passing request through.", exc)
+            logger.warning("wardcat: scan failed (%s) — passing request through.", exc)
             await self._forward(scope, send, body)
             return
 
-        scope.setdefault("state", {})["ai_guard_result"] = result
+        scope.setdefault("state", {})["wardcat_result"] = result
 
         if result.is_clean or self.on_pii_detected == "warn":
             await self._forward(scope, send, body)
@@ -180,18 +180,18 @@ try:
     from fastapi import FastAPI, Request
 
     guard = (
-        AIGuard(use_ner=False, salt="example-salt")
+        Wardcat(use_ner=False, salt="example-salt")
         .add_entity("EMAIL", action="warn")
         .add_entity("CREDIT_CARD", action="hash")
     )
 
     app = FastAPI()
-    app.add_middleware(AIGuardMiddleware, guard=guard, on_pii_detected="sanitize")
+    app.add_middleware(WardcatMiddleware, guard=guard, on_pii_detected="sanitize")
 
     @app.post("/echo")
     async def echo(request: Request) -> dict:
         body = await request.body()
-        result = request.scope.get("state", {}).get("ai_guard_result")
+        result = request.scope.get("state", {}).get("wardcat_result")
         return {
             "received": body.decode("utf-8", errors="replace"),
             "had_pii": bool(result and not result.is_clean),

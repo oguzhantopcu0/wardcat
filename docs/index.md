@@ -1,4 +1,4 @@
-# ai-guard
+# wardcat
 
 **PII detection and anonymization for LLM inputs** — a hybrid engine that scans
 text for personally identifiable information (PII) *before* it reaches an LLM,
@@ -14,15 +14,15 @@ Four detection layers cooperate behind one interface:
 | **gliner** | Zero-shot transformer NER (GLiNER2) — names + rich PII, one multilingual model | medium |
 | **llm** | On-prem LLM — contextual/semantic PII (GDPR Art.9, contextual secrets) | slow, strongest context |
 
-**Detection is opt-in:** a bare `AIGuard()` detects nothing — you enable the
+**Detection is opt-in:** a bare `Wardcat()` detects nothing — you enable the
 entities you want.
 
 ```python
 import os
-from ai_guard import AIGuard, Entity, Action
+from wardcat import Wardcat, Entity, Action
 
 guard = (
-    AIGuard(salt=os.environ.get("AIGUARD_SALT", ""))
+    Wardcat(salt=os.environ.get("WARDCAT_SALT", ""))
     .add_entity(Entity.CREDIT_CARD, Action.HASH)
     .add_entity(Entity.EMAIL,       Action.WARN)
     .add_entity(Entity.TC_ID,       Action.HASH)

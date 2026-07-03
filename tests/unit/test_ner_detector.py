@@ -12,9 +12,9 @@ import logging
 import pytest
 import spacy.util
 
-from ai_guard import AIGuard
-from ai_guard.detectors.ner_detector import NERDetector, _is_valid_person
 from tests.conftest import make_legacy_guard
+from wardcat import Wardcat
+from wardcat.detectors.ner_detector import NERDetector, _is_valid_person
 
 pytestmark = pytest.mark.ner  # tag: uv run pytest -m ner
 
@@ -127,7 +127,7 @@ class TestUnknownSpacyLabel:
         assert "DATE" not in types
 
 
-# ── NER + Regex hybrid (via AIGuard) ───────────────────────────────────────
+# ── NER + Regex hybrid (via Wardcat) ───────────────────────────────────────
 
 
 class TestNERPlusRegex:
@@ -154,7 +154,7 @@ class TestNERPlusRegex:
 
     def test_ner_address_warned_not_hashed(self, guard_with_ner):
         """ADDRESS defaults to warn; the sanitized text should be unchanged."""
-        from ai_guard.core.models import Action
+        from wardcat.core.models import Action
 
         result = guard_with_ner.scan("She is from New York and works in Boston.")
         address_violations = [v for v in result.violations if v.entity_type == "ADDRESS"]
@@ -193,7 +193,7 @@ class TestPersonFilter:
         """NERDetector.detect() should skip PERSON entities that fail _is_valid_person."""
         from unittest.mock import MagicMock, patch
 
-        with patch("ai_guard.detectors.ner_detector._load_model") as mock_load:
+        with patch("wardcat.detectors.ner_detector._load_model") as mock_load:
             mock_nlp = MagicMock()
             mock_load.return_value = mock_nlp
 
@@ -245,9 +245,9 @@ class TestTurkishNER:
     def test_turkish_model_actually_loaded(self, caplog):
         """Guard must log which SpaCy model is actually loaded (info level)."""
         tr_model = next(m for m in sorted(_INSTALLED) if m.startswith("tr_"))
-        with caplog.at_level(logging.INFO, logger="ai_guard.guard"):
+        with caplog.at_level(logging.INFO, logger="wardcat.guard"):
             # Detection is opt-in: a NER entity must be enabled for the model to load.
-            AIGuard(use_ner=True, spacy_model=tr_model).add_entity("PERSON")
+            Wardcat(use_ner=True, spacy_model=tr_model).add_entity("PERSON")
         loaded = [r.message for r in caplog.records if "SpaCy model loaded" in r.message]
         assert loaded, "Expected 'SpaCy model loaded' info log"
         assert any("tr_" in msg for msg in loaded), (
@@ -276,7 +276,7 @@ class TestTurkishNER:
 class TestModelFallback:
     def test_fallback_logged_when_model_not_installed(self, caplog):
         """Requesting a non-installed model must log a WARNING with fallback info."""
-        with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
+        with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
             make_legacy_guard(
                 use_ner=True, spacy_model="xx_fake_model_xyz", spacy_auto_download=False
             )
@@ -288,7 +288,7 @@ class TestModelFallback:
 
     def test_correct_model_logged_at_info(self, caplog):
         """When model is installed, INFO log must show the exact model name."""
-        with caplog.at_level(logging.INFO, logger="ai_guard.guard"):
+        with caplog.at_level(logging.INFO, logger="wardcat.guard"):
             make_legacy_guard(use_ner=True, spacy_model="en_core_web_sm").scan("test")
         assert any(
             "en_core_web_sm" in r.message for r in caplog.records if r.levelno == logging.INFO
@@ -313,7 +313,7 @@ class TestNERStopwordFilter:
         ],
     )
     def test_all_stopwords_rejected(self, text):
-        from ai_guard.detectors.ner_detector import _is_all_stopwords
+        from wardcat.detectors.ner_detector import _is_all_stopwords
 
         assert _is_all_stopwords(text) is True
 
@@ -326,7 +326,7 @@ class TestNERStopwordFilter:
         ],
     )
     def test_real_names_pass(self, text):
-        from ai_guard.detectors.ner_detector import _is_all_stopwords
+        from wardcat.detectors.ner_detector import _is_all_stopwords
 
         assert _is_all_stopwords(text) is False
 
@@ -342,7 +342,7 @@ class TestNERErrorHandling:
     def test_guard_falls_back_gracefully_on_bad_model(self, caplog):
         import logging
 
-        with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
+        with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
             guard = make_legacy_guard(
                 use_ner=True, spacy_model="nonexistent_model_xyz", spacy_auto_download=False
             )  # legacy: enables PERSON so the NER detector is actually built

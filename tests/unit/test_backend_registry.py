@@ -2,9 +2,9 @@
 
 import pytest
 
-from ai_guard import AIGuard, BaseLLMBackend, register_backend, registered_backends
-from ai_guard.exceptions import ConfigError
-from ai_guard.llm.backends.registry import create_backend
+from wardcat import BaseLLMBackend, Wardcat, register_backend, registered_backends
+from wardcat.exceptions import ConfigError
+from wardcat.llm.backends.registry import create_backend
 
 
 class _EchoBackend(BaseLLMBackend):
@@ -41,7 +41,7 @@ def test_register_and_create_custom_backend():
 def test_custom_backend_works_end_to_end():
     register_backend("echo_e2e", lambda cfg: _EchoBackend())
     guard = (
-        AIGuard(salt="s", use_ner=False).with_llm(backend="echo_e2e").add_entity("EMAIL", "warn")
+        Wardcat(salt="s", use_ner=False).with_llm(backend="echo_e2e").add_entity("EMAIL", "warn")
     )
     assert guard._config["llm_detector"]["backend"] == "echo_e2e"
     # Regex still works alongside the custom LLM backend (no crash on scan).
@@ -50,7 +50,7 @@ def test_custom_backend_works_end_to_end():
 
 def test_unknown_backend_raises_with_registered_list():
     with pytest.raises(ConfigError, match="Registered backends"):
-        AIGuard(salt="s").with_llm(backend="does_not_exist")
+        Wardcat(salt="s").with_llm(backend="does_not_exist")
 
 
 def test_create_backend_defaults_to_ollama():

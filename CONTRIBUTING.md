@@ -1,15 +1,15 @@
-# Contributing to ai-guard
+# Contributing to wardcat
 
-Thanks for your interest in improving ai-guard! This guide covers local setup,
+Thanks for your interest in improving wardcat! This guide covers local setup,
 the quality gates, and conventions.
 
 ## Development setup
 
-ai-guard uses [uv](https://github.com/astral-sh/uv).
+wardcat uses [uv](https://github.com/astral-sh/uv).
 
 ```bash
-git clone https://github.com/oguzhantopcu0/ai-guard.git
-cd ai-guard
+git clone https://github.com/oguzhantopcu0/wardcat.git
+cd wardcat
 uv sync --dev
 ```
 
@@ -37,7 +37,7 @@ All four must pass before a PR is merged — CI enforces them.
 ```bash
 uv run ruff check .            # lint
 uv run ruff format --check .   # formatting
-uv run mypy                    # type check (src/ai_guard)
+uv run mypy                    # type check (src/wardcat)
 uv run pytest -m "not slow"    # tests (fast)
 ```
 
@@ -55,12 +55,12 @@ uv run pytest                       # everything (live LLM tests skip if no Olla
 uv run pytest -m "not slow"         # fast — skip live LLM tests
 uv run pytest -m ner                # SpaCy NER tests only
 uv run pytest -m slow tests/integration/test_llm_live.py   # live LLM, real model
-uv run pytest --cov=src/ai_guard --cov-report=term-missing # coverage
+uv run pytest --cov=src/wardcat --cov-report=term-missing # coverage
 ```
 
 - **Mocked LLM tests** (default) verify plumbing — no model required.
 - **Live LLM tests** (`slow`) call a real Ollama model and auto-skip when it is
-  unavailable. Choose the model with `AIGUARD_TEST_LLM_MODEL=<name>`.
+  unavailable. Choose the model with `WARDCAT_TEST_LLM_MODEL=<name>`.
 
 ## Architecture in one minute
 

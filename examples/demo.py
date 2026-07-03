@@ -1,8 +1,8 @@
 """
-ai-guard kullanım örnekleri.
+wardcat kullanım örnekleri.
 """
 
-from ai_guard import Action, AIGuard, Entity
+from wardcat import Action, Entity, Wardcat
 
 SAMPLE = """
 Merhaba, ben Ahmet Yılmaz. Şirketimizin sunucu IP'si 10.0.0.42.
@@ -18,7 +18,7 @@ def demo_programmatic_api():
     print("=" * 60)
 
     guard = (
-        AIGuard(use_ner=False, salt="gizli-tuz-123")
+        Wardcat(use_ner=False, salt="gizli-tuz-123")
         .add_entity(Entity.EMAIL, Action.WARN)
         .add_entity(Entity.CREDIT_CARD, Action.HASH)
         .add_entity(Entity.IBAN, Action.HASH)
@@ -41,7 +41,7 @@ def demo_yaml_api():
     print("Declarative (YAML) API")
     print("=" * 60)
 
-    guard = AIGuard(config_path="config/default.yaml", use_ner=False)
+    guard = Wardcat(config_path="config/default.yaml", use_ner=False)
     result = guard.scan(SAMPLE)
 
     print(f"\nTemizlenmiş metin:\n{result.sanitized_text}")

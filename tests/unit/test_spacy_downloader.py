@@ -1,11 +1,11 @@
-"""Tests for ner/downloader.py and AIGuard language selection / auto-download."""
+"""Tests for ner/downloader.py and Wardcat language selection / auto-download."""
 
 from __future__ import annotations
 
 import pytest
 
-from ai_guard import AIGuard
-from ai_guard.ner import downloader
+from wardcat import Wardcat
+from wardcat.ner import downloader
 
 
 class TestIsInstalled:
@@ -48,31 +48,31 @@ class TestDownloadModelGuards:
 
 class TestGuardLanguageSelection:
     def test_language_resolves_model_name(self):
-        g = AIGuard(language="de", spacy_size="md", use_ner=False)
+        g = Wardcat(language="de", spacy_size="md", use_ner=False)
         assert g._config["spacy_model"] == "de_core_news_md"
 
     def test_language_default_size_sm(self):
-        g = AIGuard(language="fr", use_ner=False)
+        g = Wardcat(language="fr", use_ner=False)
         assert g._config["spacy_model"] == "fr_core_news_sm"
 
     def test_language_implies_auto_download(self):
-        g = AIGuard(language="en", use_ner=False)
+        g = Wardcat(language="en", use_ner=False)
         assert g._config.get("spacy_auto_download") is True
 
     def test_explicit_auto_download_off(self):
-        g = AIGuard(language="en", use_ner=False, spacy_auto_download=False)
+        g = Wardcat(language="en", use_ner=False, spacy_auto_download=False)
         assert g._config.get("spacy_auto_download") is None
 
     def test_uppercase_language_code(self):
-        g = AIGuard(language="DE", use_ner=False)
+        g = Wardcat(language="DE", use_ner=False)
         assert g._config["spacy_model"].startswith("de_")
 
     def test_unsupported_language_raises(self):
         with pytest.raises(ValueError, match="Unsupported language"):
-            AIGuard(language="zz", use_ner=False)
+            Wardcat(language="zz", use_ner=False)
 
     def test_no_language_keeps_default_model(self):
-        g = AIGuard(use_ner=False)
+        g = Wardcat(use_ner=False)
         assert g._config.get("spacy_model", "en_core_web_sm") == "en_core_web_sm"
         assert g._config.get("spacy_auto_download") is None
 
@@ -87,36 +87,36 @@ class TestGuardLanguageSelection:
 
         monkeypatch.setattr(downloader, "ensure_model", fake_ensure)
         # use_ner True triggers the NER branch; ensure_model is called there
-        AIGuard(language="de", spacy_size="md", use_ner=True).add_entity("PERSON")
+        Wardcat(language="de", spacy_size="md", use_ner=True).add_entity("PERSON")
         assert seen["model"] == "de_core_news_md"
         assert seen["auto"] is True
 
 
 class TestGuardMultiLanguage:
     def test_list_resolves_one_model_per_language(self):
-        g = AIGuard(language=["de", "fr"], use_ner=False)
+        g = Wardcat(language=["de", "fr"], use_ner=False)
         assert g._config["spacy_models"] == ["de_core_news_sm", "fr_core_news_sm"]
         # primary model stays consistent with the single-model field
         assert g._config["spacy_model"] == "de_core_news_sm"
 
     def test_single_str_still_populates_models_list(self):
-        g = AIGuard(language="de", use_ner=False)
+        g = Wardcat(language="de", use_ner=False)
         assert g._config["spacy_models"] == ["de_core_news_sm"]
 
     def test_duplicate_languages_deduped(self):
-        g = AIGuard(language=["de", "de"], use_ner=False)
+        g = Wardcat(language=["de", "de"], use_ner=False)
         assert g._config["spacy_models"] == ["de_core_news_sm"]
 
     def test_size_applies_to_all_languages(self):
-        g = AIGuard(language=["de", "fr"], spacy_size="md", use_ner=False)
+        g = Wardcat(language=["de", "fr"], spacy_size="md", use_ner=False)
         assert g._config["spacy_models"] == ["de_core_news_md", "fr_core_news_md"]
 
     def test_unsupported_language_in_list_raises(self):
         with pytest.raises(ValueError, match="Unsupported language"):
-            AIGuard(language=["de", "zz"], use_ner=False)
+            Wardcat(language=["de", "zz"], use_ner=False)
 
     def test_list_implies_auto_download(self):
-        g = AIGuard(language=["de", "fr"], use_ner=False)
+        g = Wardcat(language=["de", "fr"], use_ner=False)
         assert g._config.get("spacy_auto_download") is True
 
     def test_loads_one_detector_per_installed_model(self):
@@ -124,7 +124,7 @@ class TestGuardMultiLanguage:
         pytest.importorskip("spacy")
         import spacy.util
 
-        from ai_guard.detectors.ner_detector import NERDetector
+        from wardcat.detectors.ner_detector import NERDetector
 
         installed = set(spacy.util.get_installed_models())
         if not {"en_core_web_sm", "tr_core_news_md"} <= installed:
@@ -132,7 +132,7 @@ class TestGuardMultiLanguage:
 
         # Detection is opt-in: enable a NER entity first, then each language's
         # model yields its own detector.
-        g = AIGuard(language=["en", "tr"], spacy_auto_download=False)
+        g = Wardcat(language=["en", "tr"], spacy_auto_download=False)
         g.add_entity("PERSON", action="redact")
         ner_detectors = [d for d in g._detectors if isinstance(d, NERDetector)]
         assert len(ner_detectors) == 2

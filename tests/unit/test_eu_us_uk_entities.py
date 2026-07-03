@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from ai_guard.detectors.regex_detector import RegexDetector
+from wardcat.detectors.regex_detector import RegexDetector
 
 ALL_NEW = {"UK_POSTAL_CODE", "US_ZIP_CODE", "EU_NATIONAL_ID", "ADDRESS"}
 

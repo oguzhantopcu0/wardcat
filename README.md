@@ -1,35 +1,35 @@
 ```
-    _    ___        ____  _   _    _    ____  ____
-   / \  |_ _|      / ___|| | | |  / \  |  _ \|  _ \
-  / _ \  | |  ___ | |  _ | | | | / _ \ | |_) | | | |
- / ___ \ | | |___|| |_| || |_| |/ ___ \|  _ <| |_| |
-/_/   \_|___|      \____| \___//_/   \_|_| \_|____/
+__        ___    ____  ____   ____    _  _____
+\ \      / / \  |  _ \|  _ \ / ___|  / \|_   _|
+ \ \ /\ / / _ \ | |_) | | | | |     / _ \ | |
+  \ V  V / ___ \|  _ <| |_| | |___ / ___ \| |
+   \_/\_/_/   \_\_| \_\____/ \____/_/   \_\_|
 ```
 
 **PII detection and anonymization for LLM inputs** — hybrid regex + NER + on-prem LLM engine.
 
-`ai-guard` scans text for personally identifiable information (PII) before it reaches an LLM, and either warns about or replaces the sensitive data with salted SHA-256 hashes. It supports Turkish, English, German, and French out of the box.
+`wardcat` scans text for personally identifiable information (PII) before it reaches an LLM, and either warns about or replaces the sensitive data with salted SHA-256 hashes. It supports Turkish, English, German, and French out of the box.
 
 > **📖 Documentation** lives in [`docs/`](docs/) (MkDocs + Material, with an auto-generated API reference). Preview it locally with `uv run --group docs mkdocs serve`.
 
-**Detection is opt-in:** a bare `AIGuard()` detects nothing — you enable the
+**Detection is opt-in:** a bare `Wardcat()` detects nothing — you enable the
 entities you want (or all of them with `add_entity(Entity.ALL, ...)`).
 
 ```python
 import os
-from ai_guard import AIGuard, Entity, Action
+from wardcat import Wardcat, Entity, Action
 
 # Read the salt from the environment — never hard-code it (see "Salt" below).
 # Use the Entity/Action constants for autocomplete + typo-proofing (plain
 # strings like "EMAIL"/"hash" work too).
 guard = (
-    AIGuard(salt=os.environ.get("AIGUARD_SALT", ""))
+    Wardcat(salt=os.environ.get("WARDCAT_SALT", ""))
     .add_entity(Entity.CREDIT_CARD, Action.HASH)
     .add_entity(Entity.EMAIL,       Action.WARN)
     .add_entity(Entity.TC_ID,       Action.HASH)
 )
 # Or enable everything at once, then prune:
-#   AIGuard(salt=...).add_entity(Entity.ALL, Action.HASH).remove_entity(Entity.ORG)
+#   Wardcat(salt=...).add_entity(Entity.ALL, Action.HASH).remove_entity(Entity.ORG)
 
 result = guard.scan("Name: Ali Veli, card: 4532 0151 1283 0366, email: ali@example.com")
 print(result.sanitized_text)
@@ -61,8 +61,8 @@ print(result.sanitized_text)
 With [uv](https://github.com/astral-sh/uv) (recommended):
 
 ```bash
-git clone https://github.com/oguzhantopcu0/ai-guard.git
-cd ai-guard
+git clone https://github.com/oguzhantopcu0/wardcat.git
+cd wardcat
 uv sync                 # base: regex + Ollama/OpenAI-compatible LLM backend
 uv sync --extra ner     # + SpaCy NER (PERSON, ORG, ADDRESS)
 uv sync --extra gliner  # + GLiNER zero-shot NER (pulls in torch)
@@ -73,25 +73,25 @@ Or with pip, straight from Git:
 
 ```bash
 # Base install — regex detection + Ollama/OpenAI-compatible LLM backend
-pip install "git+https://github.com/oguzhantopcu0/ai-guard.git"
+pip install "git+https://github.com/oguzhantopcu0/wardcat.git"
 
 # + SpaCy NER (PERSON, ORG, ADDRESS detection)
-pip install "ai-guard[ner] @ git+https://github.com/oguzhantopcu0/ai-guard.git"
+pip install "wardcat[ner] @ git+https://github.com/oguzhantopcu0/wardcat.git"
 
 # Everything at once (SpaCy + Transformers)
-pip install "ai-guard[all] @ git+https://github.com/oguzhantopcu0/ai-guard.git"
+pip install "wardcat[all] @ git+https://github.com/oguzhantopcu0/wardcat.git"
 ```
 
 To use SpaCy NER (PERSON, ORG, ADDRESS detection) you need a language model.
-The simplest path is to let ai-guard resolve and download it for you via the
+The simplest path is to let wardcat resolve and download it for you via the
 `language=` builder:
 
 ```python
-from ai_guard import AIGuard, Language
+from wardcat import Wardcat, Language
 
 # Turns NER on, picks the right model from the catalog, and downloads it if missing
-guard = AIGuard(language=Language.EN)                   # → en_core_web_sm
-guard = AIGuard(language=Language.TR, spacy_size="md")  # → tr_core_news_md
+guard = Wardcat(language=Language.EN)                   # → en_core_web_sm
+guard = Wardcat(language=Language.TR, spacy_size="md")  # → tr_core_news_md
 ```
 
 Or download a model yourself with SpaCy's own CLI:
@@ -101,14 +101,14 @@ uv run python -m spacy download en_core_web_sm     # English (recommended)
 uv run python -m spacy download tr_core_news_md    # Turkish (recommended)
 ```
 
-> If a requested SpaCy model is not installed, ai-guard automatically falls back to any installed model of the same language and logs a warning. SpaCy is not required if you only need regex-based detection.
+> If a requested SpaCy model is not installed, wardcat automatically falls back to any installed model of the same language and logs a warning. SpaCy is not required if you only need regex-based detection.
 
 ---
 
 ## Quick Start
 
-> **Migrating from 0.3.x:** the main class is now `AIGuard` (the old `LLMGuard`
-> name was removed — `from ai_guard import AIGuard`). `configure_entity()` /
+> **Migrating from 0.3.x:** the main class is now `Wardcat` (the old `LLMGuard`
+> name was removed — `from wardcat import Wardcat`). `configure_entity()` /
 > `configure_entities()` were renamed to `add_entity()` / `add_entities()` and
 > the old names were removed. `add_entity()` no longer takes an `enabled`
 > argument — adding enables; use `remove_entity()` to turn one off.
@@ -116,10 +116,10 @@ uv run python -m spacy download tr_core_news_md    # Turkish (recommended)
 ### Programmatic API
 
 ```python
-from ai_guard import AIGuard, Entity, Action
+from wardcat import Wardcat, Entity, Action
 
 guard = (
-    AIGuard(salt="my-secret-salt")
+    Wardcat(salt="my-secret-salt")
     .add_entity(Entity.CREDIT_CARD, Action.HASH)
     .add_entity(Entity.EMAIL,       Action.WARN)
     .add_entity(Entity.TC_ID,       Action.HASH)
@@ -150,10 +150,10 @@ caught at edit time instead of becoming a silent runtime warning. They are fully
 interchangeable with the string forms (`Entity.EMAIL == "EMAIL"`):
 
 ```python
-from ai_guard import AIGuard, Entity, Action
+from wardcat import Wardcat, Entity, Action
 
 guard = (
-    AIGuard(salt="my-secret-salt")
+    Wardcat(salt="my-secret-salt")
     .add_entity(Entity.CREDIT_CARD, action=Action.HASH)
     .add_entity(Entity.EMAIL,       action=Action.REDACT)
     .add_entity(Entity.PHONE,       action=Action.MASK)
@@ -185,9 +185,9 @@ a `{name: action}` mapping, or a `{name: {...}}` mapping for per-entity control,
 and applies them in a single rebuild:
 
 ```python
-from ai_guard import AIGuard, turkish_entities
+from wardcat import Wardcat, turkish_entities
 
-guard = AIGuard(use_ner=False)
+guard = Wardcat(use_ner=False)
 
 # a) a whole predefined group with one action
 guard.add_entities(turkish_entities(), action="hash")
@@ -205,7 +205,7 @@ guard.add_entities({
 
 Predefined groups (`core_entities`, `financial_entities`, `turkish_entities`,
 `european_entities`, `uk_entities`, `us_entities`, `network_entities`,
-`identity_entities`, `all_entities`) are importable from `ai_guard` and pair
+`identity_entities`, `all_entities`) are importable from `wardcat` and pair
 naturally with `add_entities()`.
 
 #### Enable everything, then prune
@@ -215,10 +215,10 @@ naturally with `add_entities()`.
 exclusion" pattern is often the quickest way to a strict policy:
 
 ```python
-from ai_guard import AIGuard, Entity
+from wardcat import Wardcat, Entity
 
 guard = (
-    AIGuard(salt="my-secret-salt", use_ner=False)
+    Wardcat(salt="my-secret-salt", use_ner=False)
     .add_entity(Entity.ALL, action="hash")   # everything on, hashed
     .remove_entity(Entity.ORG)               # …except organisation names
     .remove_entities([Entity.UUID, Entity.MAC_ADDRESS])
@@ -246,10 +246,10 @@ guard.enabled_entities()            # {"CREDIT_CARD", "EMAIL", ...} — what's o
 guard.get_entity_action("EMAIL")    # "hash"  (None if the entity is not enabled)
 guard.entity_policy()               # {"CREDIT_CARD": "hash", "EMAIL": "warn", ...}
 
-# Discover what ai-guard *can* detect (and on which layer):
-AIGuard.supported_entities()        # every known entity type
-AIGuard.supported_entities("ner")   # {"PERSON", "ORG", "ADDRESS"}
-AIGuard.supported_entities("llm")   # contextual/semantic types
+# Discover what wardcat *can* detect (and on which layer):
+Wardcat.supported_entities()        # every known entity type
+Wardcat.supported_entities("ner")   # {"PERSON", "ORG", "ADDRESS"}
+Wardcat.supported_entities("llm")   # contextual/semantic types
 ```
 
 > Removing an entity that was never enabled is a no-op (an unknown *name* logs a
@@ -261,9 +261,9 @@ AIGuard.supported_entities("llm")   # contextual/semantic types
 ### Declarative API (YAML)
 
 ```python
-from ai_guard import AIGuard
+from wardcat import Wardcat
 
-guard = AIGuard(config_path="config/my_policy.yaml")
+guard = Wardcat(config_path="config/my_policy.yaml")
 result = guard.scan(text)
 ```
 
@@ -286,7 +286,7 @@ entities:
 ### Batch Scanning
 
 ```python
-guard = AIGuard(salt="s").add_entities(["EMAIL", "CREDIT_CARD"])
+guard = Wardcat(salt="s").add_entities(["EMAIL", "CREDIT_CARD"])
 results = guard.scan_batch([
     "ali@example.com",
     "Card: 4111 1111 1111 1111",
@@ -304,8 +304,8 @@ for r in results:
 
 [GLiNER](https://github.com/urchade/GLiNER) is a lightweight bidirectional-encoder
 NER model — a middle ground between SpaCy NER (fast, fixed labels) and an on-prem
-LLM (slow, contextual). ai-guard wraps the PII-tuned **GLiNER2** model and maps
-its labels onto ai-guard entity types. Use it as a **SpaCy alternative**, or
+LLM (slow, contextual). wardcat wraps the PII-tuned **GLiNER2** model and maps
+its labels onto wardcat entity types. Use it as a **SpaCy alternative**, or
 **alongside** SpaCy (the engine merges both layers' spans; a checksum-validated
 regex span always wins an overlap).
 
@@ -314,14 +314,14 @@ Entity types are **opt-in**, exactly like NER — enabling the layer alone detec
 nothing:
 
 ```bash
-uv sync --extra gliner   # or: pip install "ai-guard[gliner]"
+uv sync --extra gliner   # or: pip install "wardcat[gliner]"
 ```
 
 ```python
-from ai_guard import AIGuard, Entity, Action
+from wardcat import Wardcat, Entity, Action
 
 guard = (
-    AIGuard(salt="s")
+    Wardcat(salt="s")
     .with_gliner()                               # GLiNER layer on
     .add_entity(Entity.PERSON, Action.HASH)
     .add_entity(Entity.EMAIL,  Action.REDACT)
@@ -329,10 +329,10 @@ guard = (
 result = guard.scan("Contact John Smith at john@acme.com")
 
 # Run GLiNER *and* SpaCy together — both contribute spans:
-guard = AIGuard(salt="s").with_ner(language="en").with_gliner().add_entity(Entity.PERSON)
+guard = Wardcat(salt="s").with_ner(language="en").with_gliner().add_entity(Entity.PERSON)
 
 # Discover what GLiNER can detect:
-AIGuard.supported_entities("gliner")   # {"PERSON", "EMAIL", "PHONE", "IBAN", ...}
+Wardcat.supported_entities("gliner")   # {"PERSON", "EMAIL", "PHONE", "IBAN", ...}
 ```
 
 `with_gliner()` accepts `model=` (default `fastino/gliner2-privacy-filter-PII-multi`),
@@ -356,7 +356,7 @@ type and action:
 
 ```python
 guard = (
-    AIGuard(salt="s")
+    Wardcat(salt="s")
     .with_gliner()
     .add_entity(Entity.PERSON, Action.REDACT)
     .with_propagation()          # a name caught once → redacted everywhere
@@ -377,10 +377,10 @@ helps names and other model-only entities.
 > config in one place and read top-to-bottom:
 >
 > ```python
-> from ai_guard import AIGuard, Backend, Language
+> from wardcat import Wardcat, Backend, Language
 >
 > guard = (
->     AIGuard(salt="s")
+>     Wardcat(salt="s")
 >     .with_ner(language=Language.TR)                       # NER layer
 >     .with_llm(backend=Backend.OLLAMA, model="llama3.2",   # LLM layer
 >               adjudicate=True)
@@ -403,9 +403,9 @@ ollama pull llama3.2
 ```
 
 ```python
-from ai_guard import AIGuard, Backend
+from wardcat import Wardcat, Backend
 
-guard = AIGuard(salt="s").with_llm(
+guard = Wardcat(salt="s").with_llm(
     backend=Backend.OLLAMA,
     model="llama3.2",
     base_url="http://localhost:11434",
@@ -415,9 +415,9 @@ guard = AIGuard(salt="s").with_llm(
 **Option 2 — Connect to an existing endpoint (vLLM, LM Studio, LocalAI):**
 
 ```python
-from ai_guard import AIGuard, Backend
+from wardcat import Wardcat, Backend
 
-guard = AIGuard(salt="s").with_llm(
+guard = Wardcat(salt="s").with_llm(
     backend=Backend.OPENAI_COMPATIBLE,
     base_url="http://10.0.0.5:8000/v1",
     model="llama3.1:8b",
@@ -428,9 +428,9 @@ guard = AIGuard(salt="s").with_llm(
 **Option 3 — HuggingFace Transformers (GPU/CPU):**
 
 ```python
-from ai_guard import AIGuard, Backend
+from wardcat import Wardcat, Backend
 
-guard = AIGuard(salt="s").with_llm(
+guard = Wardcat(salt="s").with_llm(
     backend=Backend.TRANSFORMERS,
     model="meta-llama/Llama-3.1-8B-Instruct",
     load_in_8bit=True,  # optional: reduce VRAM usage
@@ -443,15 +443,15 @@ guard = AIGuard(salt="s").with_llm(
 
 Actions (`hash`/`redact`/`mask`/`warn`) come from a registry, so you can add your
 own — `tokenize`, `encrypt`, format-preserving masking — **without changing
-ai-guard**. An action maps a span to its replacement (or `None` to keep the text):
+wardcat**. An action maps a span to its replacement (or `None` to keep the text):
 
 ```python
-from ai_guard import AIGuard, register_action
+from wardcat import Wardcat, register_action
 
 # ctx carries the salt; the span has .entity_type, .text, .start, .end
 register_action("tokenize", lambda span, ctx: f"<{span.entity_type}:{vault.put(span.text)}>")
 
-guard = AIGuard(salt="s").add_entity("EMAIL", "tokenize")   # use it like any built-in
+guard = Wardcat(salt="s").add_entity("EMAIL", "tokenize")   # use it like any built-in
 ```
 
 > Detection and anonymization are separate stages: `DetectionEngine` finds the
@@ -461,10 +461,10 @@ guard = AIGuard(salt="s").add_entity("EMAIL", "tokenize")   # use it like any bu
 #### Custom backends (extensible)
 
 Backends are looked up in a registry, so you can add your own (e.g. Azure
-OpenAI, Anthropic, a bespoke gateway) **without changing ai-guard**:
+OpenAI, Anthropic, a bespoke gateway) **without changing wardcat**:
 
 ```python
-from ai_guard import AIGuard, BaseLLMBackend, register_backend, registered_backends
+from wardcat import Wardcat, BaseLLMBackend, register_backend, registered_backends
 
 class MyBackend(BaseLLMBackend):
     def complete(self, prompt, *, timeout=60): ...
@@ -476,7 +476,7 @@ class MyBackend(BaseLLMBackend):
 register_backend("my_backend", lambda cfg: MyBackend())
 
 registered_backends()   # frozenset({"ollama", "openai_compatible", "transformers", "my_backend"})
-guard = AIGuard(salt="s").with_llm(backend="my_backend", model="...")
+guard = Wardcat(salt="s").with_llm(backend="my_backend", model="...")
 ```
 
 #### Ensemble adjudication
@@ -484,7 +484,7 @@ guard = AIGuard(salt="s").with_llm(backend="my_backend", model="...")
 By default the three layers run independently and their findings are merged (union). With `with_llm(adjudicate=True)`, the engine instead sends the regex/NER candidates to the LLM, which — in a **single call** — verifies each one (keep / relabel / drop) and adds any PII the other layers missed. Deterministic, checksum-validated regex spans are always kept regardless of the LLM verdict. This sharply reduces NER noise (e.g. job titles mislabeled as names, or a model run on the wrong language):
 
 ```python
-guard = AIGuard(use_ner=True, spacy_model="de_core_news_sm").with_llm(
+guard = Wardcat(use_ner=True, spacy_model="de_core_news_sm").with_llm(
     model="gemma3:12b",
     adjudicate=True,   # LLM acts as detector + arbiter in one call
 )
@@ -503,7 +503,7 @@ Runnable scripts in [`examples/`](examples/):
 | `demo.py` | Programmatic + YAML APIs |
 | `batch_and_async.py` | `scan_batch` and the async API (regex-only, no services) |
 | `llm_hybrid.py` | regex + NER + LLM with ensemble adjudication (needs Ollama) |
-| `asgi_middleware.py` | Copy-paste ASGI middleware (FastAPI/Starlette) that scans request bodies — ai-guard ships no web-framework code; this is a self-contained example |
+| `asgi_middleware.py` | Copy-paste ASGI middleware (FastAPI/Starlette) that scans request bodies — wardcat ships no web-framework code; this is a self-contained example |
 
 ---
 
@@ -558,21 +558,21 @@ Runnable scripts in [`examples/`](examples/):
 | `ORG` | `warn` | Organization / company names |
 | `ADDRESS` | `warn` | Location entities (complements regex) |
 
-> **NER requires an explicit model — there is no default.** NER is **off by default**; `AIGuard(use_ner=True)` without a model (or language) raises `ConfigError`. Choose a model in a documented way via `language=` (recommended) or `spacy_model=`. Running, say, the Turkish model on German text produces noisy results, so pick the model per language (or rely on the LLM layer for cross-language names). A multilingual gazetteer filters out job titles, HR terms, and abbreviations (EN/DE/FR/TR) that NER models commonly mislabel.
+> **NER requires an explicit model — there is no default.** NER is **off by default**; `Wardcat(use_ner=True)` without a model (or language) raises `ConfigError`. Choose a model in a documented way via `language=` (recommended) or `spacy_model=`. Running, say, the Turkish model on German text produces noisy results, so pick the model per language (or rely on the LLM layer for cross-language names). A multilingual gazetteer filters out job titles, HR terms, and abbreviations (EN/DE/FR/TR) that NER models commonly mislabel.
 
-**Pick a language, not a model name.** Use the `Language` constants (or their ISO codes) and an optional size tier — ai-guard resolves the right model from its catalog and **downloads it automatically if it is missing**:
+**Pick a language, not a model name.** Use the `Language` constants (or their ISO codes) and an optional size tier — wardcat resolves the right model from its catalog and **downloads it automatically if it is missing**:
 
 ```python
-from ai_guard import AIGuard, Language
+from wardcat import Wardcat, Language
 
 # Selecting a language turns NER on and implies auto-download (off with spacy_auto_download=False)
-guard = AIGuard(language=Language.DE)                  # → de_core_news_sm
-guard = AIGuard(language=Language.FR, spacy_size="md") # → fr_core_news_md (sm/md/lg/trf)
-guard = AIGuard(language=Language.TR, spacy_size="lg") # → tr_core_news_lg
+guard = Wardcat(language=Language.DE)                  # → de_core_news_sm
+guard = Wardcat(language=Language.FR, spacy_size="md") # → fr_core_news_md (sm/md/lg/trf)
+guard = Wardcat(language=Language.TR, spacy_size="lg") # → tr_core_news_lg
 
 # Or name the SpaCy package(s) explicitly — one or several:
-guard = AIGuard(spacy_model="en_core_web_sm")
-guard = AIGuard(spacy_model=["en_core_web_sm", "de_core_news_sm"])
+guard = Wardcat(spacy_model="en_core_web_sm")
+guard = Wardcat(spacy_model=["en_core_web_sm", "de_core_news_sm"])
 ```
 
 Supported languages: `Language.EN`, `DE`, `FR`, `ES`, `IT`, `NL`, `PT`, `TR` (plain ISO codes like `"de"` are also accepted). If the requested size is unavailable for a language, the recommended model is used.
@@ -584,17 +584,17 @@ For text that mixes several languages you have two options:
 1. **LLM layer (recommended, no extra models).** The LLM prompt is multilingual, so a single LLM-enabled guard detects names across languages without loading any SpaCy model:
 
    ```python
-   guard = AIGuard().with_llm(model="llama3.1:8b")  # handles EN+DE+FR+TR in one call
+   guard = Wardcat().with_llm(model="llama3.1:8b")  # handles EN+DE+FR+TR in one call
    ```
 
-2. **Multiple SpaCy models.** Pass a list of languages — ai-guard loads one NER model per language and the engine merges their results. Each model adds RAM and roughly multiplies NER scan time, so this is opt-in:
+2. **Multiple SpaCy models.** Pass a list of languages — wardcat loads one NER model per language and the engine merges their results. Each model adds RAM and roughly multiplies NER scan time, so this is opt-in:
 
    ```python
-   from ai_guard import AIGuard, Language
-   guard = AIGuard(language=[Language.EN, Language.DE, Language.FR])  # 3 NER models, auto-downloaded
+   from wardcat import Wardcat, Language
+   guard = Wardcat(language=[Language.EN, Language.DE, Language.FR])  # 3 NER models, auto-downloaded
    ```
 
-   This is **explicit** — you list the languages; ai-guard does not guess the language of the input. The regex layer is multilingual regardless of these choices.
+   This is **explicit** — you list the languages; wardcat does not guess the language of the input. The regex layer is multilingual regardless of these choices.
 
 ### LLM (requires on-prem LLM backend)
 
@@ -672,7 +672,7 @@ Salt prevents rainbow table attacks. Set it via environment variable in producti
 
 ```python
 import os
-guard = AIGuard(salt=os.environ["AIGUARD_SALT"]).add_entity("CREDIT_CARD", "hash")
+guard = Wardcat(salt=os.environ["WARDCAT_SALT"]).add_entity("CREDIT_CARD", "hash")
 ```
 
 > Never hardcode the salt in source code or config files.
@@ -700,9 +700,9 @@ Inputs exceeding **500 KB** raise a `ValueError`. Split large documents into sma
 ## Configuration
 
 > **The library never reads environment variables.** Pass everything explicitly —
-> `AIGuard(salt=...).with_llm(base_url=..., allow_http=...)` or a YAML
+> `Wardcat(salt=...).with_llm(base_url=..., allow_http=...)` or a YAML
 > `config_path`. Read secrets from the environment in *your* application and hand
-> them to the constructor; ai-guard itself does no implicit environment lookup.
+> them to the constructor; wardcat itself does no implicit environment lookup.
 
 To allow plaintext HTTP to a **remote** LLM (blocked by default), pass
 `with_llm(allow_http=True)`.
@@ -712,9 +712,9 @@ To allow plaintext HTTP to a **remote** LLM (blocked by default), pass
 ## Project Structure
 
 ```
-ai-guard/
-├── src/ai_guard/
-│   ├── guard.py              # AIGuard — main interface
+wardcat/
+├── src/wardcat/
+│   ├── guard.py              # Wardcat — main interface
 │   ├── core/
 │   │   ├── engine.py         # DetectionEngine — overlap resolution, action application
 │   │   └── models.py         # Action, Violation, ScanResult
@@ -755,13 +755,13 @@ uv run pytest -m ner
 
 # Live LLM tests against a real Ollama model (auto-skipped if unavailable)
 uv run pytest -m slow tests/integration/test_llm_live.py
-# Pick the model: AIGUARD_TEST_LLM_MODEL=llama3.2:1b uv run pytest -m slow ...
+# Pick the model: WARDCAT_TEST_LLM_MODEL=llama3.2:1b uv run pytest -m slow ...
 
 # Skip slow tests (fast run)
 uv run pytest -m "not slow"
 
 # Coverage report
-uv run pytest --cov=src/ai_guard --cov-report=term-missing
+uv run pytest --cov=src/wardcat --cov-report=term-missing
 ```
 
 ---

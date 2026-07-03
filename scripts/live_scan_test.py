@@ -17,10 +17,10 @@ from __future__ import annotations
 import sys
 import time
 
-from ai_guard import AIGuard
-from ai_guard.core.engine import DetectionEngine
-from ai_guard.detectors.llm_detector import LLMDetector
-from ai_guard.llm.backends.ollama import OllamaBackend
+from wardcat import Wardcat
+from wardcat.core.engine import DetectionEngine
+from wardcat.detectors.llm_detector import LLMDetector
+from wardcat.llm.backends.ollama import OllamaBackend
 
 # ── Renk kodları ─────────────────────────────────────────────────────────────
 GREEN = "\033[92m"
@@ -37,7 +37,7 @@ WARN = f"{YELLOW}⚠ WARN{RESET}"
 # ── Guard fabrikası ───────────────────────────────────────────────────────────
 
 
-def make_guard(entities: set[str] | None = None, use_ner: bool = False) -> AIGuard:
+def make_guard(entities: set[str] | None = None, use_ner: bool = False) -> Wardcat:
     enabled = entities or {
         "CREDIT_CARD",
         "EMAIL",
@@ -48,7 +48,7 @@ def make_guard(entities: set[str] | None = None, use_ner: bool = False) -> AIGua
         "IP_ADDRESS",
         "CUSTOM_SECRET",
     }
-    guard = AIGuard(use_ner=use_ner)
+    guard = Wardcat(use_ner=use_ner)
     for e in enabled:
         guard._config["entities"].setdefault(e, {"enabled": True, "action": "warn"})
     guard._config["entities"]["PERSON"] = {"enabled": True, "action": "hash"}
@@ -84,7 +84,7 @@ def section(title: str) -> None:
     print(f"{BOLD}{CYAN}{'═' * 60}{RESET}")
 
 
-def run(label: str, guard: AIGuard, text: str) -> object:
+def run(label: str, guard: Wardcat, text: str) -> object:
     t0 = time.time()
     result = guard.scan(text)
     elapsed = time.time() - t0
@@ -246,7 +246,7 @@ check(
 # ── 8. Batch tarama ──────────────────────────────────────────────────────────
 section("8 · Batch Tarama")
 
-batch_guard = AIGuard(
+batch_guard = Wardcat(
     use_ner=False,
     use_llm=True,
     llm_model="gemma3:12b",

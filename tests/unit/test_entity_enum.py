@@ -2,9 +2,9 @@
 
 import pytest
 
-from ai_guard import Action, AIGuard, Entity
-from ai_guard.core.models import KNOWN_ENTITY_TYPES
-from ai_guard.exceptions import ConfigError
+from wardcat import Action, Entity, Wardcat
+from wardcat.core.models import KNOWN_ENTITY_TYPES
+from wardcat.exceptions import ConfigError
 
 
 def test_entity_is_str_value():
@@ -29,7 +29,7 @@ def test_entity_usable_as_dict_key_like_string():
 
 
 def test_add_entity_accepts_entity_and_action_constants():
-    guard = AIGuard(salt="s", use_ner=False).add_entity(Entity.CREDIT_CARD, action=Action.HASH)
+    guard = Wardcat(salt="s", use_ner=False).add_entity(Entity.CREDIT_CARD, action=Action.HASH)
     result = guard.scan("card 4532 0151 1283 0366")
     assert not result.is_clean
     v = result.violations[0]
@@ -41,14 +41,14 @@ def test_string_and_enum_are_equivalent():
     """Configuring with a string vs. an Entity/Action constant yields the same result."""
     text = "card 4532 0151 1283 0366"
 
-    enum_guard = AIGuard(salt="s", use_ner=False).add_entity(Entity.CREDIT_CARD, action=Action.HASH)
-    str_guard = AIGuard(salt="s", use_ner=False).add_entity("CREDIT_CARD", action="hash")
+    enum_guard = Wardcat(salt="s", use_ner=False).add_entity(Entity.CREDIT_CARD, action=Action.HASH)
+    str_guard = Wardcat(salt="s", use_ner=False).add_entity("CREDIT_CARD", action="hash")
 
     assert enum_guard.scan(text).sanitized_text == str_guard.scan(text).sanitized_text
 
 
 def test_add_entities_with_entity_keys():
-    guard = AIGuard(salt="s", use_ner=False).add_entities(
+    guard = Wardcat(salt="s", use_ner=False).add_entities(
         {Entity.CREDIT_CARD: Action.HASH, Entity.EMAIL: "redact"}
     )
     result = guard.scan("card 4532 0151 1283 0366, mail a@b.com")
@@ -57,7 +57,7 @@ def test_add_entities_with_entity_keys():
 
 
 def test_invalid_action_still_raises():
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     with pytest.raises(ConfigError):
         guard.add_entity(Entity.EMAIL, action="nope")
 
@@ -70,8 +70,8 @@ def test_invalid_action_still_raises():
 def test_add_entity_without_action_defaults_to_hash_and_warns(caplog):
     import logging
 
-    guard = AIGuard(salt="s", use_ner=False).remove_entity(Entity.ALL)
-    with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
+    guard = Wardcat(salt="s", use_ner=False).remove_entity(Entity.ALL)
+    with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
         guard.add_entity(Entity.EMAIL)  # no action
     assert guard.get_entity_action("EMAIL") == "hash"
     assert any("defaulting to 'hash'" in r.message for r in caplog.records)
@@ -80,8 +80,8 @@ def test_add_entity_without_action_defaults_to_hash_and_warns(caplog):
 def test_add_entity_with_action_does_not_warn(caplog):
     import logging
 
-    guard = AIGuard(salt="s", use_ner=False).remove_entity(Entity.ALL)
-    with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
+    guard = Wardcat(salt="s", use_ner=False).remove_entity(Entity.ALL)
+    with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
         guard.add_entity(Entity.EMAIL, action="warn")
     assert guard.get_entity_action("EMAIL") == "warn"
     assert not any("defaulting to 'hash'" in r.message for r in caplog.records)
@@ -90,8 +90,8 @@ def test_add_entity_with_action_does_not_warn(caplog):
 def test_add_entities_without_action_defaults_to_hash_and_warns_once(caplog):
     import logging
 
-    guard = AIGuard(salt="s", use_ner=False).remove_entity(Entity.ALL)
-    with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
+    guard = Wardcat(salt="s", use_ner=False).remove_entity(Entity.ALL)
+    with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
         guard.add_entities({"EMAIL": "redact", "CREDIT_CARD": {}, "IBAN": {}})
     assert guard.get_entity_action("CREDIT_CARD") == "hash"
     assert guard.get_entity_action("IBAN") == "hash"
@@ -103,8 +103,8 @@ def test_add_entities_without_action_defaults_to_hash_and_warns_once(caplog):
 def test_default_action_warns_only_once_per_guard(caplog):
     import logging
 
-    guard = AIGuard(salt="s", use_ner=False).remove_entity(Entity.ALL)
-    with caplog.at_level(logging.WARNING, logger="ai_guard.guard"):
+    guard = Wardcat(salt="s", use_ner=False).remove_entity(Entity.ALL)
+    with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
         guard.add_entity(Entity.EMAIL)  # 1st missing action → warns
         guard.add_entity(Entity.CREDIT_CARD)  # 2nd → no repeat
         guard.add_entities(["IBAN", "SSN"])  # still no repeat
@@ -118,7 +118,7 @@ def test_default_action_warns_only_once_per_guard(caplog):
 
 
 def test_add_entity_all_enables_every_known_entity():
-    guard = AIGuard(salt="s", use_ner=False).add_entity(Entity.ALL, action="hash")
+    guard = Wardcat(salt="s", use_ner=False).add_entity(Entity.ALL, action="hash")
     enabled = {name for name, cfg in guard._config["entities"].items() if cfg["enabled"]}
     # Every regex/NER-supported known entity should be enabled. (NER ones too,
     # but their engine-side enable depends on the layer; check the config flag.)
@@ -129,7 +129,7 @@ def test_add_entity_all_enables_every_known_entity():
 
 def test_add_entity_all_then_remove_prunes_one():
     guard = (
-        AIGuard(salt="s", use_ner=False)
+        Wardcat(salt="s", use_ner=False)
         .add_entity(Entity.ALL, action="hash")
         .remove_entity(Entity.EMAIL)
     )
@@ -140,7 +140,7 @@ def test_add_entity_all_then_remove_prunes_one():
 
 
 def test_add_entities_accepts_all_sentinel_in_iterable():
-    guard = AIGuard(salt="s", use_ner=False).add_entities([Entity.ALL], action="redact")
+    guard = Wardcat(salt="s", use_ner=False).add_entities([Entity.ALL], action="redact")
     assert KNOWN_ENTITY_TYPES <= set(guard._config["entities"])
 
 
@@ -150,7 +150,7 @@ def test_add_entities_accepts_all_sentinel_in_iterable():
 
 
 def test_remove_entity_disables_detection():
-    guard = AIGuard(salt="s", use_ner=False).add_entity(Entity.EMAIL, action="warn")
+    guard = Wardcat(salt="s", use_ner=False).add_entity(Entity.EMAIL, action="warn")
     assert not guard.scan("mail a@b.com").is_clean
     guard.remove_entity(Entity.EMAIL)
     assert guard.scan("mail a@b.com").is_clean
@@ -158,13 +158,13 @@ def test_remove_entity_disables_detection():
 
 def test_remove_entity_unknown_is_noop():
     """Removing something never enabled does not raise."""
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     guard.remove_entity(Entity.PASSPORT)  # never added → no-op
     guard.remove_entity("NEVER_ADDED_CUSTOM")  # unknown string → no-op
 
 
 def test_remove_entities_disables_many():
-    guard = AIGuard(salt="s", use_ner=False).add_entities(
+    guard = Wardcat(salt="s", use_ner=False).add_entities(
         ["EMAIL", "CREDIT_CARD", "IBAN"], action="hash"
     )
     guard.remove_entities([Entity.EMAIL, Entity.CREDIT_CARD])
@@ -173,7 +173,7 @@ def test_remove_entities_disables_many():
 
 
 def test_remove_entity_all_disables_everything():
-    guard = AIGuard(salt="s", use_ner=False).add_entity(Entity.ALL, action="hash")
+    guard = Wardcat(salt="s", use_ner=False).add_entity(Entity.ALL, action="hash")
     guard.remove_entity(Entity.ALL)
     result = guard.scan("card 4532 0151 1283 0366, mail a@b.com, tc 12345678950")
     assert result.is_clean
@@ -185,68 +185,68 @@ def test_remove_entity_all_disables_everything():
 
 
 def test_add_entity_rejects_non_string_type():
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     with pytest.raises(ConfigError, match="must be a str or Entity"):
         guard.add_entity(123)  # type: ignore[arg-type]
 
 
 def test_remove_entity_rejects_non_string_type():
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     with pytest.raises(ConfigError, match="must be a str or Entity"):
         guard.remove_entity(object())  # type: ignore[arg-type]
 
 
 def test_add_entities_rejects_bare_string():
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     with pytest.raises(ConfigError, match="single str"):
         guard.add_entities("EMAIL")  # a bare string would iterate characters
 
 
 def test_remove_entities_rejects_bare_entity():
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     with pytest.raises(ConfigError, match="single"):
         guard.remove_entities(Entity.EMAIL)
 
 
 def test_set_entity_rejects_all_sentinel_directly():
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     with pytest.raises(ConfigError, match="Entity.ALL cannot be set directly"):
         guard._set_entity(Entity.ALL, enabled=True, action="hash", layers=None)
 
 
 def test_add_entities_rejects_non_iterable():
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     with pytest.raises(ConfigError, match="mapping or an iterable"):
         guard.add_entities(123)  # type: ignore[arg-type]
 
 
 def test_remove_entities_rejects_non_iterable():
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     with pytest.raises(ConfigError, match="iterable of entity types"):
         guard.remove_entities(123)  # type: ignore[arg-type]
 
 
 def test_add_entities_rejects_invalid_spec_type():
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     with pytest.raises(ConfigError, match="Invalid spec"):
         guard.add_entities({"EMAIL": 123})  # type: ignore[dict-item]
 
 
 def test_add_entities_rejects_non_string_member():
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     with pytest.raises(ConfigError, match="must be a str or Entity"):
         guard.add_entities([123])  # type: ignore[list-item]
 
 
 def test_invalid_action_type_raises():
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     with pytest.raises(ConfigError, match="Invalid action"):
         guard.add_entity(Entity.EMAIL, action=999)  # type: ignore[arg-type]
 
 
 def test_invalid_action_unhashable_raises():
     """An unhashable action (e.g. a list) is rejected, not propagated as TypeError."""
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     with pytest.raises(ConfigError, match="Invalid action"):
         guard.add_entity(Entity.EMAIL, action=["hash"])  # type: ignore[arg-type]
 
@@ -258,7 +258,7 @@ def test_invalid_action_unhashable_raises():
 
 def _clean_guard():
     """A guard with no entities enabled (default config cleared)."""
-    return AIGuard(salt="s", use_ner=False).remove_entity(Entity.ALL)
+    return Wardcat(salt="s", use_ner=False).remove_entity(Entity.ALL)
 
 
 def test_change_action_updates_active_entity():
@@ -314,7 +314,7 @@ def test_change_action_all_raises_when_nothing_active():
 
 def test_change_action_on_llm_only_entity():
     guard = (
-        AIGuard(salt="s", use_ner=False)
+        Wardcat(salt="s", use_ner=False)
         .with_llm(model="x")
         .remove_entity(Entity.ALL)
         .add_entity(Entity.SPECIAL_CATEGORY, action="redact", layers=["llm"])
@@ -332,16 +332,16 @@ def test_change_action_on_llm_only_entity():
 
 def test_llmguard_name_is_gone():
     """The old class name is no longer importable."""
-    import ai_guard
+    import wardcat
 
-    assert not hasattr(ai_guard, "LLMGuard")
+    assert not hasattr(wardcat, "LLMGuard")
     with pytest.raises(ImportError):
-        from ai_guard import LLMGuard  # noqa: F401
+        from wardcat import LLMGuard  # noqa: F401
 
 
 def test_configure_entity_aliases_are_gone():
     """The deprecated configure_entity/configure_entities methods were removed."""
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     assert not hasattr(guard, "configure_entity")
     assert not hasattr(guard, "configure_entities")
 
@@ -359,8 +359,8 @@ def test_entity_all_alias_resolves_to_all():
 
 
 def test_entity_all_alias_works_in_api():
-    g1 = AIGuard(salt="s", use_ner=False).add_entity(Entity.All, action="hash")
-    g2 = AIGuard(salt="s", use_ner=False).add_entity(Entity.ALL, action="hash")
+    g1 = Wardcat(salt="s", use_ner=False).add_entity(Entity.All, action="hash")
+    g2 = Wardcat(salt="s", use_ner=False).add_entity(Entity.ALL, action="hash")
     assert g1.entity_policy() == g2.entity_policy()
 
 
@@ -370,7 +370,7 @@ def test_entity_all_alias_works_in_api():
 
 
 def test_add_entity_has_no_enabled_param():
-    guard = AIGuard(salt="s", use_ner=False)
+    guard = Wardcat(salt="s", use_ner=False)
     with pytest.raises(TypeError):
         guard.add_entity("EMAIL", enabled=False)  # type: ignore[call-arg]
 
@@ -383,8 +383,8 @@ def test_add_entity_has_no_enabled_param():
 def test_remove_entity_warns_on_unknown_name(caplog):
     import logging
 
-    guard = AIGuard(salt="s", use_ner=False)
-    with caplog.at_level(logging.WARNING, logger="ai_guard.core.models"):
+    guard = Wardcat(salt="s", use_ner=False)
+    with caplog.at_level(logging.WARNING, logger="wardcat.core.models"):
         guard.remove_entity("EMIAL")  # typo
     assert any("Unknown entity type" in r.message for r in caplog.records)
 
@@ -429,30 +429,30 @@ def test_entity_policy_maps_enabled_to_action():
 
 
 # ---------------------------------------------------------------------------
-# Discoverability: AIGuard.supported_entities()
+# Discoverability: Wardcat.supported_entities()
 # ---------------------------------------------------------------------------
 
 
 def test_supported_entities_all():
-    from ai_guard.core.models import KNOWN_ENTITY_TYPES
+    from wardcat.core.models import KNOWN_ENTITY_TYPES
 
-    assert AIGuard.supported_entities() == frozenset(KNOWN_ENTITY_TYPES)
+    assert Wardcat.supported_entities() == frozenset(KNOWN_ENTITY_TYPES)
 
 
 def test_supported_entities_per_layer():
-    ner = AIGuard.supported_entities("ner")
+    ner = Wardcat.supported_entities("ner")
     assert ner == frozenset({"PERSON", "ORG", "ADDRESS"})
-    assert "EMAIL" in AIGuard.supported_entities("regex")
-    assert "SPECIAL_CATEGORY" in AIGuard.supported_entities("llm")
+    assert "EMAIL" in Wardcat.supported_entities("regex")
+    assert "SPECIAL_CATEGORY" in Wardcat.supported_entities("llm")
 
 
 def test_supported_entities_bad_layer_raises():
     with pytest.raises(ConfigError, match="Unknown layer"):
-        AIGuard.supported_entities("bogus")
+        Wardcat.supported_entities("bogus")
 
 
 def test_redacted_is_typed_and_pii_free():
-    guard = AIGuard(salt="s", use_ner=False).add_entity(Entity.EMAIL, Action.HASH)
+    guard = Wardcat(salt="s", use_ner=False).add_entity(Entity.EMAIL, Action.HASH)
     d = guard.scan("mail a@b.com").redacted()
     assert set(d.keys()) == {"is_clean", "sanitized_text", "scan_error", "warnings", "violations"}
     assert "a@b.com" not in str(d)  # no raw PII

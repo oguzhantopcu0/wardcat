@@ -14,7 +14,7 @@ Configuration is **explicit** — pass constructor arguments or a YAML
 | `change_entity_action(entity, action)` | Retarget an **already-enabled** entity's action |
 
 Read API: `enabled_entities()`, `get_entity_action(entity)`, `entity_policy()`,
-and the static `AIGuard.supported_entities(layer=None)`.
+and the static `Wardcat.supported_entities(layer=None)`.
 
 ## Actions
 
@@ -29,7 +29,7 @@ Model-based layers sometimes report a repeated value only once. `with_propagatio
 anonymizes **every** whole-token occurrence once any layer detects a value:
 
 ```python
-guard = AIGuard(salt="s").with_gliner().add_entity("PERSON").with_propagation()
+guard = Wardcat(salt="s").with_gliner().add_entity("PERSON").with_propagation()
 ```
 
 Off by default (it can over-redact); only exact, token-bounded matches at least

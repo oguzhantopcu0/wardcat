@@ -2,18 +2,18 @@
 
 ## Results
 
-::: ai_guard.ScanResult
+::: wardcat.ScanResult
 
-::: ai_guard.Violation
+::: wardcat.Violation
 
-::: ai_guard.RedactedResult
+::: wardcat.RedactedResult
 
 ## Constants
 
-::: ai_guard.Entity
+::: wardcat.Entity
 
-::: ai_guard.Action
+::: wardcat.Action
 
-::: ai_guard.Backend
+::: wardcat.Backend
 
-::: ai_guard.Language
+::: wardcat.Language

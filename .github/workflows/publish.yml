@@ -26,7 +26,7 @@ jobs:
           uv run pytest tests/unit/ tests/integration/ \
             --tb=short \
             -q \
-            --cov=src/ai_guard \
+            --cov=src/wardcat \
             --cov-fail-under=80
 
       - name: Build wheel and sdist

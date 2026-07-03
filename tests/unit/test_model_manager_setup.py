@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ai_guard.llm.backends.base import BaseLLMBackend, PullProgress
-from ai_guard.llm.model_manager import ModelManager
+from wardcat.llm.backends.base import BaseLLMBackend, PullProgress
+from wardcat.llm.model_manager import ModelManager
 
 
 def _mgr(available: list[str]) -> ModelManager:
@@ -105,7 +105,7 @@ class TestPullStillWorks:
                 on_progress(PullProgress("success", 100, 100))
 
         backend.pull_model.side_effect = fake_pull
-        with caplog.at_level(logging.INFO, logger="ai_guard.llm.model_manager"):
+        with caplog.at_level(logging.INFO, logger="wardcat.llm.model_manager"):
             ModelManager(backend).pull("llama3.1:8b", verbose=True)
         # Model name appears in log messages; progress bar goes to stdout
         assert "llama3.1:8b" in caplog.text

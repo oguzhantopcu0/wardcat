@@ -1,13 +1,13 @@
 import pytest
 
-from ai_guard import AIGuard
-from ai_guard.core.models import Action
+from wardcat import Wardcat
+from wardcat.core.models import Action
 
 
 @pytest.fixture
 def guard():
     # NER disabled → tests run even without SpaCy installed
-    return AIGuard(use_ner=False)
+    return Wardcat(use_ner=False)
 
 
 def test_clean_text_returns_no_violations(guard):
@@ -51,7 +51,7 @@ def test_salt_changes_hash(guard):
 
 def test_method_chaining():
     guard = (
-        AIGuard(use_ner=False, salt="x")
+        Wardcat(use_ner=False, salt="x")
         .add_entity("EMAIL", action="hash")
         .add_entity("CREDIT_CARD", action="hash")
         .remove_entity("PHONE")
@@ -103,11 +103,11 @@ def test_confidence_is_1_for_regex_detections(guard):
 
 
 def test_redacted_convenience_wrapper(guard):
-    """ai_guard.redacted(result) is equivalent to result.redacted()."""
-    import ai_guard
+    """wardcat.redacted(result) is equivalent to result.redacted()."""
+    import wardcat
 
     result = guard.scan("a@b.com")
-    d = ai_guard.redacted(result)
+    d = wardcat.redacted(result)
     assert "violations" in d
     assert "sanitized_text" in d
     assert "original_text" not in d
@@ -118,14 +118,14 @@ def test_redacted_convenience_wrapper(guard):
 
 class TestRedactAction:
     def test_redact_replaces_with_label(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("EMAIL", action="redact")
         result = guard.scan("Mail: admin@secret.com")
         assert "admin@secret.com" not in result.sanitized_text
         assert "[EMAIL]" in result.sanitized_text
 
     def test_redact_replacement_has_no_hash(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("EMAIL", action="redact")
         result = guard.scan("a@b.com")
         v = result.violations[0]
@@ -133,19 +133,19 @@ class TestRedactAction:
         assert ":" not in v.replacement  # no hash suffix
 
     def test_redact_action_enum(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("EMAIL", action="redact")
         result = guard.scan("a@b.com")
         assert result.violations[0].action == Action.REDACT
 
     def test_redact_multiple_occurrences(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("EMAIL", action="redact")
         result = guard.scan("a@b.com and c@d.com")
         assert result.sanitized_text.count("[EMAIL]") == 2
 
     def test_add_entity_accepts_redact(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         returned = guard.add_entity("EMAIL", action="redact")
         assert returned is guard  # method chaining
 
@@ -155,7 +155,7 @@ class TestRedactAction:
 
 class TestMaskAction:
     def test_mask_hides_middle_chars(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("CREDIT_CARD", action="mask")
         result = guard.scan("kart: 4111111111111111")
         assert "4111111111111111" not in result.sanitized_text
@@ -164,7 +164,7 @@ class TestMaskAction:
         assert "*" in result.sanitized_text
 
     def test_mask_uses_stars(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("EMAIL", action="mask")
         result = guard.scan("a@b.com")
         replacement = result.violations[0].replacement
@@ -172,8 +172,8 @@ class TestMaskAction:
 
     def test_mask_short_value_all_stars(self):
         """Values shorter than 4 chars → all stars."""
-        from ai_guard.core.engine import DetectionEngine
-        from ai_guard.detectors.base import BaseDetector, DetectedSpan
+        from wardcat.core.engine import DetectionEngine
+        from wardcat.detectors.base import BaseDetector, DetectedSpan
 
         config = {
             "salt": "",
@@ -192,13 +192,13 @@ class TestMaskAction:
         assert result.violations[0].replacement == "**"
 
     def test_mask_action_enum(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("CREDIT_CARD", action="mask")
         result = guard.scan("4111111111111111")
         assert result.violations[0].action == Action.MASK
 
     def test_add_entity_accepts_mask(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         returned = guard.add_entity("EMAIL", action="mask")
         assert returned is guard
 
@@ -208,14 +208,14 @@ class TestMaskAction:
 
 class TestAllowlist:
     def test_allowlisted_email_not_flagged(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("EMAIL", action="warn")
         guard.add_allowlist(["no-reply@company.com"])
         result = guard.scan("Contact: no-reply@company.com")
         assert result.is_clean
 
     def test_non_allowlisted_email_still_flagged(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("EMAIL", action="warn")
         guard.add_allowlist(["no-reply@company.com"])
         result = guard.scan("Contact: user@other.com")
@@ -223,7 +223,7 @@ class TestAllowlist:
 
     def test_add_allowlist_method_chaining(self):
         guard = (
-            AIGuard(use_ner=False)
+            Wardcat(use_ner=False)
             .add_entity("EMAIL", action="warn")
             .add_allowlist(["safe@example.com"])
         )
@@ -231,13 +231,13 @@ class TestAllowlist:
         assert result.is_clean
 
     def test_add_allowlist_idempotent(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_allowlist(["safe@example.com"])
         guard.add_allowlist(["safe@example.com"])  # duplicate
         assert guard._config["allowlist"].count("safe@example.com") == 1
 
     def test_add_allowlist_multiple_values(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("EMAIL", action="warn")
         guard.add_allowlist(["a@b.com", "c@d.com"])
         result = guard.scan("a@b.com and c@d.com")
@@ -249,14 +249,14 @@ class TestAllowlist:
 
 class TestDenylist:
     def test_denylist_value_always_flagged(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("PERSON", action="warn")
         guard.add_denylist([{"value": "John Smith", "entity_type": "PERSON"}])
         result = guard.scan("Request from John Smith.")
         assert any(v.entity_type == "PERSON" for v in result.violations)
 
     def test_denylist_hash_action_applied(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("PERSON", action="hash")
         guard.add_denylist([{"value": "Jane Doe", "entity_type": "PERSON"}])
         result = guard.scan("User: Jane Doe")
@@ -265,7 +265,7 @@ class TestDenylist:
 
     def test_denylist_method_chaining(self):
         guard = (
-            AIGuard(use_ner=False)
+            Wardcat(use_ner=False)
             .add_entity("CUSTOM_SECRET", action="warn")
             .add_denylist([{"value": "ProjectX", "entity_type": "CUSTOM_SECRET"}])
         )
@@ -273,12 +273,12 @@ class TestDenylist:
         assert any(v.entity_type == "CUSTOM_SECRET" for v in result.violations)
 
     def test_add_denylist_invalid_entry_raises(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         with pytest.raises(ValueError, match="'value' or a 'pattern' key"):
             guard.add_denylist([{"entity_type": "PERSON"}])
 
     def test_denylist_multiple_occurrences_all_flagged(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("PERSON", action="warn")
         guard.add_denylist([{"value": "John", "entity_type": "PERSON"}])
         result = guard.scan("John and John again")
@@ -291,14 +291,14 @@ class TestDenylist:
 
 class TestDenylistRegex:
     def test_pattern_denylist_matches(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("PERSON", action="warn")
         guard.add_denylist([{"pattern": r"\b(CEO|CTO|CFO)\b", "entity_type": "PERSON"}])
         result = guard.scan("Request from CEO John.")
         assert any(v.entity_type == "PERSON" and v.original == "CEO" for v in result.violations)
 
     def test_pattern_denylist_multiple_matches(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("PERSON", action="warn")
         guard.add_denylist([{"pattern": r"\b(CEO|CTO)\b", "entity_type": "PERSON"}])
         result = guard.scan("CEO and CTO attended.")
@@ -307,7 +307,7 @@ class TestDenylistRegex:
         assert "CTO" in titles
 
     def test_pattern_denylist_with_hash_action(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("CUSTOM_SECRET", action="hash")
         guard.add_denylist([{"pattern": r"\bPROJECT-\d{4}\b", "entity_type": "CUSTOM_SECRET"}])
         result = guard.scan("Working on PROJECT-1234 today.")
@@ -322,20 +322,20 @@ class TestDenylistRegex:
         with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
             yaml.dump({"denylist": [{"pattern": "[invalid", "entity_type": "X"}]}, f)
             cfg_path = f.name
-        from ai_guard.config.loader import load_config
+        from wardcat.config.loader import load_config
 
         with pytest.raises(ValueError, match="not valid regex"):
             load_config(cfg_path)
 
     def test_add_denylist_accepts_pattern_entry(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("PERSON", action="warn")
         guard.add_denylist([{"pattern": r"\bJohn\b", "entity_type": "PERSON"}])
         result = guard.scan("Hello John")
         assert any(v.entity_type == "PERSON" for v in result.violations)
 
     def test_add_denylist_no_value_or_pattern_raises(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         with pytest.raises(ValueError, match="'value' or a 'pattern' key"):
             guard.add_denylist([{"entity_type": "PERSON"}])
 
@@ -345,7 +345,7 @@ class TestDenylistRegex:
 
 class TestEntityAwareMask:
     def test_email_mask_preserves_domain(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("EMAIL", action="mask")
         result = guard.scan("user@example.com")
         replacement = result.violations[0].replacement
@@ -354,7 +354,7 @@ class TestEntityAwareMask:
         assert "user" not in replacement
 
     def test_credit_card_mask_shows_last_4(self):
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard.add_entity("CREDIT_CARD", action="mask")
         result = guard.scan("4111111111111111")
         replacement = result.violations[0].replacement
@@ -362,13 +362,13 @@ class TestEntityAwareMask:
         assert "*" in replacement
 
     def test_ssn_mask_format(self):
-        from ai_guard.core.actions import _mask_value
+        from wardcat.core.actions import _mask_value
 
         result = _mask_value("SSN", "123-45-6789")
         assert result == "***-**-6789"
 
     def test_iban_mask_shows_country_and_last4(self):
-        from ai_guard.core.actions import _mask_value
+        from wardcat.core.actions import _mask_value
 
         iban = "TR330006100519786457841326"
         result = _mask_value("IBAN", iban)
@@ -377,14 +377,14 @@ class TestEntityAwareMask:
         assert "*" in result
 
     def test_tc_id_mask_shows_last3(self):
-        from ai_guard.core.actions import _mask_value
+        from wardcat.core.actions import _mask_value
 
         result = _mask_value("TC_ID", "12345678950")
         assert result.endswith("950")
         assert result.startswith("*")
 
     def test_default_mask_first2_last2(self):
-        from ai_guard.core.actions import _mask_value
+        from wardcat.core.actions import _mask_value
 
         result = _mask_value("UUID", "abcdefgh")
         assert result[:2] == "ab"
@@ -392,7 +392,7 @@ class TestEntityAwareMask:
         assert "*" in result
 
     def test_mask_very_short_value_all_stars(self):
-        from ai_guard.core.actions import _mask_value
+        from wardcat.core.actions import _mask_value
 
         result = _mask_value("EMAIL", "ab")
         # shorter than 4 chars → all stars

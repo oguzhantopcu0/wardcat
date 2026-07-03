@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ai_guard.ner.spacy_catalog import (
+from wardcat.ner.spacy_catalog import (
     SPACY_CATALOG,
     SpacyModelInfo,
     get_models_by_language,

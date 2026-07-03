@@ -62,7 +62,7 @@ jobs:
           uv run pytest tests/unit/ tests/integration/ \
             --tb=short \
             -q \
-            --cov=src/ai_guard \
+            --cov=src/wardcat \
             --cov-report=term-missing \
             --cov-fail-under=80
 

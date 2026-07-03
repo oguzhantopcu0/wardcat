@@ -10,9 +10,9 @@ import asyncio
 
 import pytest
 
-from ai_guard.core.engine import DetectionEngine
-from ai_guard.detectors.base import BaseDetector, DetectedSpan
-from ai_guard.llm.backends.base import BaseLLMBackend
+from wardcat.core.engine import DetectionEngine
+from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.llm.backends.base import BaseLLMBackend
 
 
 class _Fixed(BaseDetector):
@@ -81,7 +81,7 @@ class _DeadBackend(BaseLLMBackend):
 
 class TestLLMDetectorPropagates:
     def test_connection_error_propagates(self):
-        from ai_guard.detectors.llm_detector import LLMDetector
+        from wardcat.detectors.llm_detector import LLMDetector
 
         det = LLMDetector(_DeadBackend(), {"EMAIL"})
         with pytest.raises(ConnectionError):
@@ -90,10 +90,10 @@ class TestLLMDetectorPropagates:
 
 class TestGuardIntegration:
     def test_scan_surfaces_llm_unavailable(self):
-        from ai_guard import AIGuard, Backend
+        from wardcat import Backend, Wardcat
 
         guard = (
-            AIGuard(salt="s", use_ner=False)
+            Wardcat(salt="s", use_ner=False)
             .add_entity("EMAIL", "redact")
             .with_llm(backend=Backend.OLLAMA, base_url="http://127.0.0.1:59999", model="x")
         )

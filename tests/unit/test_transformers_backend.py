@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ai_guard.llm.backends.transformers_backend import TransformersBackend
+from wardcat.llm.backends.transformers_backend import TransformersBackend
 
 # ── complete_messages() ──────────────────────────────────────────────────────
 
@@ -146,7 +146,7 @@ class TestPullModel:
         model_id = "meta-llama/Llama-3.1-8B-Instruct"
 
         with patch(
-            "ai_guard.llm.backends.transformers_backend.snapshot_download",
+            "wardcat.llm.backends.transformers_backend.snapshot_download",
             create=True,
         ) as mock_dl:
             # mock the huggingface_hub module
@@ -293,7 +293,7 @@ class TestChatTemplateValidation:
         mock_pipe = MagicMock()
         mock_pipe.tokenizer = mock_tokenizer
 
-        with caplog.at_level(logging.WARNING, logger="ai_guard.llm.backends.transformers_backend"):
+        with caplog.at_level(logging.WARNING, logger="wardcat.llm.backends.transformers_backend"):
             with patch.object(backend, "_load_pipeline", return_value=mock_pipe):
                 backend._get_pipeline()
 
@@ -311,7 +311,7 @@ class TestChatTemplateValidation:
         mock_pipe = MagicMock()
         mock_pipe.tokenizer = mock_tokenizer
 
-        with caplog.at_level(logging.WARNING, logger="ai_guard.llm.backends.transformers_backend"):
+        with caplog.at_level(logging.WARNING, logger="wardcat.llm.backends.transformers_backend"):
             with patch.object(backend, "_load_pipeline", return_value=mock_pipe):
                 backend._get_pipeline()
 

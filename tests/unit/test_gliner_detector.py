@@ -2,8 +2,8 @@
 
 The gliner2 package (and torch) is an optional extra, so the model is mocked
 throughout — these tests never load a real model. They cover label selection,
-GLiNER-label → ai-guard-entity mapping, threshold filtering, confidence
-capping, and the AIGuard wiring (with_gliner + policy).
+GLiNER-label → wardcat-entity mapping, threshold filtering, confidence
+capping, and the Wardcat wiring (with_gliner + policy).
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ai_guard.detectors.gliner_detector import _MAX_CONFIDENCE, GLiNERDetector
+from wardcat.detectors.gliner_detector import _MAX_CONFIDENCE, GLiNERDetector
 
 
 class _FakeGliner:
@@ -31,7 +31,7 @@ class _FakeGliner:
 
 def _make(enabled: set[str], response: dict | None = None, **kwargs):
     fake = _FakeGliner(response or {"entities": {}})
-    with patch("ai_guard.detectors.gliner_detector._load_gliner_model", return_value=fake):
+    with patch("wardcat.detectors.gliner_detector._load_gliner_model", return_value=fake):
         det = GLiNERDetector(enabled, **kwargs)
     return det, fake
 
@@ -115,7 +115,7 @@ class TestDetection:
     def test_unknown_label_in_response_is_ignored(self):
         response = {
             "entities": {
-                "drivers_license_number": [  # mapped to nothing in ai-guard
+                "drivers_license_number": [  # mapped to nothing in wardcat
                     {"text": "X123", "confidence": 0.9, "start": 0, "end": 4}
                 ]
             }
@@ -151,14 +151,14 @@ class _PosGliner:
 class TestChunking:
     def test_short_text_single_chunk(self):
         fake = _PosGliner("Zoe")
-        with patch("ai_guard.detectors.gliner_detector._load_gliner_model", return_value=fake):
+        with patch("wardcat.detectors.gliner_detector._load_gliner_model", return_value=fake):
             det = GLiNERDetector({"PERSON"}, chunk_size=1000)
         det.detect("Hi Zoe, welcome.")
         assert len(fake.calls) == 1  # not split
 
     def test_long_text_is_chunked_with_global_offsets(self):
         fake = _PosGliner("Zoe")
-        with patch("ai_guard.detectors.gliner_detector._load_gliner_model", return_value=fake):
+        with patch("wardcat.detectors.gliner_detector._load_gliner_model", return_value=fake):
             det = GLiNERDetector({"PERSON"}, chunk_size=50)
         # Two "Zoe"s far apart so they land in different windows.
         text = ("x" * 40) + " Zoe " + ("y" * 80) + " Zoe end"
@@ -174,56 +174,56 @@ class TestChunking:
     def test_chunk_size_zero_guard_does_not_hang(self):
         # size//2 == 0 overlap; ensure progress is still made (no infinite loop)
         fake = _PosGliner("Zoe")
-        with patch("ai_guard.detectors.gliner_detector._load_gliner_model", return_value=fake):
+        with patch("wardcat.detectors.gliner_detector._load_gliner_model", return_value=fake):
             det = GLiNERDetector({"PERSON"}, chunk_size=10)
         spans = det.detect("Zoe " * 20)
         assert spans  # found some, and returned
 
 
-# ── AIGuard wiring ────────────────────────────────────────────────────────────
+# ── Wardcat wiring ────────────────────────────────────────────────────────────
 
 
 class TestGuardWiring:
     def test_with_gliner_enables_layer_config(self):
-        from ai_guard import AIGuard
+        from wardcat import Wardcat
 
-        guard = AIGuard(use_ner=False)
-        with patch("ai_guard.detectors.gliner_detector._load_gliner_model"):
+        guard = Wardcat(use_ner=False)
+        with patch("wardcat.detectors.gliner_detector._load_gliner_model"):
             guard.with_gliner(threshold=0.4).add_entity("PERSON", "hash")
         cfg = guard._config["gliner_detector"]
         assert cfg["enabled"] is True
         assert cfg["threshold"] == 0.4
 
     def test_with_gliner_builds_detector_when_entity_enabled(self):
-        from ai_guard import AIGuard
-        from ai_guard.detectors.gliner_detector import GLiNERDetector as _GD
+        from wardcat import Wardcat
+        from wardcat.detectors.gliner_detector import GLiNERDetector as _GD
 
-        with patch("ai_guard.detectors.gliner_detector._load_gliner_model"):
-            guard = AIGuard(use_ner=False).with_gliner().add_entity("PERSON", "hash")
+        with patch("wardcat.detectors.gliner_detector._load_gliner_model"):
+            guard = Wardcat(use_ner=False).with_gliner().add_entity("PERSON", "hash")
         assert any(isinstance(d, _GD) for d in guard._detectors)
 
     def test_gliner_layer_off_builds_no_detector(self):
-        from ai_guard import AIGuard
-        from ai_guard.detectors.gliner_detector import GLiNERDetector as _GD
+        from wardcat import Wardcat
+        from wardcat.detectors.gliner_detector import GLiNERDetector as _GD
 
-        guard = AIGuard(use_ner=False).add_entity("PERSON", "hash")  # no with_gliner
+        guard = Wardcat(use_ner=False).add_entity("PERSON", "hash")  # no with_gliner
         assert not any(isinstance(d, _GD) for d in guard._detectors)
 
     def test_load_failure_is_skipped_not_fatal(self):
-        from ai_guard import AIGuard
-        from ai_guard.detectors.gliner_detector import GLiNERDetector as _GD
+        from wardcat import Wardcat
+        from wardcat.detectors.gliner_detector import GLiNERDetector as _GD
 
         # Simulate the optional dependency being absent.
         with patch(
-            "ai_guard.detectors.gliner_detector._load_gliner_model",
+            "wardcat.detectors.gliner_detector._load_gliner_model",
             side_effect=ImportError("No module named 'gliner2'"),
         ):
-            guard = AIGuard(use_ner=False).with_gliner().add_entity("PERSON", "hash")
+            guard = Wardcat(use_ner=False).with_gliner().add_entity("PERSON", "hash")
         # Guard still builds; the GLiNER detector is simply skipped.
         assert not any(isinstance(d, _GD) for d in guard._detectors)
 
     def test_end_to_end_scan_hashes_person(self):
-        from ai_guard import AIGuard
+        from wardcat import Wardcat
 
         response = {
             "entities": {
@@ -231,8 +231,8 @@ class TestGuardWiring:
             }
         }
         fake = _FakeGliner(response)
-        with patch("ai_guard.detectors.gliner_detector._load_gliner_model", return_value=fake):
-            guard = AIGuard(salt="s", use_ner=False).with_gliner().add_entity("PERSON", "hash")
+        with patch("wardcat.detectors.gliner_detector._load_gliner_model", return_value=fake):
+            guard = Wardcat(salt="s", use_ner=False).with_gliner().add_entity("PERSON", "hash")
             result = guard.scan("Name: Ali Veli")
         assert "Ali Veli" not in result.sanitized_text
         assert "[PERSON:" in result.sanitized_text
@@ -243,33 +243,33 @@ class TestGuardWiring:
 
 class TestGlinerPolicy:
     def test_supported_entities_gliner_layer(self):
-        from ai_guard import AIGuard
-        from ai_guard.core.registry import GLINER_ENTITIES
+        from wardcat import Wardcat
+        from wardcat.core.registry import GLINER_ENTITIES
 
-        assert AIGuard.supported_entities("gliner") == GLINER_ENTITIES
-        assert "PERSON" in AIGuard.supported_entities("gliner")
-        assert "EMAIL" in AIGuard.supported_entities("gliner")
+        assert Wardcat.supported_entities("gliner") == GLINER_ENTITIES
+        assert "PERSON" in Wardcat.supported_entities("gliner")
+        assert "EMAIL" in Wardcat.supported_entities("gliner")
 
     def test_gliner_is_a_valid_layer(self):
-        from ai_guard.core.registry import VALID_LAYERS
+        from wardcat.core.registry import VALID_LAYERS
 
         assert "gliner" in VALID_LAYERS
 
     def test_add_entity_gliner_layer_enables_shared_flag(self):
-        from ai_guard import AIGuard
+        from wardcat import Wardcat
 
-        guard = AIGuard(use_ner=False)
-        with patch("ai_guard.detectors.gliner_detector._load_gliner_model"):
+        guard = Wardcat(use_ner=False)
+        with patch("wardcat.detectors.gliner_detector._load_gliner_model"):
             guard.with_gliner().add_entity("PERSON", "hash", layers=["gliner"])
         assert guard._config["entities"]["PERSON"]["enabled"] is True
 
     def test_invalid_threshold_rejected(self):
-        from ai_guard import AIGuard
-        from ai_guard.exceptions import ConfigError
+        from wardcat import Wardcat
+        from wardcat.exceptions import ConfigError
 
-        guard = AIGuard(use_ner=False)
+        guard = Wardcat(use_ner=False)
         guard._config["gliner_detector"] = {"enabled": True, "model": "x", "threshold": 5}
         with pytest.raises(ConfigError, match="threshold"):
-            from ai_guard.config.loader import validate_config
+            from wardcat.config.loader import validate_config
 
             validate_config(guard._config)

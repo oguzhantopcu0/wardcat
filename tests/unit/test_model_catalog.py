@@ -4,7 +4,7 @@ Model catalog unit tests.
 
 from __future__ import annotations
 
-from ai_guard.llm.model_catalog import (
+from wardcat.llm.model_catalog import (
     CATALOG,
     DEFAULT_MODEL,
     ModelInfo,
