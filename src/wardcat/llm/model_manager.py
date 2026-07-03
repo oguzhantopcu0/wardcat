@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 
-from wardcat.llm.backends.base import BaseLLMBackend, PullProgress
+from wardcat.llm.backends.base import BaseLLMBackend, ProgressCallback, PullProgress
 
 logger = logging.getLogger(__name__)
 
@@ -63,19 +63,38 @@ class ModelManager:
         self.pull(model, verbose=verbose)
         return True
 
-    def pull(self, model: str, *, verbose: bool = True) -> None:
+    def pull(
+        self,
+        model: str,
+        *,
+        verbose: bool = True,
+        on_progress: ProgressCallback | None = None,
+    ) -> None:
         """
         Download a model.
 
-        :param model:   Model name, e.g. "llama3.2" or "llama3.2:3b"
-        :param verbose: Print progress to the terminal
+        :param model:       Model name, e.g. "llama3.2" or "llama3.2:3b"
+        :param verbose:     Log start/finish and, when no ``on_progress`` is given,
+                            render a terminal progress bar.
+        :param on_progress: Callback invoked with each :class:`PullProgress`. Pass
+                            your own to integrate with a UI/logger instead of the
+                            default terminal bar (a library should not print for
+                            you unless you ask).
         """
-        if verbose:
-            logger.info("Downloading model: %s", model)
+        logger.info("Downloading model: %s", model)
 
-        def _on_progress(p: PullProgress) -> None:
-            if not verbose:
-                return
+        callback = on_progress if on_progress is not None else self._terminal_bar(verbose)
+        self.backend.pull_model(model, on_progress=callback)
+
+        logger.info("Model ready: %s", model)
+
+    @staticmethod
+    def _terminal_bar(verbose: bool) -> ProgressCallback | None:
+        """Default progress renderer — a terminal bar, only when ``verbose``."""
+        if not verbose:
+            return None
+
+        def _render(p: PullProgress) -> None:
             if p.total:
                 bar_len = 30
                 filled = int(bar_len * p.completed / p.total)
@@ -84,7 +103,4 @@ class ModelManager:
             else:
                 print(f"\r  {p.status:<40}", end="", flush=True)
 
-        self.backend.pull_model(model, on_progress=_on_progress)
-
-        if verbose:
-            logger.info("Model ready: %s", model)
+        return _render

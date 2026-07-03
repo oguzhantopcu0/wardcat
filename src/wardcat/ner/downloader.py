@@ -58,10 +58,9 @@ def download_model(model_name: str, *, verbose: bool = False) -> None:
     """
 
     def _say(msg: str) -> None:
-        if verbose:
-            print(msg, flush=True)
-        else:
-            logger.info(msg)
+        # A library should not print — route to the logger. ``verbose`` selects
+        # the level so INFO output appears when the caller opts in.
+        logger.info(msg) if verbose else logger.debug(msg)
 
     info = get_spacy_model(model_name)
 
