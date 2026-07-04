@@ -80,7 +80,7 @@ nav:
       - Extending: guide/extending.md
       - Security: guide/security.md
   - API reference:
-      - Wardcat: reference/aiguard.md
+      - Wardcat: reference/wardcat.md
       - Results & constants: reference/models.md
       - Detectors & backends: reference/internals.md
   - Changelog: changelog.md

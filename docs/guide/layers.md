@@ -94,4 +94,4 @@ candidates **and** adds what they missed, in a single call — cleaning NER nois
 (e.g. a job title mislabeled as a name). Deterministic regex spans are always
 kept regardless of the LLM verdict.
 
-See the full API on the [Wardcat reference page](../reference/aiguard.md).
+See the full API on the [Wardcat reference page](../reference/wardcat.md).

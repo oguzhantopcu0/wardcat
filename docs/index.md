@@ -52,4 +52,4 @@ print(result.sanitized_text)
 - [Installation](installation.md) — base install and optional extras.
 - [Quickstart](quickstart.md) — the programmatic and YAML APIs.
 - [Detection layers](guide/layers.md) — regex, NER, GLiNER, and the LLM layer.
-- [API reference](reference/aiguard.md) — generated from the source docstrings.
+- [API reference](reference/wardcat.md) — generated from the source docstrings.
