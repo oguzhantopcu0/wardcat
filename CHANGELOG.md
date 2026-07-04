@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **First-class vLLM backend (`Backend.VLLM` / `backend="vllm"`).** Talk to a model served by [vLLM](https://github.com/vllm-project/vllm) directly. vLLM exposes an OpenAI-compatible API, so this reuses the OpenAI-compatible transport but adds vLLM-appropriate defaults (`base_url` defaults to `http://localhost:8000/v1`; `api_key` optional) and a **native chat path** — `complete_messages()` posts the real messages array (system/user roles preserved) to `/chat/completions` instead of the flattened single-prompt fallback, which matters for instruct models served with a chat template. Enable it with `with_llm(backend=Backend.VLLM, model="…", base_url="http://…:8000/v1")`. The model is served vLLM-side, so `pull_model()` raises (as with any OpenAI-compatible endpoint). Generic OpenAI-compatible servers (LM Studio, LocalAI, LiteLLM) continue to use `Backend.OPENAI_COMPATIBLE`.
+
 ---
 
 ## [0.5.0] — 2026-07-04

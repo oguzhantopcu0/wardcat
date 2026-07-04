@@ -85,6 +85,17 @@ def _make_openai_compatible(cfg: dict[str, Any]) -> BaseLLMBackend:
     )
 
 
+def _make_vllm(cfg: dict[str, Any]) -> BaseLLMBackend:
+    from wardcat.llm.backends.vllm import DEFAULT_VLLM_BASE_URL, VLLMBackend
+
+    return VLLMBackend(
+        base_url=cfg.get("base_url", DEFAULT_VLLM_BASE_URL),
+        model=cfg.get("model", ""),
+        api_key=cfg.get("api_key", ""),
+        allow_http=cfg.get("allow_http", False),
+    )
+
+
 def _make_transformers(cfg: dict[str, Any]) -> BaseLLMBackend:
     from wardcat.llm.backends.transformers_backend import TransformersBackend
 
@@ -98,4 +109,5 @@ def _make_transformers(cfg: dict[str, Any]) -> BaseLLMBackend:
 
 register_backend("ollama", _make_ollama)
 register_backend("openai_compatible", _make_openai_compatible)
+register_backend("vllm", _make_vllm)
 register_backend("transformers", _make_transformers)

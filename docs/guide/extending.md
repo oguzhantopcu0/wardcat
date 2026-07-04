@@ -36,7 +36,7 @@ class MyBackend(BaseLLMBackend):
     def pull_model(self, model, *, on_progress=None): ...
 
 register_backend("my_backend", lambda cfg: MyBackend())
-registered_backends()   # frozenset({"ollama", "openai_compatible", "transformers", "my_backend"})
+registered_backends()   # frozenset({"ollama", "openai_compatible", "vllm", "transformers", "my_backend"})
 
 guard = Wardcat(salt="s").with_llm(backend="my_backend", model="...")
 ```

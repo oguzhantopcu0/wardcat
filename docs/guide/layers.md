@@ -82,6 +82,11 @@ from wardcat import Wardcat, Backend
 # Ollama (default): needs a running Ollama service
 guard = Wardcat(salt="s").with_llm(backend=Backend.OLLAMA, model="llama3.1:8b")
 
+# vLLM server (OpenAI-compatible API; native chat, defaults to :8000/v1)
+guard = Wardcat(salt="s").with_llm(backend=Backend.VLLM,
+                                   model="meta-llama/Llama-3.1-8B-Instruct",
+                                   base_url="http://localhost:8000/v1")
+
 # In-process HuggingFace Transformers (no daemon): pip install "wardcat[transformers]"
 guard = Wardcat(salt="s").with_llm(backend=Backend.TRANSFORMERS,
                                    model="Qwen/Qwen2.5-3B-Instruct")

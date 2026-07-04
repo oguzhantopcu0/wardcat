@@ -40,7 +40,7 @@ print(result.sanitized_text)
 
 ## Features
 
-- **Hybrid detection** — Regex + SpaCy NER + GLiNER (zero-shot transformer NER) + on-prem LLM (Ollama, OpenAI-compatible, HuggingFace Transformers)
+- **Hybrid detection** — Regex + SpaCy NER + GLiNER (zero-shot transformer NER) + on-prem LLM (Ollama, vLLM, OpenAI-compatible, HuggingFace Transformers)
 - **Ensemble adjudication** (optional) — the LLM verifies/relabels/drops regex & NER candidates and adds what they missed, in one call; deterministic regex results are always protected
 - **Four actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt; the default when `action` is omitted), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking)
 - **Checksum validation** — TC_ID (Nüfus İdaresi algorithm), IBAN (mod-97), and CREDIT_CARD (Luhn mod-10) validated before flagging — eliminates false positives
@@ -392,8 +392,9 @@ helps names and other model-only entities.
 
 The LLM detector is configured **only** via `with_llm()` (or a YAML `config_path`)
 — it is not a set of constructor arguments. `backend` is the backend **type**
-(use the `Backend` constants — `Backend.OLLAMA`, `Backend.OPENAI_COMPATIBLE`,
-`Backend.TRANSFORMERS`; plain strings work too); the **address** goes to `base_url`.
+(use the `Backend` constants — `Backend.OLLAMA`, `Backend.VLLM`,
+`Backend.OPENAI_COMPATIBLE`, `Backend.TRANSFORMERS`; plain strings work too);
+the **address** goes to `base_url`.
 
 **Option 1 — Run locally with Ollama:**
 
@@ -412,18 +413,27 @@ guard = Wardcat(salt="s").with_llm(
 )
 ```
 
-**Option 2 — Connect to an existing endpoint (vLLM, LM Studio, LocalAI):**
+**Option 2 — vLLM server:**
+
+```bash
+vllm serve meta-llama/Llama-3.1-8B-Instruct   # default port 8000
+```
 
 ```python
 from wardcat import Wardcat, Backend
 
 guard = Wardcat(salt="s").with_llm(
-    backend=Backend.OPENAI_COMPATIBLE,
-    base_url="http://10.0.0.5:8000/v1",
-    model="llama3.1:8b",
-    # api_key="sk-..."   # only if the endpoint requires auth (omit otherwise)
+    backend=Backend.VLLM,
+    model="meta-llama/Llama-3.1-8B-Instruct",   # the served model name
+    base_url="http://localhost:8000/v1",         # vLLM's default endpoint
+    # api_key="..."   # only if vLLM was started with --api-key
 )
 ```
+
+`Backend.VLLM` sends the full chat message array natively and defaults to
+vLLM's `http://localhost:8000/v1`. For other OpenAI-compatible servers (LM
+Studio, LocalAI, LiteLLM), use `Backend.OPENAI_COMPATIBLE` with your endpoint's
+`base_url`.
 
 **Option 3 — HuggingFace Transformers (GPU/CPU):**
 
@@ -475,7 +485,7 @@ class MyBackend(BaseLLMBackend):
 # factory receives the llm config dict (base_url, model, api_key, allow_http, …)
 register_backend("my_backend", lambda cfg: MyBackend())
 
-registered_backends()   # frozenset({"ollama", "openai_compatible", "transformers", "my_backend"})
+registered_backends()   # frozenset({"ollama", "openai_compatible", "vllm", "transformers", "my_backend"})
 guard = Wardcat(salt="s").with_llm(backend="my_backend", model="...")
 ```
 

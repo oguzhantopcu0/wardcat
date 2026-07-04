@@ -23,7 +23,9 @@ class Backend(str, Enum):
     OLLAMA = "ollama"
     """Local Ollama service (supports model download)."""
     OPENAI_COMPATIBLE = "openai_compatible"
-    """OpenAI-compatible HTTP API — vLLM, LM Studio, LocalAI, LiteLLM, …"""
+    """OpenAI-compatible HTTP API — LM Studio, LocalAI, LiteLLM, …"""
+    VLLM = "vllm"
+    """vLLM server (OpenAI-compatible API) — native chat, vLLM defaults."""
     TRANSFORMERS = "transformers"
     """In-process HuggingFace Transformers (no HTTP; loads the model locally)."""
 
