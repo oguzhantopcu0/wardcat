@@ -64,8 +64,13 @@ class TransformersBackend(BaseLLMBackend):
     """
     HuggingFace Transformers-based on-prem LLM backend.
 
-    The model is loaded on the first ``complete_messages()`` call (lazy loading).
-    Thread-safe: model loading is protected by a lock.
+    The model is loaded **in-process** on the first ``complete_messages()`` call
+    (lazy) and reused for the lifetime of this object. Thread-safe: model loading
+    is protected by a lock. Because the weights live in *this* process, each OS
+    process loads its own copy — for multi-worker serving (e.g. ``uvicorn
+    --workers N``) that means N× VRAM, so prefer the ``vllm``/``ollama`` backends,
+    which share a single resident server. See the "Model lifecycle & choosing a
+    backend" section in ``docs/guide/layers.md``.
 
     Args:
         model:         HuggingFace model ID (e.g. ``"meta-llama/Llama-3.1-8B-Instruct"``).

@@ -92,6 +92,64 @@ guard = Wardcat(salt="s").with_llm(backend=Backend.TRANSFORMERS,
                                    model="Qwen/Qwen2.5-3B-Instruct")
 ```
 
+### Model lifecycle & choosing a backend
+
+The **`transformers`** backend loads the model **in-process**. Weights are cached
+on disk (`~/.cache/huggingface`, downloaded once), but the pipeline is loaded
+into RAM/VRAM **the first time you scan** and then reused for the lifetime of
+that `Wardcat` object. On a tiny 135M model the first scan pays ~3–5 s of load;
+every subsequent scan in the same process is warm (~0.1 s). For an 8B model the
+cold load is tens of seconds — so **where you create the `Wardcat` matters**.
+
+The **HTTP backends** (`ollama`, `vllm`, `openai_compatible`) don't load anything
+in your process — they call a daemon/server that keeps the model resident (Ollama
+warms it via `keep_alive`, ~5 min; vLLM stays loaded for the server's lifetime).
+
+!!! tip "Serving from FastAPI (or any long-lived process)"
+    Create **one** `Wardcat` at startup and reuse it — the model loads once and
+    stays warm for every request:
+
+    ```python
+    from contextlib import asynccontextmanager
+    from fastapi import FastAPI
+    from wardcat import Wardcat, Backend
+
+    guard: Wardcat | None = None
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        global guard
+        guard = Wardcat(salt="s").with_llm(
+            backend=Backend.TRANSFORMERS, model="meta-llama/Llama-3.1-8B-Instruct"
+        )
+        guard.scan("warmup")   # optional: pay the cold load at startup
+        yield
+
+    app = FastAPI(lifespan=lifespan)
+
+    @app.post("/scan")
+    def scan(text: str):
+        return guard.scan(text).sanitized_text   # warm model
+    ```
+
+    **Do not** build `Wardcat(...)` inside the request handler — that reloads the
+    model on every request.
+
+!!! warning "Multiple workers multiply VRAM"
+    Each `uvicorn --workers N` / gunicorn worker is a separate process, so the
+    `transformers` backend loads its **own** copy of the model — N workers ≈ N×
+    VRAM. For horizontally-scaled serving use **`vllm`** (throughput) or
+    **`ollama`** (simple setup) instead: every worker shares one server, so the
+    weights live in VRAM **once** regardless of worker count.
+
+**Quick guide:**
+
+| Scenario | Backend |
+| --- | --- |
+| Prod serving, multiple workers, high traffic | `vllm` / `ollama` |
+| Single long-lived process, batch jobs, dev, air-gapped | `transformers` |
+| Repeated short-lived CLI runs | `ollama` / `vllm` (daemon stays warm between runs) |
+
 ### Ensemble adjudication
 
 With `with_llm(adjudicate=True)` the LLM verifies/relabels/drops the regex+NER
