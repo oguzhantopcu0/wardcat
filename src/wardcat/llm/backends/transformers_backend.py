@@ -45,6 +45,21 @@ from wardcat.llm.backends.base import BaseLLMBackend, ProgressCallback
 logger = logging.getLogger(__name__)
 
 
+def _transformers_supports_dtype_kwarg() -> bool:
+    """True if the installed transformers uses the ``dtype`` pipeline kwarg.
+
+    The dtype argument was renamed ``torch_dtype`` → ``dtype`` in transformers
+    4.56. Returns False (use ``torch_dtype``) if the version cannot be parsed.
+    """
+    try:
+        import transformers
+
+        major, minor, *_ = (int(p) for p in transformers.__version__.split(".")[:2])
+    except (ImportError, ValueError, TypeError, AttributeError):
+        return False
+    return (major, minor) >= (4, 56)
+
+
 class TransformersBackend(BaseLLMBackend):
     """
     HuggingFace Transformers-based on-prem LLM backend.
@@ -210,15 +225,17 @@ class TransformersBackend(BaseLLMBackend):
 
         logger.info("Loading Transformers model: %s", self._model_name)
 
+        # The dtype pipeline kwarg was renamed ``torch_dtype`` → ``dtype`` in
+        # transformers 4.56. On <4.56 ``dtype`` is silently forwarded to
+        # ``generate()`` and rejected (breaks inference); on 5.x ``torch_dtype``
+        # still works but is deprecated and slated for removal. Pick the name the
+        # installed version actually wants so we're correct across 4.40–5.x.
+        dtype_kw = "dtype" if _transformers_supports_dtype_kwarg() else "torch_dtype"
         kwargs: dict[str, Any] = {
             "task": "text-generation",
             "model": self._model_name,
             "device_map": self._device_map,
-            # ``torch_dtype`` is the pipeline kwarg across transformers 4.40–4.x
-            # (renamed to ``dtype`` only in 4.56+, where ``torch_dtype`` still
-            # works). Passing ``dtype`` on older versions is silently forwarded
-            # to ``generate()`` and rejected — breaking real inference.
-            "torch_dtype": torch.bfloat16,
+            dtype_kw: torch.bfloat16,
         }
 
         if self._load_in_8bit:

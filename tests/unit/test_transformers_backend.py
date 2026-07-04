@@ -320,15 +320,25 @@ class TestChatTemplateValidation:
 
 
 class TestLoadPipelineKwargs:
-    """Regression: the pipeline must be built with ``torch_dtype`` — using
-    ``dtype`` breaks real inference on transformers < 4.56 (it is forwarded to
-    ``generate()`` and rejected). Caught only with a real model, never by the
-    other mock tests."""
+    """Regression: the pipeline must be built with the dtype kwarg the installed
+    transformers actually wants. The name was ``torch_dtype`` through 4.x and
+    renamed ``dtype`` in 4.56 (where ``torch_dtype`` still works but is
+    deprecated and removed in a later major). Passing the wrong name breaks real
+    inference — caught only with a real model, never by the other mock tests."""
 
-    def test_passes_torch_dtype_not_dtype(self):
+    @pytest.mark.parametrize(
+        ("version", "expected_kw", "wrong_kw"),
+        [
+            ("4.55.0", "torch_dtype", "dtype"),  # pre-rename
+            ("4.56.0", "dtype", "torch_dtype"),  # rename boundary
+            ("5.13.0", "dtype", "torch_dtype"),  # transformers 5.x
+        ],
+    )
+    def test_passes_version_appropriate_dtype_kwarg(self, version, expected_kw, wrong_kw):
         fake_torch = MagicMock()
         fake_torch.bfloat16 = "bf16"
         fake_transformers = MagicMock()
+        fake_transformers.__version__ = version
         fake_pipeline = MagicMock(return_value="PIPE")
         fake_transformers.pipeline = fake_pipeline
 
@@ -338,5 +348,22 @@ class TestLoadPipelineKwargs:
 
         assert pipe == "PIPE"
         _, kwargs = fake_pipeline.call_args
+        assert kwargs.get(expected_kw) == "bf16"
+        assert wrong_kw not in kwargs
+
+    def test_unparseable_version_falls_back_to_torch_dtype(self):
+        # If the version string can't be read, default to the wider-compatible
+        # ``torch_dtype`` (works on every 4.x, deprecated-but-functional on 5.x).
+        fake_torch = MagicMock()
+        fake_torch.bfloat16 = "bf16"
+        fake_transformers = MagicMock()
+        fake_transformers.__version__ = "not.a.version"
+        fake_transformers.pipeline = MagicMock(return_value="PIPE")
+
+        backend = TransformersBackend("some-model", device_map="cpu")
+        with patch.dict(sys.modules, {"torch": fake_torch, "transformers": fake_transformers}):
+            backend._load_pipeline()
+
+        _, kwargs = fake_transformers.pipeline.call_args
         assert kwargs.get("torch_dtype") == "bf16"
         assert "dtype" not in kwargs
