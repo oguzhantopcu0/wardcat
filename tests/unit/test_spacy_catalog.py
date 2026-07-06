@@ -11,6 +11,7 @@ from wardcat.ner.spacy_catalog import (
     get_spacy_model,
     recommended_for_language,
     resolve_model,
+    supported_languages,
 )
 
 
@@ -235,3 +236,24 @@ class TestResolveModel:
 
     def test_returns_catalog_member(self):
         assert resolve_model("es", "md") in SPACY_CATALOG
+
+
+class TestSupportedLanguages:
+    def test_returns_sorted_unique_codes(self):
+        langs = supported_languages()
+        assert langs == sorted(set(langs))  # sorted, de-duplicated
+
+    def test_matches_catalog_language_codes(self):
+        assert set(supported_languages()) == {m.lang_code for m in SPACY_CATALOG}
+
+    def test_every_supported_language_resolves_to_a_model(self):
+        # The detect-then-select contract: a code reported as supported must
+        # actually resolve to a usable (compatible) model.
+        for code in supported_languages():
+            m = resolve_model(code)
+            assert m is not None and not m.incompatible
+
+    def test_is_exported_from_package_root(self):
+        import wardcat
+
+        assert wardcat.supported_languages() == supported_languages()

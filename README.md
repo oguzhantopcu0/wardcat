@@ -787,7 +787,7 @@ uv run pytest --cov=src/wardcat --cov-report=term-missing
 | `EU_NATIONAL_ID` | Spanish DNI/NIE and French INSEE via regex; German IDs need the LLM layer |
 | `PASSPORT` | Regex requires a passport keyword (`passport no:`, `pasaport`, `Reisepass`, `passeport`); the LLM layer catches unlabeled cases |
 | `FINANCIAL_AMOUNT` / `VAT_NUMBER` | `FINANCIAL_AMOUNT` is off by default (enable for confidential docs); bare Turkish Vergi No needs a keyword |
-| Multilingual NER | One SpaCy model loads per instance — set `spacy_model` to match the text language; auto language detection is not yet built in |
+| Multilingual NER | One SpaCy model loads per language — select with `language=`/`spacy_model=` (a list enables several). wardcat does not bundle language *detection* by design (keeps the core dependency-light); detect with your own tool and pass the code — `supported_languages()` reports what's available. Or use the language-agnostic LLM layer |
 | European addresses | Regex requires a recognizable street-type keyword (Straße, Rue, Calle…); unnumbered informal addresses may be missed |
 | Turkish NER (`tr_core_news_trf`) | Transformer model incompatible with SpaCy 3.5+ — use `tr_core_news_md` or `tr_core_news_lg` |
 | Turkish NER quality | `tr_core_news_md/lg` trained on news text; may miss names in non-standard contexts. For best results combine with `.with_llm(...)` |

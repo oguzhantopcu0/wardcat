@@ -34,7 +34,7 @@ from wardcat.llm.backends.registry import (
     register_backend,
     registered_backends,
 )
-from wardcat.ner.spacy_catalog import Language
+from wardcat.ner.spacy_catalog import Language, supported_languages
 
 try:
     __version__: str = version("wardcat")
@@ -50,6 +50,7 @@ __all__ = [
     "Action",
     "Entity",
     "Language",
+    "supported_languages",
     "Backend",
     "BaseLLMBackend",
     "register_backend",

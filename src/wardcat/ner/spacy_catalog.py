@@ -318,6 +318,23 @@ SPACY_CATALOG: list[SpacyModelInfo] = [
 ]
 
 
+def supported_languages() -> list[str]:
+    """Sorted ISO 639-1 codes wardcat ships a SpaCy NER model for.
+
+    A hook for the *detect-then-select* pattern: wardcat deliberately does not
+    bundle language detection (that would add an opinion and a dependency), but a
+    caller that detects the language with its own tool can check support here
+    before passing the code to ``Wardcat(language=...)``::
+
+        from wardcat import Wardcat, supported_languages
+
+        code = detect(text)  # your language detector of choice
+        if code in supported_languages():
+            guard = Wardcat(language=code)
+    """
+    return sorted({m.lang_code for m in SPACY_CATALOG})
+
+
 def get_spacy_model(name: str) -> SpacyModelInfo | None:
     """Return model info by name; ``None`` if not in catalog."""
     for m in SPACY_CATALOG:

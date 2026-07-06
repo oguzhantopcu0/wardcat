@@ -476,9 +476,9 @@ class Wardcat(EntityPolicyMixin):
     ) -> list[str]:
         """Resolve one or more languages (+ size tier) to concrete SpaCy model names."""
         from wardcat.ner.spacy_catalog import (
-            SPACY_CATALOG,
             get_models_by_language,
             resolve_model,
+            supported_languages,
         )
 
         items = [language] if isinstance(language, str) else list(language)
@@ -492,9 +492,8 @@ class Wardcat(EntityPolicyMixin):
                         f"No compatible SpaCy model for language {code!r} "
                         f"at size {spacy_size!r}. Try a different size (sm/md/lg)."
                     )
-                supported = sorted({m.lang_code for m in SPACY_CATALOG})
                 raise UnsupportedLanguageError(
-                    f"Unsupported language {code!r}. Supported: {supported}."
+                    f"Unsupported language {code!r}. Supported: {supported_languages()}."
                 )
             models.append(info.name)
         return list(dict.fromkeys(models))  # dedupe, preserve order

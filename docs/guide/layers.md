@@ -45,6 +45,28 @@ guard = Wardcat(salt="s").with_ner(spacy_model=["en_core_web_sm", "de_core_news_
 A multilingual gazetteer filters out job titles and abbreviations that NER models
 commonly mislabel as names.
 
+### Choosing a language (and auto-detection)
+
+One model loads per language, so NER only recognises the language(s) you select.
+wardcat **does not bundle language detection** — that would add an opinion and a
+dependency to a library that keeps its core to `pyyaml` + `httpx`. Instead it
+exposes the selection so you can wire in *your own* detector when you need it:
+detect the language with any tool you like, then pass the code. `supported_languages()`
+lets you check support first:
+
+```python
+from wardcat import Wardcat, supported_languages
+
+code = detect(text)              # your language detector of choice
+if code in supported_languages():  # ('de', 'en', 'es', 'fr', 'it', 'nl', 'pt', 'tr')
+    guard = Wardcat(salt="s").with_ner(language=code)
+else:
+    guard = Wardcat(salt="s").with_llm(...)   # LLM layer is language-agnostic
+```
+
+For genuinely mixed-language text, either pass a list (`language=["en", "de"]`,
+one model each) or lean on the LLM layer, which needs no per-language model.
+
 ## GLiNER (`gliner`)
 
 A lightweight zero-shot transformer NER (GLiNER2) — a middle ground between
