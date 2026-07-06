@@ -611,7 +611,13 @@ class Wardcat(EntityPolicyMixin):
         # run. An entity absent from the config is OFF.
         enabled_regex = {e for e in REGEX_ENTITIES if entity_cfg.get(e, {}).get("enabled", False)}
         if enabled_regex or custom_patterns:
-            self._detectors.append(RegexDetector(enabled_regex, custom_patterns=custom_patterns))
+            self._detectors.append(
+                RegexDetector(
+                    enabled_regex,
+                    custom_patterns=custom_patterns,
+                    fold_confusables_enabled=self._config.get("normalize_confusables", True),
+                )
+            )
 
         # SpaCy NER detector(s) (optional). A list of models loads one detector
         # per language (multilingual NER); the engine merges their spans.

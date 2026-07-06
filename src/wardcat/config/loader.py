@@ -31,6 +31,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # (fills in repeats a model-based layer reports only once). Off by default.
     "propagate_matches": False,
     "propagate_min_length": 3,  # skip values shorter than this to avoid over-redaction
+    # Fold Unicode confusables (Cyrillic/Greek lookalikes, fullwidth/Arabic digits)
+    # before regex matching, so homoglyph-obfuscated PII is not missed. On by default.
+    "normalize_confusables": True,
     # ── LLM detector configuration ────────────────────────────────────────
     "llm_detector": {
         "enabled": False,
@@ -105,6 +108,7 @@ _KNOWN_CONFIG_KEYS = frozenset(
         "denylist",
         "propagate_matches",
         "propagate_min_length",
+        "normalize_confusables",
     }
 )
 

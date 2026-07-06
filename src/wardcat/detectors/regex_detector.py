@@ -6,6 +6,7 @@ import re
 from collections.abc import Callable
 
 from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.utils.normalize import fold_confusables, has_confusables
 
 logger = logging.getLogger(__name__)
 
@@ -588,8 +589,19 @@ def _regex_confidence(entity_type: str) -> float:
 class RegexDetector(BaseDetector):
     """Detects structural PII patterns using regex (CC, IBAN, TC_ID, email, …)."""
 
-    def __init__(self, enabled_entities: set[str], custom_patterns: dict | None = None) -> None:
+    def __init__(
+        self,
+        enabled_entities: set[str],
+        custom_patterns: dict | None = None,
+        *,
+        fold_confusables_enabled: bool = True,
+    ) -> None:
         self.enabled_entities = enabled_entities
+        # When True, matching runs on a confusable-folded copy of the input so
+        # homoglyph-obfuscated PII (Cyrillic/Greek lookalikes, fullwidth/Arabic
+        # digits) is still detected. Folding is length-preserving, so spans are
+        # reported against the original text. See wardcat.utils.normalize.
+        self._fold_confusables = fold_confusables_enabled
         custom_patterns = custom_patterns or {}
         # Compile custom patterns: {entity_type: (compiled_pattern, action)}
         self._custom_compiled: dict[str, tuple[re.Pattern, str]] = {}
@@ -605,16 +617,25 @@ class RegexDetector(BaseDetector):
         """Return all regex matches for enabled entity types."""
         spans: list[DetectedSpan] = []
 
+        # Run matching on a confusable-folded copy so homoglyph-obfuscated PII is
+        # caught. Folding is length-preserving (see fold_confusables), so a match
+        # at [start, end) in `scan_text` covers the same slice of `text`; we report
+        # the *original* substring (what redaction must remove) and validate the
+        # *folded* value (the canonical ASCII form the checksum expects).
+        scan_text = (
+            fold_confusables(text) if self._fold_confusables and has_confusables(text) else text
+        )
+
         # Connection-string credentials: capture the password as a secret and
         # mark its offset so the spurious EMAIL match (password@host) is dropped.
         cred_pwd_starts: set[int] = set()
-        for match in _URI_CREDENTIAL.finditer(text):
+        for match in _URI_CREDENTIAL.finditer(scan_text):
             cred_pwd_starts.add(match.start("pwd"))
             if "CUSTOM_SECRET" in self.enabled_entities:
                 spans.append(
                     DetectedSpan(
                         entity_type="CUSTOM_SECRET",
-                        text=match.group("pwd"),
+                        text=text[match.start("pwd") : match.end("pwd")],
                         start=match.start("pwd"),
                         end=match.end("pwd"),
                     )
@@ -623,26 +644,29 @@ class RegexDetector(BaseDetector):
         for entity_type, pattern in _COMPILED.items():
             if entity_type not in self.enabled_entities:
                 continue
-            for match in pattern.finditer(text):
-                value = match.group()
+            for match in pattern.finditer(scan_text):
+                folded_value = match.group()
+                original_value = text[match.start() : match.end()]
                 # Drop EMAIL matches that are actually a URI credential's
                 # "password@host" (the password is captured as CUSTOM_SECRET).
                 if entity_type == "EMAIL" and match.start() in cred_pwd_starts:
                     continue
                 # Checksum/structural validation — suppress false positives.
+                # Validate the folded (canonical) form so a homoglyph digit does
+                # not defeat the checksum.
                 validator = _VALIDATORS.get(entity_type)
-                if validator is not None and not validator(value):
+                if validator is not None and not validator(folded_value):
                     logger.debug(
                         "%s format match rejected (failed validation): %r — "
                         "if this is real PII, the value may be incorrectly formatted.",
                         entity_type,
-                        value,
+                        folded_value,
                     )
                     continue
                 spans.append(
                     DetectedSpan(
                         entity_type=entity_type,
-                        text=value,
+                        text=original_value,
                         start=match.start(),
                         end=match.end(),
                     )

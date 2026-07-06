@@ -780,10 +780,8 @@ uv run pytest --cov=src/wardcat --cov-report=term-missing
 
 | Case | Description |
 |---|---|
-| `4111  1111  1111  1111` | Double-space separator bypasses card detection |
-| `4111.1111.1111.1111` | Dot separator not supported |
-| Adjacent IBANs | Two IBANs without separator cannot be parsed separately |
-| Cyrillic homoglyphs | `аli@test.com` (Cyrillic `а`) bypasses ASCII regex |
+| Adjacent IBANs | Two IBANs run together without a separator are read as one (and fail the checksum), so neither is flagged |
+| Homoglyph domain | Confusables (Cyrillic/Greek lookalikes, fullwidth/Arabic digits) are folded before matching by default (`normalize_confusables`), so `ali@tеst.com`, `４111…` are caught. Folding is a curated skeleton, not the full Unicode confusables table — an exotic lookalike may still slip through |
 | Transformers backend | Unit tests are mock-only; smoke-tested once against a real model (Qwen2.5-1.5B-Instruct) but not exercised in CI |
 | `US_ZIP_CODE` | Plain 5-digit ZIPs only matched with a `ZIP:` keyword; otherwise ZIP+4 (`12345-6789`) required to avoid false positives |
 | `EU_NATIONAL_ID` | Spanish DNI/NIE and French INSEE via regex; German IDs need the LLM layer |
