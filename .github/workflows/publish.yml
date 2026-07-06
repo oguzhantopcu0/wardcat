@@ -1,18 +1,20 @@
-name: Publish to PyPI
+name: Release
 
+# On a `v*` tag: build + validate the distribution and cut a GitHub Release with
+# the wheel/sdist attached. PyPI publishing is intentionally deferred (wardcat is
+# not on PyPI yet) — the trusted-publishing step below is kept, commented, so it
+# can be switched back on once a PyPI Trusted Publisher is configured.
 on:
   push:
     tags:
       - "v*"
 
 jobs:
-  publish:
-    name: Build & publish
+  release:
+    name: Build & GitHub Release
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
-      # OIDC token for PyPI Trusted Publishing — no long-lived API token needed.
-      id-token: write
+      contents: write # create the GitHub Release
 
     steps:
       - uses: actions/checkout@v7
@@ -25,9 +27,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
-      - name: Run tests before publishing
+      - name: Run tests before releasing
         run: |
-          uv run pytest tests/unit/ tests/integration/ \
+          uv run pytest tests/unit/ tests/integration/ tests/benchmark/ \
             --tb=short \
             -q \
             --cov=src/wardcat \
@@ -39,7 +41,20 @@ jobs:
       - name: Check distribution
         run: uv run --with twine twine check dist/*
 
-      - name: Publish to PyPI (Trusted Publishing)
-        # Uses the OIDC id-token above — configure a Trusted Publisher for the
-        # project on PyPI (Publishing → Add a new pending publisher). No secret.
-        run: uv publish --trusted-publishing always
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}"
+          --title "${{ github.ref_name }}"
+          --notes "See [CHANGELOG.md](https://github.com/oguzhantopcu0/wardcat/blob/main/CHANGELOG.md) for release notes."
+          dist/*
+
+      # ── PyPI publishing (deferred) ─────────────────────────────────────────
+      # To publish to PyPI: configure a Trusted Publisher for the project on PyPI
+      # (Publishing → Add a new pending publisher), then re-add to this job:
+      #   environment: pypi
+      #   permissions: { id-token: write, contents: write }
+      # and this step:
+      #   - name: Publish to PyPI (Trusted Publishing)
+      #     run: uv publish --trusted-publishing always
