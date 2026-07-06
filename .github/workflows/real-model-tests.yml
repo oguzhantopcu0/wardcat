@@ -1,12 +1,33 @@
-name: Real-model tests (manual)
+name: Real-model tests
 
-# Model-based backends are mock-only in the normal suite. This job installs the
-# heavy extras and runs the `slow` tests against real models — catching bugs
-# (like a wrong pipeline kwarg) that mocks cannot see. Run it on demand from the
-# Actions tab (or locally: `uv run --extra transformers pytest -m slow`). No
-# schedule, so it never runs on its own and the fast PR CI stays fast.
+# Model-based backends are mock-only in the fast PR suite, so a bug in the real
+# pipeline path (like the dtype/torch_dtype kwarg regression) is invisible there.
+# This job installs the heavy extras and runs the `slow` tests against real
+# models. It runs:
+#   • nightly — to catch drift from a new transformers/torch release, and
+#   • on PRs/pushes that touch the model backend or its deps — to gate the exact
+#     code whose mock-only tests let the dtype bug through.
+# It stays off the default PR path filter, so day-to-day CI stays fast.
 on:
+  schedule:
+    - cron: "0 6 * * *" # daily 06:00 UTC
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/wardcat/llm/backends/transformers_backend.py"
+      - "tests/integration/test_transformers_live.py"
+      - "pyproject.toml"
+      - ".github/workflows/real-model-tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/wardcat/llm/backends/transformers_backend.py"
+      - "pyproject.toml"
+
+# A newer commit on the same ref supersedes an in-flight (slow) run.
+concurrency:
+  group: real-model-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   slow-tests:
@@ -17,9 +38,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+
+      - name: Cache HuggingFace models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ runner.os }}-smollm2-135m
+          restore-keys: hf-${{ runner.os }}-
 
       - name: Install with the transformers extra
         run: uv sync --extra transformers --dev
