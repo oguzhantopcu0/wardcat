@@ -798,7 +798,18 @@ uv run pytest --cov=src/wardcat --cov-report=term-missing
 
 ```bash
 uv sync --dev
-uv run pytest tests/unit/ tests/integration/
+uv run pytest tests/unit/ tests/integration/ tests/benchmark/
 ```
 
 Requires Python 3.11+.
+
+**Detection quality.** `tests/benchmark/` scores the detectors two ways: a
+false-positive suite (detectors must stay quiet on clean text) and a
+precision/recall harness over a labelled, checksum-valid corpus. Both run in CI.
+Print the P/R report:
+
+```bash
+uv run python -m tests.benchmark.eval_harness
+```
+
+Widen coverage by adding rows to `CORPUS` in `tests/benchmark/eval_harness.py`.
