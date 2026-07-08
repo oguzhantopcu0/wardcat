@@ -40,7 +40,7 @@ print(result.sanitized_text)
 
 ## Features
 
-- **Hybrid detection** — Regex + SpaCy NER + GLiNER (zero-shot transformer NER) + on-prem LLM (Ollama, vLLM, OpenAI-compatible, HuggingFace Transformers)
+- **Hybrid detection** — Regex + SpaCy NER + on-prem LLM (Ollama, vLLM, OpenAI-compatible, HuggingFace Transformers)
 - **Ensemble adjudication** (optional) — the LLM verifies/relabels/drops regex & NER candidates and adds what they missed, in one call; deterministic regex results are always protected
 - **Four actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt; the default when `action` is omitted), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking)
 - **Checksum validation** — TC_ID (Nüfus İdaresi algorithm), IBAN (mod-97), and CREDIT_CARD (Luhn mod-10) validated before flagging — eliminates false positives
@@ -65,7 +65,6 @@ git clone https://github.com/oguzhantopcu0/wardcat.git
 cd wardcat
 uv sync                 # base: regex + Ollama/OpenAI-compatible LLM backend
 uv sync --extra ner     # + SpaCy NER (PERSON, ORG, ADDRESS)
-uv sync --extra gliner  # + GLiNER zero-shot NER (pulls in torch)
 uv sync --extra all     # + HuggingFace Transformers backend
 ```
 
@@ -168,9 +167,9 @@ guard.add_entities({
 
 ### Choosing which filters run, and on which layer
 
-Each entity can be detected by one or more of four layers — `regex`
-(deterministic), `ner` (SpaCy), `gliner` (zero-shot transformer NER), and `llm`
-(contextual/semantic). When you enable an entity it runs on every layer that
+Each entity can be detected by one or more of three layers — `regex`
+(deterministic), `ner` (SpaCy), and `llm` (contextual/semantic). When you enable
+an entity it runs on every layer that
 supports it; pass `layers=[...]` to target a specific layer — for example, keep a
 semantic-only entity off the regex/NER path:
 
@@ -300,55 +299,9 @@ for r in results:
 # True  0
 ```
 
-### GLiNER (zero-shot NER)
-
-[GLiNER](https://github.com/urchade/GLiNER) is a lightweight bidirectional-encoder
-NER model — a middle ground between SpaCy NER (fast, fixed labels) and an on-prem
-LLM (slow, contextual). wardcat wraps the PII-tuned **GLiNER2** model and maps
-its labels onto wardcat entity types. Use it as a **SpaCy alternative**, or
-**alongside** SpaCy (the engine merges both layers' spans; a checksum-validated
-regex span always wins an overlap).
-
-Install the extra (it pulls in torch), then enable the layer with `with_gliner()`.
-Entity types are **opt-in**, exactly like NER — enabling the layer alone detects
-nothing:
-
-```bash
-uv sync --extra gliner   # or: pip install "wardcat[gliner]"
-```
-
-```python
-from wardcat import Wardcat, Entity, Action
-
-guard = (
-    Wardcat(salt="s")
-    .with_gliner()                               # GLiNER layer on
-    .add_entity(Entity.PERSON, Action.HASH)
-    .add_entity(Entity.EMAIL,  Action.REDACT)
-)
-result = guard.scan("Contact John Smith at john@acme.com")
-
-# Run GLiNER *and* SpaCy together — both contribute spans:
-guard = Wardcat(salt="s").with_ner(language="en").with_gliner().add_entity(Entity.PERSON)
-
-# Discover what GLiNER can detect:
-Wardcat.supported_entities("gliner")   # {"PERSON", "EMAIL", "PHONE", "IBAN", ...}
-```
-
-`with_gliner()` accepts `model=` (default `fastino/gliner2-privacy-filter-PII-multi`),
-`threshold=` (drop spans below this confidence, default `0.5`), `quantize=`
-(smaller/faster, slightly lower quality), and `chunk_size=` (default `1500` — long
-inputs are split into overlapping windows so the model's fixed max length doesn't
-silently truncate a long document).
-
-> **Language note:** the default GLiNER model covers **EN/FR/ES/DE/IT/PT/NL — not
-> Turkish**. For Turkish text keep the regex layer (TC_ID/IBAN/… are checksum-validated)
-> and, for names, the LLM layer. GLiNER is a probabilistic layer, so its spans
-> never override a deterministic regex match.
-
 ### Catching every occurrence (value propagation)
 
-Model-based layers (GLiNER, SpaCy NER, the LLM) sometimes report a value that
+Model-based layers (SpaCy NER, the LLM) sometimes report a value that
 repeats in a document only **once**, which would leave the other occurrences
 unredacted. Enable `with_propagation()` so that once *any* layer detects a value,
 **every** whole-token occurrence of it is anonymized — with that value's entity
@@ -357,7 +310,7 @@ type and action:
 ```python
 guard = (
     Wardcat(salt="s")
-    .with_gliner()
+    .with_ner(language="en")
     .add_entity(Entity.PERSON, Action.REDACT)
     .with_propagation()          # a name caught once → redacted everywhere
 )
@@ -646,7 +599,7 @@ class Violation:
     end:         int          # end index in original text
     action:      Action       # WARN | HASH | REDACT | MASK
     replacement: str | None   # "[TYPE:16hex]" for hash, "[TYPE]" for redact, masked value for mask, None for warn
-    confidence:  float        # checksum 1.0 · structural regex 0.97 · fuzzy regex 0.90 · GLiNER ≤0.88 · NER/LLM 0.85
+    confidence:  float        # checksum 1.0 · structural regex 0.97 · fuzzy regex 0.90 · NER/LLM 0.85
 ```
 
 > **Degraded scans — check `warnings`.** If a detector layer cannot run (most

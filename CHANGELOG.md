@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`supported_languages()` — a language-selection hook.** Exposes the sorted ISO 639-1 codes wardcat ships a SpaCy NER model for (`de, en, es, fr, it, nl, pt, tr`), exported from the package root. wardcat deliberately does **not** bundle language *detection* (that would add an opinion and a dependency to a `pyyaml`+`httpx` core), so this supports the *detect-then-select* pattern: detect the language with your own tool, check `code in supported_languages()`, then pass it to `Wardcat(language=...)`. Documented under the NER layer guide.
 
+### Removed
+
+- **GLiNER zero-shot NER layer.** The `gliner` detection layer (the `with_gliner()` builder, the `wardcat[gliner]` extra, `gliner_detector` config, the `GLiNERDetector`, and the `"gliner"` layer selector) has been removed from the library. Detection is now regex + SpaCy NER + LLM (three layers). Ongoing GLiNER work continues on the `feature/gliner` branch and may return in a future release. **Migration:** replace `with_gliner()` with `with_ner(...)` (SpaCy) and/or the LLM layer, and drop the `wardcat[gliner]` extra.
+
 ---
 
 ## [0.6.0] — 2026-07-06

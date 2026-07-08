@@ -5,13 +5,12 @@ text for personally identifiable information (PII) *before* it reaches an LLM,
 and either warns about or replaces the sensitive data with salted SHA-256
 hashes.
 
-Four detection layers cooperate behind one interface:
+Three detection layers cooperate behind one interface:
 
 | Layer | What it does | Cost |
 |---|---|---|
 | **regex** | Deterministic structural PII — email, card (Luhn), IBAN (mod-97), TC ID, secrets… | free, exhaustive |
 | **ner** | SpaCy Named Entity Recognition — names, orgs, locations | fast, per-language model |
-| **gliner** | Zero-shot transformer NER (GLiNER2) — names + rich PII, one multilingual model | medium |
 | **llm** | On-prem LLM — contextual/semantic PII (GDPR Art.9, contextual secrets) | slow, strongest context |
 
 **Detection is opt-in:** a bare `Wardcat()` detects nothing — you enable the
@@ -35,7 +34,7 @@ print(result.sanitized_text)
 
 ## Highlights
 
-- **Hybrid detection** across four cooperating layers, merged with a
+- **Hybrid detection** across three cooperating layers, merged with a
   confidence-first overlap resolver (a deterministic regex span always wins).
 - **Checksum validation** — TC_ID, IBAN, and CREDIT_CARD are mathematically
   verified before flagging, eliminating false positives.
@@ -51,5 +50,5 @@ print(result.sanitized_text)
 
 - [Installation](installation.md) — base install and optional extras.
 - [Quickstart](quickstart.md) — the programmatic and YAML APIs.
-- [Detection layers](guide/layers.md) — regex, NER, GLiNER, and the LLM layer.
+- [Detection layers](guide/layers.md) — regex, NER, and the LLM layer.
 - [API reference](reference/wardcat.md) — generated from the source docstrings.

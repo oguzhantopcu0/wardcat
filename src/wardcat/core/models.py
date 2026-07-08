@@ -144,7 +144,7 @@ class Violation:
     - High-precision structural regex (email, JWT, IP, secrets, …): ``0.97``.
     - Fuzzy regex (``ADDRESS``, ``VEHICLE_PLATE``): ``0.90`` — a distinctive but
       ambiguous, heuristic match.
-    - GLiNER: ``≤ 0.88``. NER (SpaCy) / LLM: ``0.85`` — model-based.
+    - NER (SpaCy) / LLM: ``0.85`` — model-based.
 
     The engine resolves overlaps highest-confidence-first, so a regex span always
     beats a model guess, and in adjudication every regex span is protected while

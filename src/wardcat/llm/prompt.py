@@ -116,7 +116,10 @@ OUTPUT RULES
 
 DO NOT extract:
 - Numbers that are NOT identifiers (prices, percentages, quantities, dates, order IDs)
-- Generic words, city names, or company names unless they are part of a personal name
+- Generic words or city names, unless they are part of a personal name
+- A company, institution, or city name as a PERSON — those are never person names.
+  (A company/institution IS extractable as ORG, but only when ORG appears in the
+  requested entity types above; if ORG is not requested, do not extract it at all.)
 - Common Turkish or English nouns/adjectives — these are NOT person names:
   "hedef", "müşteri", "destek", "proje", "sistem", "ekip", "kullanıcı",
   "yönetici", "çeyrek", "dönem", "rapor", "görev", "kayıt", "konu", "durum"

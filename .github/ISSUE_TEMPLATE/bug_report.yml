@@ -41,4 +41,4 @@ body:
     attributes:
       label: Which detection layer(s)?
       multiple: true
-      options: [regex, ner, gliner, llm, "not sure"]
+      options: [regex, ner, llm, "not sure"]

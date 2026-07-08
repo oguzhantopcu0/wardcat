@@ -72,17 +72,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "SPECIAL_CATEGORY": {"enabled": False, "action": "redact"},
         },
     },
-    # ── GLiNER detector configuration ─────────────────────────────────────
-    # Zero-shot transformer NER (optional; needs the ``gliner`` extra). Off by
-    # default; enable with Wardcat().with_gliner(). Like NER, the entity types
-    # it scans for are opt-in via add_entity(...).
-    "gliner_detector": {
-        "enabled": False,
-        "model": "fastino/gliner2-privacy-filter-PII-multi",
-        "threshold": 0.5,  # drop spans below this confidence
-        "quantize": False,  # load a quantized model (less memory, slightly lower quality)
-        "chunk_size": 1500,  # split longer input into windows (GLiNER truncates long text)
-    },
     # NER/regex entities are opt-in: nothing is enabled by default.
     # Add what you need with Wardcat().add_entity(...) / add_entities(...),
     # or enable everything with add_entity(Entity.ALL, action=...).
@@ -102,7 +91,6 @@ _KNOWN_CONFIG_KEYS = frozenset(
         "max_text_bytes",
         "custom_patterns",
         "llm_detector",
-        "gliner_detector",
         "entities",
         "allowlist",
         "denylist",
@@ -188,7 +176,6 @@ def validate_config(config: dict[str, Any]) -> None:
     _validate_allowlist(config.get("allowlist", []))
     _validate_denylist(config.get("denylist", []))
     _validate_llm_detector(config.get("llm_detector", {}))
-    _validate_gliner_detector(config.get("gliner_detector", {}))
 
 
 def _warn_unknown_keys(config: dict[str, Any]) -> None:
@@ -299,26 +286,6 @@ def _validate_llm_detector(llm_cfg: dict[str, Any]) -> None:
         raise ConfigError(f"Invalid llm_detector.timeout: {timeout!r} (must be a positive number)")
 
     _validate_entity_map(llm_cfg.get("entities", {}), "llm_detector.entities")
-
-
-def _validate_gliner_detector(gliner_cfg: dict[str, Any]) -> None:
-    if not isinstance(gliner_cfg, dict):
-        raise ConfigError(f"'gliner_detector' must be a dict, got {type(gliner_cfg).__name__}.")
-    # Absent section is valid (the detector is off and falls back to defaults);
-    # only an explicitly bad value is rejected.
-    model = gliner_cfg.get("model", "fastino/gliner2-privacy-filter-PII-multi")
-    if not isinstance(model, str) or not model:
-        raise ConfigError("gliner_detector.model must be a non-empty string.")
-    threshold = gliner_cfg.get("threshold", 0.5)
-    if not isinstance(threshold, (int, float)) or not (0.0 <= threshold <= 1.0):
-        raise ConfigError(
-            f"Invalid gliner_detector.threshold: {threshold!r} (must be a number in [0, 1])."
-        )
-    chunk_size = gliner_cfg.get("chunk_size", 1500)
-    if not isinstance(chunk_size, int) or chunk_size <= 0:
-        raise ConfigError(
-            f"Invalid gliner_detector.chunk_size: {chunk_size!r} (must be a positive integer)."
-        )
 
 
 # ---------------------------------------------------------------------------

@@ -29,7 +29,7 @@ Model-based layers sometimes report a repeated value only once. `with_propagatio
 anonymizes **every** whole-token occurrence once any layer detects a value:
 
 ```python
-guard = Wardcat(salt="s").with_gliner().add_entity("PERSON").with_propagation()
+guard = Wardcat(salt="s").with_ner(language="en").add_entity("PERSON").with_propagation()
 ```
 
 Off by default (it can over-redact); only exact, token-bounded matches at least
@@ -65,12 +65,6 @@ propagate_min_length: 3
 entities:
   CREDIT_CARD: { enabled: true, action: hash }
   EMAIL:       { enabled: true, action: warn }
-
-gliner_detector:
-  enabled: false
-  model: "fastino/gliner2-privacy-filter-PII-multi"
-  threshold: 0.5
-  chunk_size: 1500
 
 llm_detector:
   enabled: false

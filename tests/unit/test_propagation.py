@@ -1,6 +1,6 @@
 """Value propagation: once any layer detects a value, redact every occurrence.
 
-Closes the gap where a model-based layer (GLiNER/NER/LLM) reports a repeated
+Closes the gap where a model-based layer (NER/LLM) reports a repeated
 value only once. Tested at the engine level with a fixed fake detector, plus
 the Wardcat config wiring.
 """

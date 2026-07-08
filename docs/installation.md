@@ -12,8 +12,7 @@ layers are pulled in as extras.
     cd wardcat
     uv sync                 # base: regex + Ollama/OpenAI-compatible LLM backend
     uv sync --extra ner     # + SpaCy NER (PERSON, ORG, ADDRESS)
-    uv sync --extra gliner  # + GLiNER zero-shot NER (pulls in torch)
-    uv sync --extra all     # everything: SpaCy + GLiNER + Transformers
+    uv sync --extra all     # everything: SpaCy + Transformers
     ```
 
 === "pip (from Git)"
@@ -30,7 +29,6 @@ layers are pulled in as extras.
 |---|---|---|
 | *(base)* | regex detection + Ollama / OpenAI-compatible LLM backend | regex, llm (HTTP) |
 | `ner` | SpaCy | ner |
-| `gliner` | `gliner2[local]` (torch) + tokenizer deps | gliner |
 | `transformers` | HuggingFace Transformers + torch | llm (in-process) |
 | `all` | everything above | all |
 

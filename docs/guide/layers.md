@@ -1,7 +1,7 @@
 # Detection layers
 
-An entity can be detected by one or more of **four** layers — `regex`,
-`ner`, `gliner`, and `llm`. When you enable an entity it runs on every layer that
+An entity can be detected by one or more of **three** layers — `regex`,
+`ner`, and `llm`. When you enable an entity it runs on every layer that
 supports it; pass `layers=[...]` to target one:
 
 ```python
@@ -11,15 +11,14 @@ guard.add_entity("SPECIAL_CATEGORY", action="redact", layers=["llm"])
 
 The engine merges every layer's spans and resolves overlaps **confidence-first**.
 Regex spans are tiered by certainty — checksum `1.0`, high-precision `0.97`,
-fuzzy `0.90` — and all sit above the model layers (GLiNER `≤0.88`, NER/LLM
-`0.85`), so a regex match always wins an overlap and is never dropped by
-adjudication.
+fuzzy `0.90` — and all sit above the model layers (NER/LLM `0.85`), so a regex
+match always wins an overlap and is never dropped by adjudication.
 
 Discover what each layer can detect:
 
 ```python
 Wardcat.supported_entities()          # every known type
-Wardcat.supported_entities("gliner")  # {"PERSON", "EMAIL", "PHONE", "IBAN", ...}
+Wardcat.supported_entities("ner")     # {"PERSON", "ORG", "ADDRESS"}
 ```
 
 ## Regex
@@ -66,25 +65,6 @@ else:
 
 For genuinely mixed-language text, either pass a list (`language=["en", "de"]`,
 one model each) or lean on the LLM layer, which needs no per-language model.
-
-## GLiNER (`gliner`)
-
-A lightweight zero-shot transformer NER (GLiNER2) — a middle ground between
-SpaCy and the LLM. One multilingual model covers EN/FR/ES/DE/IT/PT/NL and a rich
-PII taxonomy. Runs **as a SpaCy alternative or alongside it**. Long inputs are
-chunked automatically so the model's fixed max length doesn't truncate them.
-
-```python
-guard = (
-    Wardcat(salt="s")
-    .with_gliner()                 # needs: pip install "wardcat[gliner]"
-    .add_entity("PERSON").add_entity("EMAIL")
-)
-```
-
-!!! note "Turkish"
-    The default GLiNER model is **not** trained on Turkish — keep the regex/LLM
-    layers for Turkish text.
 
 ## On-prem LLM (`llm`)
 

@@ -19,7 +19,7 @@ _MAX_TEXT_BYTES = 500_000
 # In adjudication, spans at or above this confidence are always kept regardless
 # of the LLM verdict. It is set to the lowest regex tier (fuzzy = 0.90) so that
 # ALL regex layers — including a fuzzy ADDRESS match — are protected, while the
-# model layers (GLiNER ≤ 0.88, NER/LLM 0.85) are candidates the LLM may
+# model layers (NER/LLM 0.85) are candidates the LLM may
 # drop/relabel. For a PII tool, never letting the LLM drop a deterministic match
 # is the safe default: over-redaction beats a leak.
 _ADJUDICATION_KEEP_CONFIDENCE = 0.90
@@ -39,7 +39,7 @@ class DetectionEngine:
         # drop (one combined detection + adjudication call). Every regex span
         # (confidence >= _ADJUDICATION_KEEP_CONFIDENCE) is always kept regardless
         # of the LLM — a weak adjudicator that fails to re-detect a real match
-        # would otherwise leak it. Only the model layers (GLiNER/NER/LLM) are
+        # would otherwise leak it. Only the model layers (NER/LLM) are
         # candidates the LLM may drop/relabel.
         # Detectors are addressed only through BaseDetector — the engine never
         # imports a concrete detector. Adjudicators advertise themselves via the
@@ -56,7 +56,7 @@ class DetectionEngine:
         self._denylist: list[dict[str, str]] = config.get("denylist", [])
         # Value propagation: once any layer detects a value, redact every other
         # whole-token occurrence of that exact value too. Closes the gap where a
-        # model-based layer (GLiNER/NER/LLM) reports a repeated value only once.
+        # model-based layer (NER/LLM) reports a repeated value only once.
         # Opt-in — it can over-redact, so short values are skipped and matches
         # must be token-bounded.
         self._propagate: bool = bool(config.get("propagate_matches", False))

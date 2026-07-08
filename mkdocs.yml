@@ -1,5 +1,5 @@
 site_name: wardcat
-site_description: PII detection and anonymization for LLM inputs — hybrid regex + NER + GLiNER + on-prem LLM.
+site_description: PII detection and anonymization for LLM inputs — hybrid regex + NER + on-prem LLM.
 repo_url: https://github.com/oguzhantopcu0/wardcat
 repo_name: oguzhantopcu0/wardcat
 edit_uri: edit/main/docs/
