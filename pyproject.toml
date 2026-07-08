@@ -1,6 +1,6 @@
 [project]
 name = "wardcat"
-version = "0.6.0"
+version = "0.7.0"
 description = "PII detection and anonymization for LLM inputs — regex, NER and on-prem LLM hybrid engine"
 readme = "README.md"
 requires-python = ">=3.11"

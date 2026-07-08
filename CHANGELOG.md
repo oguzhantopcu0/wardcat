@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-07-09
+
 ### Added
 
 - **`supported_languages()` — a language-selection hook.** Exposes the sorted ISO 639-1 codes wardcat ships a SpaCy NER model for (`de, en, es, fr, it, nl, pt, tr`), exported from the package root. wardcat deliberately does **not** bundle language *detection* (that would add an opinion and a dependency to a `pyyaml`+`httpx` core), so this supports the *detect-then-select* pattern: detect the language with your own tool, check `code in supported_languages()`, then pass it to `Wardcat().with_ner(language=...)`. Documented under the NER layer guide.
@@ -187,7 +189,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
-[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/oguzhantopcu0/wardcat/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/oguzhantopcu0/wardcat/compare/v0.5.0...v0.6.0
 [0.3.0]: https://github.com/oguzhantopcu0/wardcat/compare/v0.2.0b1...v0.3.0
 [0.2.0b1]: https://github.com/oguzhantopcu0/wardcat/releases/tag/v0.2.0b1
