@@ -40,9 +40,7 @@ def test_register_and_create_custom_backend():
 
 def test_custom_backend_works_end_to_end():
     register_backend("echo_e2e", lambda cfg: _EchoBackend())
-    guard = (
-        Wardcat(salt="s", use_ner=False).with_llm(backend="echo_e2e").add_entity("EMAIL", "warn")
-    )
+    guard = Wardcat(salt="s").with_llm(backend="echo_e2e").add_entity("EMAIL", "warn")
     assert guard._config["llm_detector"]["backend"] == "echo_e2e"
     # Regex still works alongside the custom LLM backend (no crash on scan).
     assert guard.scan("mail a@b.com").sanitized_text == "mail a@b.com"

@@ -8,7 +8,7 @@ from wardcat import Wardcat, turkish_entities
 @pytest.fixture
 def guard():
     # NER disabled → tests run even without SpaCy installed
-    return Wardcat(use_ner=False)
+    return Wardcat()
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +134,7 @@ def test_add_entities_returns_self_for_chaining(guard):
 
 
 def test_add_entities_end_to_end_detection():
-    guard = Wardcat(use_ner=False)
+    guard = Wardcat()
     guard.add_entities(["EMAIL", "CREDIT_CARD"], action="redact")
     result = guard.scan("Mail: john@x.com kart 4111 1111 1111 1111")
     assert "[EMAIL]" in result.sanitized_text
@@ -143,7 +143,7 @@ def test_add_entities_end_to_end_detection():
 
 def test_add_entity_llm_only_does_not_enable_regex_scan():
     """An llm-only entity must not be detected by the regex layer."""
-    guard = Wardcat(use_ner=False)
+    guard = Wardcat()
     guard.add_entity("EMAIL", action="redact", layers=["llm"])
     # EMAIL only assigned to llm; regex layer should not flag it
     result = guard.scan("Mail: john@x.com")

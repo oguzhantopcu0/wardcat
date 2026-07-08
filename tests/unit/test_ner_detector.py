@@ -247,7 +247,7 @@ class TestTurkishNER:
         tr_model = next(m for m in sorted(_INSTALLED) if m.startswith("tr_"))
         with caplog.at_level(logging.INFO, logger="wardcat.guard"):
             # Detection is opt-in: a NER entity must be enabled for the model to load.
-            Wardcat(use_ner=True, spacy_model=tr_model).add_entity("PERSON")
+            Wardcat().with_ner(spacy_model=tr_model).add_entity("PERSON")
         loaded = [r.message for r in caplog.records if "SpaCy model loaded" in r.message]
         assert loaded, "Expected 'SpaCy model loaded' info log"
         assert any("tr_" in msg for msg in loaded), (

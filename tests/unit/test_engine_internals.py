@@ -305,7 +305,7 @@ class TestViolationOrdering:
     def test_violation_start_positions_ascending(self):
         from wardcat import Wardcat
 
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         text = "a@a.com 0532 111 22 33 b@b.com"
         result = guard.scan(text)
         starts = [v.start for v in result.violations]

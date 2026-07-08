@@ -40,8 +40,8 @@ resolve and download it via the `language=` builder:
 ```python
 from wardcat import Wardcat, Language
 
-guard = Wardcat(language=Language.EN)                   # → en_core_web_sm
-guard = Wardcat(language=Language.TR, spacy_size="md")  # → tr_core_news_md
+guard = Wardcat().with_ner(language=Language.EN)                   # → en_core_web_sm
+guard = Wardcat().with_ner(language=Language.TR, spacy_size="md")  # → tr_core_news_md
 ```
 
 Or download a model yourself:

@@ -120,7 +120,7 @@ class TestEntityGroupsWithGuard:
     def test_configure_uk_group(self):
         from wardcat import Wardcat
 
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         for entity in uk_entities():
             guard.add_entity(entity, action="warn")
         result = guard.scan("Passport: AB1234567")
@@ -129,6 +129,6 @@ class TestEntityGroupsWithGuard:
     def test_configure_network_group(self):
         from wardcat import Wardcat, network_entities
 
-        guard = Wardcat(use_ner=False).add_entities(network_entities())
+        guard = Wardcat().add_entities(network_entities())
         result = guard.scan("Server IP: 192.168.1.100")
         assert any(v.entity_type == "IP_ADDRESS" for v in result.violations)

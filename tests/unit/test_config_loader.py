@@ -87,7 +87,7 @@ def test_max_text_bytes_enforced_by_engine(tmp_path: Path):
     cfg = {"max_text_bytes": 10}
     cfg_file = tmp_path / "policy.yaml"
     cfg_file.write_text(yaml.dump(cfg))
-    guard = Wardcat(config_path=str(cfg_file), use_ner=False)
+    guard = Wardcat(config_path=str(cfg_file))
     with pytest.raises(ValueError, match="too large"):
         guard.scan("x" * 11)
 
@@ -166,7 +166,7 @@ def test_custom_patterns_detected_in_scan(tmp_path: Path):
     }
     cfg_file = tmp_path / "policy.yaml"
     cfg_file.write_text(yaml.dump(override))
-    guard = Wardcat(config_path=str(cfg_file), use_ner=False)
+    guard = Wardcat(config_path=str(cfg_file))
     result = guard.scan("employee EMP-123456 logged in")
     assert any(v.entity_type == "EMPLOYEE_ID" for v in result.violations)
 

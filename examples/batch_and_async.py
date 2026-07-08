@@ -19,7 +19,7 @@ TEXTS = [
 
 def _build_guard() -> Wardcat:
     # Detection is opt-in: enable the entities you care about.
-    return Wardcat(use_ner=False, salt="example-salt").add_entities(
+    return Wardcat(salt="example-salt").add_entities(
         {"EMAIL": "warn", "CREDIT_CARD": "hash", "IBAN": "hash"}
     )
 

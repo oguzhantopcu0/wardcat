@@ -16,16 +16,20 @@ def test_bare_guard_has_ner_off():
     assert not guard._config.get("spacy_models")
 
 
-def test_use_ner_true_without_model_raises():
-    with pytest.raises(ConfigError, match="requires a SpaCy model"):
-        Wardcat(salt="s", use_ner=True)
+def test_yaml_use_ner_without_model_raises(tmp_path):
+    # A YAML config may switch NER on, but must then name a model (no default).
+    import yaml
+
+    cfg_file = tmp_path / "policy.yaml"
+    cfg_file.write_text(yaml.dump({"use_ner": True}))
+    with pytest.raises(ConfigError, match="no SpaCy model"):
+        Wardcat(config_path=str(cfg_file))
 
 
-def test_use_ner_false_with_language_stays_off_but_resolves_model():
-    # Explicit use_ner=False is respected even when a language is given;
-    # the model is still resolved into config (no download, NER not built).
-    guard = Wardcat(salt="s", language="de", spacy_size="md", use_ner=False)
-    assert guard._config["use_ner"] is False
+def test_with_ner_language_resolves_model_and_enables():
+    # with_ner resolves the language to a model and turns NER on.
+    guard = Wardcat(salt="s").with_ner(language="de", spacy_size="md", auto_download=False)
+    assert guard._config["use_ner"] is True
     assert guard._config["spacy_models"] == ["de_core_news_md"]
 
 
@@ -40,19 +44,19 @@ def test_language_enum_is_iso_code():
 
 
 def test_language_enum_resolves_like_string():
-    g_enum = Wardcat(salt="s", language=Language.DE, use_ner=False)
-    g_str = Wardcat(salt="s", language="de", use_ner=False)
+    g_enum = Wardcat(salt="s").with_ner(language=Language.DE)
+    g_str = Wardcat(salt="s").with_ner(language="de")
     assert g_enum._config["spacy_models"] == g_str._config["spacy_models"]
 
 
 def test_language_list_with_enums_multilingual():
-    guard = Wardcat(salt="s", language=[Language.DE, Language.FR], use_ner=False)
+    guard = Wardcat(salt="s").with_ner(language=[Language.DE, Language.FR])
     assert guard._config["spacy_models"] == ["de_core_news_sm", "fr_core_news_sm"]
 
 
 def test_unsupported_language_raises():
     with pytest.raises(UnsupportedLanguageError):
-        Wardcat(salt="s", language="zz", use_ner=False)
+        Wardcat(salt="s").with_ner(language="zz")
 
 
 # ---------------------------------------------------------------------------
@@ -61,25 +65,23 @@ def test_unsupported_language_raises():
 
 
 def test_explicit_model_implies_ner_on():
-    guard = Wardcat(salt="s", spacy_model="en_core_web_sm", spacy_auto_download=False)
+    guard = Wardcat(salt="s").with_ner(spacy_model="en_core_web_sm", auto_download=False)
     assert guard._config["use_ner"] is True
     assert guard._config["spacy_models"] == ["en_core_web_sm"]
 
 
 def test_multiple_explicit_models():
-    guard = Wardcat(
-        salt="s",
+    guard = Wardcat(salt="s").with_ner(
         spacy_model=["en_core_web_sm", "de_core_news_sm"],
-        use_ner=False,
+        auto_download=False,
     )
     assert guard._config["spacy_models"] == ["en_core_web_sm", "de_core_news_sm"]
 
 
 def test_explicit_models_deduped():
-    guard = Wardcat(
-        salt="s",
+    guard = Wardcat(salt="s").with_ner(
         spacy_model=["en_core_web_sm", "en_core_web_sm"],
-        use_ner=False,
+        auto_download=False,
     )
     assert guard._config["spacy_models"] == ["en_core_web_sm"]
 

@@ -110,14 +110,14 @@ class TestLoadConfig:
 class TestProgrammaticAPIEdgeCases:
     def test_configure_unknown_entity_type(self):
         """Unknown entity type should be configurable (no effect without regex/NER)."""
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         guard.add_entity("MY_CUSTOM_PII", action="warn")
         # should not raise, scan should work
         result = guard.scan("bazı metin")
         assert result is not None
 
     def test_disable_all_entities(self):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         for entity in [
             "CREDIT_CARD",
             "EMAIL",
@@ -134,27 +134,27 @@ class TestProgrammaticAPIEdgeCases:
         assert result.is_clean
 
     def test_add_entity_returns_self(self):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         returned = guard.add_entity("EMAIL", action="warn")
         assert returned is guard
 
     def test_set_salt_returns_self(self):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         assert guard.set_salt("yeni-tuz") is guard
 
     def test_salt_in_constructor_overrides_yaml(self, tmp_path: Path):
         f = tmp_path / "cfg.yaml"
         f.write_text(yaml.dump({"salt": "yaml-tuz"}))
-        guard = Wardcat(config_path=f, salt="constructor-tuz", use_ner=False)
+        guard = Wardcat(config_path=f, salt="constructor-tuz")
         assert guard._config["salt"] == "constructor-tuz"
 
     def test_set_salt_empty_string(self):
-        guard = Wardcat(use_ner=False, salt="mevcut")
+        guard = Wardcat(salt="mevcut")
         guard.set_salt("")
         assert guard._config["salt"] == ""
 
     def test_readd_entity_midstream(self):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         guard.add_entity("EMAIL", action="warn")
         r1 = guard.scan("a@b.com")
         guard.add_entity("EMAIL", action="hash")
@@ -182,7 +182,7 @@ class TestEntityEnablement:
         ],
     )
     def test_disabled_entity_not_detected(self, entity, text):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         guard.remove_entity(entity)
         result = guard.scan(text)
         assert not any(v.entity_type == entity for v in result.violations), (
@@ -198,7 +198,7 @@ class TestEntityEnablement:
         ],
     )
     def test_re_enabling_entity_works(self, entity, text):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         guard.remove_entity(entity)
         guard.add_entity(entity, action="warn")
         result = guard.scan(text)
@@ -216,7 +216,7 @@ class TestYAMLAndProgrammaticCombined:
     def test_yaml_then_programmatic_override(self, tmp_path: Path):
         f = tmp_path / "cfg.yaml"
         f.write_text(yaml.dump({"entities": {"EMAIL": {"enabled": True, "action": "warn"}}}))
-        guard = Wardcat(config_path=f, use_ner=False)
+        guard = Wardcat(config_path=f)
         guard.add_entity("EMAIL", action="hash")  # override
 
         result = guard.scan("a@b.com")
@@ -228,11 +228,11 @@ class TestYAMLAndProgrammaticCombined:
     def test_yaml_salt_and_programmatic_entity(self, tmp_path: Path):
         f = tmp_path / "cfg.yaml"
         f.write_text(yaml.dump({"salt": "yaml-tuz"}))
-        guard = Wardcat(config_path=f, use_ner=False)
+        guard = Wardcat(config_path=f)
         guard.add_entity("TC_ID", action="hash")
 
         r1 = guard.scan("TC: 12345678950")
-        guard2 = Wardcat(config_path=f, salt="farkli-tuz", use_ner=False)
+        guard2 = Wardcat(config_path=f, salt="farkli-tuz")
         guard2.add_entity("TC_ID", action="hash")
         r2 = guard2.scan("TC: 12345678950")
 

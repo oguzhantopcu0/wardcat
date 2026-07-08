@@ -104,41 +104,33 @@ class Wardcat(EntityPolicyMixin):
         guard = Wardcat(config_path="config/my_policy.yaml")
         result = guard.scan(text)
 
-    Configuration is explicit: pass constructor arguments or a YAML ``config_path``.
-    The library does **not** read environment variables — read any secrets in your
-    own application and hand them to the constructor.
-
-    LLM detector — configured with :meth:`with_llm` (or a YAML ``config_path``),
-    not constructor arguments::
-
-        guard = Wardcat(salt="s").with_llm(model="llama3.1:8b")
-        result = guard.scan(text)
-
-    NER requires an explicit model — wardcat ships no default. Choose one in a
-    documented way via ``language=`` (recommended) or ``spacy_model=``::
+    Configuration is explicit. The constructor takes only ``salt`` and an optional
+    YAML ``config_path``; every detection layer is configured with a fluent
+    builder — :meth:`with_ner` and :meth:`with_llm` — or in the YAML file. The
+    library does **not** read environment variables: read any secrets in your own
+    application and hand them to the constructor. Builders are chainable and their
+    order does not matter — the final configuration is what counts::
 
         from wardcat import Wardcat, Language
 
-        guard = Wardcat(language=Language.DE, spacy_size="md")   # → de_core_news_md
-        guard = Wardcat(language=[Language.DE, Language.FR])     # one model per language
-        guard = Wardcat(spacy_model="en_core_web_sm")           # explicit package name
-        guard = Wardcat(spacy_model=["en_core_web_sm", "de_core_news_sm"])  # multiple
+        # LLM layer
+        guard = Wardcat(salt="s").with_llm(model="llama3.1:8b")
+
+        # NER layer — needs an explicit model (wardcat ships no default). Choose
+        # one via language= (recommended) or spacy_model=:
+        guard = Wardcat(salt="s").with_ner(language=Language.DE, spacy_size="md")
+        guard = Wardcat(salt="s").with_ner(language=[Language.DE, Language.FR])
+        guard = Wardcat(salt="s").with_ner(spacy_model=["en_core_web_sm", "de_core_news_sm"])
         # Supported languages: en, de, fr, es, it, nl, pt, tr; sizes sm/md/lg/trf.
-        # A named-but-missing model is auto-downloaded (spacy_auto_download=False to disable).
-        # ``use_ner=True`` without a model (or language) raises ConfigError.
-        # For mixed-language text without extra models, use the LLM layer (use_llm=True),
-        # whose prompt is multilingual.
+        # A named-but-missing model is auto-downloaded (auto_download=False to disable).
+        # For mixed-language text without extra models, use the LLM layer, whose
+        # prompt is multilingual.
     """
 
     def __init__(
         self,
         config_path: str | Path | None = None,
         salt: str = "",
-        use_ner: bool | None = None,  # None → inherit config (off unless YAML/model says on)
-        spacy_model: str | list[str] | None = None,  # explicit SpaCy model name(s)
-        language: str | Language | list[str | Language] | None = None,  # NER by language
-        spacy_size: str = "sm",  # NER: model size tier when language is given (sm/md/lg/trf)
-        spacy_auto_download: bool | None = None,  # download the SpaCy model if missing
     ) -> None:
         self._config = load_config(config_path)
 
@@ -146,52 +138,26 @@ class Wardcat(EntityPolicyMixin):
         if salt:
             self._config["salt"] = salt
 
-        # ── NER model selection ────────────────────────────────────────────
-        # wardcat ships no default SpaCy model: NER requires an explicit choice,
-        # made in a documented way via `language=` (recommended, supports a list
-        # for multilingual NER) or `spacy_model=` (explicit package name(s)).
-        # Specifying either resolves the model(s) and implies NER on (unless the
-        # caller explicitly passed use_ner=False); a named-but-missing model is
-        # auto-downloaded.
-        specified_model = language is not None or spacy_model is not None
-        if language is not None:
-            models = self._resolve_language_models(language, spacy_size)
-            self._config["spacy_models"] = models
-            self._config["spacy_model"] = models[0]
-            if spacy_auto_download is None:
-                spacy_auto_download = True
-        if spacy_model is not None:
-            names = [spacy_model] if isinstance(spacy_model, str) else list(spacy_model)
-            names = list(dict.fromkeys(names))  # dedupe, preserve order
-            if not names:
-                raise ConfigError("spacy_model is empty — pass at least one model name.")
-            self._config["spacy_models"] = names
-            self._config["spacy_model"] = names[0]
-            if spacy_auto_download is None:
-                spacy_auto_download = True
+        # Detection layers are configured with the fluent builders — with_ner()
+        # and with_llm() — or a YAML config_path, never constructor arguments.
+        # Ensure the LLM sub-config exists for the YAML/builder path.
+        self._config.setdefault("llm_detector", {})
 
-        # Effective NER flag: an explicit constructor value wins; otherwise NER is
-        # on when a model/language was specified, else it inherits the config
-        # (YAML/default, which is off).
-        if use_ner is None:
-            ner_on = specified_model or bool(self._config.get("use_ner", False))
-        else:
-            ner_on = use_ner
-        self._config["use_ner"] = ner_on
-        if spacy_auto_download:
-            self._config["spacy_auto_download"] = True
-
-        # NER on but no model resolved (constructor or YAML) → hard error.
-        if ner_on and not (self._config.get("spacy_models") or self._config.get("spacy_model")):
+        # A YAML config may still switch NER on; it must then name a model, since
+        # wardcat ships no default. (The builder path always sets one.)
+        if self._config.get("use_ner") and not (
+            self._config.get("spacy_models") or self._config.get("spacy_model")
+        ):
             raise ConfigError(
-                "use_ner=True requires a SpaCy model, but none was given. "
-                "Pass language=... (e.g. Language.EN, or a list for multilingual NER) "
-                "or spacy_model=...; wardcat ships no default model."
+                "use_ner is on but no SpaCy model was given. Set spacy_model in the "
+                "YAML config, or configure NER with with_ner(language=...) / "
+                "with_ner(spacy_model=...); wardcat ships no default model."
             )
 
-        # The LLM detector is configured via with_llm() or a YAML config_path —
-        # not constructor arguments. Ensure the sub-config exists for YAML/builder use.
-        self._config.setdefault("llm_detector", {})
+        # Entities whose enabled layer is missing — warned about once, lazily, at
+        # scan time (see _warn_orphan_entities). Chains configure layers and
+        # entities in any order, so an init/rebuild-time check would false-fire.
+        self._orphan_warned: set[str] = set()
 
         # Warn at most once when a hash action is active without a salt. Checked
         # in _rebuild() too, since entities are opt-in and usually added after init.
@@ -205,6 +171,7 @@ class Wardcat(EntityPolicyMixin):
 
     def scan(self, text: str) -> ScanResult:
         """Scan text and return a ScanResult."""
+        self._warn_orphan_entities()
         return self._engine.scan(text)
 
     async def scan_async(self, text: str) -> ScanResult:
@@ -214,6 +181,7 @@ class Wardcat(EntityPolicyMixin):
         the LLM detector (if enabled) uses ``httpx.AsyncClient`` natively,
         so multiple concurrent calls do not block each other.
         """
+        self._warn_orphan_entities()
         return await self._engine.scan_async(text)
 
     def scan_batch(self, texts: list[str], *, max_workers: int | None = None) -> list[ScanResult]:
@@ -540,6 +508,44 @@ class Wardcat(EntityPolicyMixin):
                 "No hash salt set — using unsalted hashes (identical PII always yields the "
                 "same hash, leaving them open to rainbow-table attacks). Pass salt=... or set "
                 "the WARDCAT_SALT environment variable in production."
+            )
+
+    def _warn_orphan_entities(self) -> None:
+        """Warn (once each) about entities enabled with no active layer to detect them.
+
+        Enabling an entity whose supporting layer is off is a silent no-op — e.g.
+        ``add_entity(Entity.PERSON)`` (a NER/LLM type) with neither ``with_ner()``
+        nor ``with_llm()`` configured. Checked lazily at scan time (not during a
+        build) so a builder chain can configure entities and layers in any order
+        without false warnings.
+
+        Intent is read from the shared entity map (what ``add_entity`` turns on);
+        the LLM layer's default entity map is not a user signal, so it is not
+        consulted here.
+        """
+        intended = {e for e, cfg in self._config.get("entities", {}).items() if cfg.get("enabled")}
+
+        covered: set[str] = set()
+        for detector in self._detectors:
+            covered |= getattr(detector, "enabled_entities", set())
+
+        orphans = intended - covered - self._orphan_warned
+        if not orphans:
+            return
+        self._orphan_warned |= orphans
+        for entity in sorted(orphans):
+            hint = (
+                "call with_llm()"
+                if entity not in REGEX_ENTITIES and entity not in NER_ENTITIES
+                else "call with_ner() and/or with_llm()"
+            )
+            logger.warning(
+                "Entity %r is enabled but no active layer detects it — it will never "
+                "be flagged. Enable a layer that supports it (%s), or target a layer "
+                "explicitly with add_entity(%r, layers=[...]).",
+                entity,
+                hint,
+                entity,
             )
 
     def _rebuild(self) -> None:

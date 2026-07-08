@@ -16,7 +16,7 @@
 salt: ""
 
 # NER varsayılan olarak KAPALIDIR. Açmak için bir model/dil belirtmelisiniz —
-# kod tarafında Wardcat(language=Language.EN) ya da Wardcat(spacy_model="en_core_web_sm"),
+# kod tarafında Wardcat().with_ner(language=Language.EN) ya da Wardcat().with_ner(spacy_model="en_core_web_sm"),
 # veya bu dosyada hem use_ner: true hem de bir spacy_model verin:
 # use_ner: true
 # spacy_model: "en_core_web_sm"   # tek model

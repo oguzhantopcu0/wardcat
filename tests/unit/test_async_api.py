@@ -84,20 +84,20 @@ class TestScanAsyncActions:
     """Test that hash/redact/mask actions work correctly through the async path."""
 
     def test_hash_action_in_async(self):
-        guard = Wardcat(use_ner=False, salt="s")
+        guard = Wardcat(salt="s")
         guard.add_entity("EMAIL", action="hash")
         result = asyncio.run(guard.scan_async("a@b.com"))
         assert "a@b.com" not in result.sanitized_text
         assert "[EMAIL:" in result.sanitized_text
 
     def test_redact_action_in_async(self):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         guard.add_entity("EMAIL", action="redact")
         result = asyncio.run(guard.scan_async("a@b.com"))
         assert result.sanitized_text == "[EMAIL]"
 
     def test_mask_action_in_async(self):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         guard.add_entity("EMAIL", action="mask")
         result = asyncio.run(guard.scan_async("a@b.com"))
         replacement = result.violations[0].replacement
@@ -105,14 +105,14 @@ class TestScanAsyncActions:
         assert "*" in replacement
 
     def test_allowlist_in_async(self):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         guard.add_entity("EMAIL", action="warn")
         guard.add_allowlist(["a@b.com"])
         result = asyncio.run(guard.scan_async("a@b.com"))
         assert result.is_clean
 
     def test_denylist_in_async(self):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         guard.add_entity("PERSON", action="warn")
         guard.add_denylist([{"value": "Jane Doe", "entity_type": "PERSON"}])
         result = asyncio.run(guard.scan_async("Hello Jane Doe"))
@@ -128,6 +128,6 @@ class TestScanAsyncActions:
             yaml.dump({"max_text_bytes": 10}, f)
             cfg_path = f.name
 
-        guard = Wardcat(config_path=cfg_path, use_ner=False)
+        guard = Wardcat(config_path=cfg_path)
         with pytest.raises(ValueError, match="too large"):
             asyncio.run(guard.scan_async("x" * 11))

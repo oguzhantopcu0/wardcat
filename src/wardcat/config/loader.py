@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_CONFIG: dict[str, Any] = {
     "salt": "",
     # NER is off by default and ships no default model — enable it explicitly via
-    # Wardcat(language=...) / Wardcat(spacy_model=...) or a YAML use_ner + spacy_model.
+    # Wardcat().with_ner(language=...) / Wardcat().with_ner(spacy_model=...) or a YAML use_ner + spacy_model.
     "use_ner": False,
     "scan_batch_workers": 4,  # thread pool size for scan_batch()
     "max_text_bytes": 500_000,  # maximum input size in bytes

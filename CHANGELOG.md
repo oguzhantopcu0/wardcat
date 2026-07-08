@@ -11,7 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`supported_languages()` — a language-selection hook.** Exposes the sorted ISO 639-1 codes wardcat ships a SpaCy NER model for (`de, en, es, fr, it, nl, pt, tr`), exported from the package root. wardcat deliberately does **not** bundle language *detection* (that would add an opinion and a dependency to a `pyyaml`+`httpx` core), so this supports the *detect-then-select* pattern: detect the language with your own tool, check `code in supported_languages()`, then pass it to `Wardcat(language=...)`. Documented under the NER layer guide.
+- **`supported_languages()` — a language-selection hook.** Exposes the sorted ISO 639-1 codes wardcat ships a SpaCy NER model for (`de, en, es, fr, it, nl, pt, tr`), exported from the package root. wardcat deliberately does **not** bundle language *detection* (that would add an opinion and a dependency to a `pyyaml`+`httpx` core), so this supports the *detect-then-select* pattern: detect the language with your own tool, check `code in supported_languages()`, then pass it to `Wardcat().with_ner(language=...)`. Documented under the NER layer guide.
+- **Orphan-entity warning.** Enabling an entity whose supporting layer is off — e.g. `add_entity(Entity.PERSON)` with neither `with_ner()` nor `with_llm()` — was a silent no-op. `scan()` now logs a one-time warning naming the entity and the fix, so a mis-wired policy is no longer invisible.
+- **Actionable "model not found" error (Ollama).** A request for a model that has not been pulled now raises a `ConnectionError` that lists the installed models and the exact `ollama pull …` command, instead of a bare HTTP 404.
+
+### Changed
+
+- **BREAKING — NER is configured only through the `with_ner()` builder.** The constructor no longer accepts `use_ner`, `spacy_model`, `language`, `spacy_size`, or `spacy_auto_download`; `Wardcat()` now takes just `salt` and an optional `config_path`. This removes the dual configuration surface (constructor *and* builder did the same thing). **Migration:** `Wardcat(language="de")` → `Wardcat().with_ner(language="de")`; `Wardcat(use_ner=False)` → `Wardcat()`; the `spacy_auto_download=` argument is `auto_download=` on `with_ner()`. A YAML config may still set `use_ner: true` with a `spacy_model`. Builder order does not matter.
+- **Loopback LLM over HTTP no longer warns or needs `allow_http`.** Traffic to `localhost` / `127.0.0.1` / `::1` never leaves the machine, so the common local-Ollama setup works with a bare `with_llm(...)` — no warning, no `allow_http=True`. Remote HTTP still raises unless `allow_http=True` is passed.
 
 ### Removed
 

@@ -4,7 +4,7 @@ Predefined entity group sets for common use cases.
 Groups entities by language/region or purpose so users don't have to
 enumerate individual entity types:
 
-    guard = Wardcat(use_ner=False)
+    guard = Wardcat()
     for entity in european_entities():
         guard.add_entity(entity, action="hash")
 

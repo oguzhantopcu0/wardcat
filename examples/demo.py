@@ -18,7 +18,7 @@ def demo_programmatic_api():
     print("=" * 60)
 
     guard = (
-        Wardcat(use_ner=False, salt="gizli-tuz-123")
+        Wardcat(salt="gizli-tuz-123")
         .add_entity(Entity.EMAIL, Action.WARN)
         .add_entity(Entity.CREDIT_CARD, Action.HASH)
         .add_entity(Entity.IBAN, Action.HASH)
@@ -41,7 +41,7 @@ def demo_yaml_api():
     print("Declarative (YAML) API")
     print("=" * 60)
 
-    guard = Wardcat(config_path="config/default.yaml", use_ner=False)
+    guard = Wardcat(config_path="config/default.yaml")
     result = guard.scan(SAMPLE)
 
     print(f"\nTemizlenmiş metin:\n{result.sanitized_text}")

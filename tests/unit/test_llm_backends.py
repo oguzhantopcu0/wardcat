@@ -53,6 +53,30 @@ class TestOllamaBackend:
             with pytest.raises(ConnectionError, match="Ollama"):
                 OllamaBackend().complete("test")
 
+    def test_missing_model_error_lists_available_and_pull_command(self):
+        import httpx
+
+        # A model Ollama hasn't pulled comes back as 404 → friendly, actionable error.
+        err_response = MagicMock()
+        err_response.status_code = 404
+        err_response.json.return_value = {"error": "model 'nope:9b' not found"}
+        post_error = httpx.HTTPStatusError("404", request=MagicMock(), response=err_response)
+        bad = MagicMock()
+        bad.raise_for_status.side_effect = post_error
+
+        tags = MagicMock()
+        tags.json.return_value = {"models": [{"name": "llama3.2:3b"}]}
+        tags.raise_for_status = MagicMock()
+
+        with patch("httpx.post", return_value=bad), patch("httpx.get", return_value=tags):
+            with pytest.raises(ConnectionError) as exc:
+                OllamaBackend(model="nope:9b").complete("test")
+
+        msg = str(exc.value)
+        assert "nope:9b" in msg
+        assert "llama3.2:3b" in msg  # installed models listed
+        assert "ollama pull nope:9b" in msg
+
     def test_list_models_parses_response(self):
         mock_response = MagicMock()
         mock_response.json.return_value = {"models": [{"name": "llama3.2"}, {"name": "mistral"}]}
@@ -469,12 +493,14 @@ class TestAllowHttpParameter:
         backend = OllamaBackend(base_url="http://remote-host:11434", allow_http=True)
         assert backend.base_url == "http://remote-host:11434"
 
-    def test_localhost_http_only_warns(self, caplog):
+    def test_localhost_http_is_allowed_silently(self, caplog):
         import logging
 
+        # Loopback HTTP never leaves the machine, so it is allowed with no warning
+        # and no allow_http needed (the common local-Ollama case).
         with caplog.at_level(logging.WARNING, logger="wardcat.llm.backends.ollama"):
             OllamaBackend(base_url="http://localhost:11434")
-        assert any("HTTP" in r.message for r in caplog.records)
+        assert not any("HTTP" in r.message for r in caplog.records)
 
     def test_openai_compat_remote_http_raises(self):
         with pytest.raises(ValueError, match="not allowed"):

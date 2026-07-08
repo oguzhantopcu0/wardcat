@@ -19,11 +19,11 @@ Kredi kartı 4111 1111 1111 1111 ile ödeme yapıldı.
 
 
 def main() -> None:
-    guard = Wardcat(
-        use_ner=True,
-        spacy_model="en_core_web_sm",
-        salt="example-salt",
-    ).with_llm(backend="ollama", model="gemma3:12b", adjudicate=True)
+    guard = (
+        Wardcat(salt="example-salt")
+        .with_ner(spacy_model="en_core_web_sm")
+        .with_llm(backend="ollama", model="gemma3:12b", adjudicate=True)
+    )
     # db_pass=... has no known prefix → only the LLM can flag it. Target the
     # LLM layer explicitly so it is not also enabled for regex.
     guard.add_entity("CUSTOM_SECRET", action="hash", layers=["llm"])

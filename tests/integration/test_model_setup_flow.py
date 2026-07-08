@@ -42,7 +42,7 @@ class TestWardcatAutoPull:
         ):
             from wardcat import Wardcat
 
-            Wardcat(use_ner=False).with_llm(model="llama3.1:8b", auto_pull=True)
+            Wardcat().with_llm(model="llama3.1:8b", auto_pull=True)
 
         mock_backend.pull_model.assert_called_once()
         args, _ = mock_backend.pull_model.call_args
@@ -61,7 +61,7 @@ class TestWardcatAutoPull:
         ):
             from wardcat import Wardcat
 
-            Wardcat(use_ner=False).with_llm(model="llama3.1:8b", auto_pull=True)
+            Wardcat().with_llm(model="llama3.1:8b", auto_pull=True)
 
         mock_backend.pull_model.assert_not_called()
 
@@ -74,7 +74,7 @@ class TestWardcatAutoPull:
         with patch("wardcat.llm.backends.ollama.OllamaBackend", return_value=mock_backend):
             from wardcat import Wardcat
 
-            Wardcat(use_ner=False).with_llm(model="llama3.1:8b", auto_pull=False)
+            Wardcat().with_llm(model="llama3.1:8b", auto_pull=False)
 
         mock_backend.is_model_available.assert_not_called()
 
@@ -85,6 +85,6 @@ class TestWardcatAutoPull:
         with patch("wardcat.llm.backends.ollama.OllamaBackend", return_value=mock_backend):
             from wardcat import Wardcat
 
-            Wardcat(use_ner=False).with_llm(model="llama3.1:8b", auto_pull=True)
+            Wardcat().with_llm(model="llama3.1:8b", auto_pull=True)
 
         mock_backend.pull_model.assert_not_called()

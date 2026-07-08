@@ -11,13 +11,13 @@ _LOCALHOST_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]"}
 
 
 def _warn_if_http(url: str, allow_http: bool = False) -> None:
-    """Enforce HTTPS for remote hosts; warn only for localhost.
+    """Enforce HTTPS for remote hosts; allow loopback HTTP silently.
 
-    For remote HTTP connections PII would traverse the network in plaintext,
-    so a ``ValueError`` is raised unless ``allow_http=True`` is passed
-    (``Wardcat(llm_allow_http=True)``).  Localhost connections are only warned
-    (they may still be intercepted by processes on the same host, but the
-    risk is considerably lower than a remote plaintext hop).
+    Loopback HTTP (``localhost``, ``127.0.0.1``, ``::1``) never leaves the
+    machine, so there is no plaintext-on-the-wire risk — it is allowed with no
+    warning and no ``allow_http`` needed (the common local-Ollama case). A remote
+    HTTP connection would send PII across the network in the clear, so it raises
+    ``ValueError`` unless ``allow_http=True`` is passed to opt in explicitly.
     """
     if not url.startswith("http://"):
         return
@@ -25,17 +25,12 @@ def _warn_if_http(url: str, allow_http: bool = False) -> None:
         return
     host = url[len("http://") :].split("/")[0].split(":")[0]
     if host in _LOCALHOST_HOSTS:
-        logger.warning(
-            "LLM backend is using HTTP: %s — PII will be transmitted unencrypted. "
-            "Use HTTPS in production (e.g. nginx/Caddy reverse proxy).",
-            url,
-        )
-    else:
-        raise ValueError(
-            f"LLM backend HTTP connection to remote host is not allowed: {url}\n"
-            "PII would be transmitted unencrypted over the network.\n"
-            "Use HTTPS, or pass Wardcat(llm_allow_http=True) to override (not recommended)."
-        )
+        return
+    raise ValueError(
+        f"LLM backend HTTP connection to remote host is not allowed: {url}\n"
+        "PII would be transmitted unencrypted over the network.\n"
+        "Use HTTPS, or pass allow_http=True to with_llm(...) to override (not recommended)."
+    )
 
 
 def _httpx():
@@ -67,6 +62,33 @@ class OllamaBackend(BaseLLMBackend):
         self.model = model
         _warn_if_http(self.base_url, allow_http)
 
+    def _friendly_http_error(self, exc: Exception) -> Exception:
+        """Turn a raw HTTP error into an actionable one for the common cases.
+
+        A request for a model Ollama hasn't pulled comes back as 404 / "model not
+        found"; surface the installed models and the exact pull command instead of
+        a bare status error.
+        """
+        response = getattr(exc, "response", None)
+        if response is None:
+            return exc
+        body = ""
+        try:
+            body = response.json().get("error", "")
+        except Exception:
+            body = getattr(response, "text", "") or ""
+        if response.status_code == 404 or "not found" in body.lower():
+            try:
+                available = self.list_models()
+            except Exception:
+                available = []
+            hint = f" Installed models: {', '.join(available)}." if available else ""
+            return ConnectionError(
+                f"Ollama has no model named {self.model!r}.{hint} "
+                f"Pull it with: ollama pull {self.model}"
+            )
+        return exc
+
     def complete(self, prompt: str, *, timeout: int = 60) -> str:
         httpx = _httpx()
         try:
@@ -92,6 +114,8 @@ class OllamaBackend(BaseLLMBackend):
                 f"Could not connect to Ollama service: {self.base_url}\n"
                 "Is the service running? Check: ollama serve"
             ) from None
+        except httpx.HTTPStatusError as exc:
+            raise self._friendly_http_error(exc) from None
 
     async def complete_async(self, prompt: str, *, timeout: int = 60) -> str:
         """Native async variant using ``httpx.AsyncClient``."""
@@ -120,6 +144,8 @@ class OllamaBackend(BaseLLMBackend):
                 f"Could not connect to Ollama service: {self.base_url}\n"
                 "Is the service running? Check: ollama serve"
             ) from None
+        except httpx.HTTPStatusError as exc:
+            raise self._friendly_http_error(exc) from None
 
     def list_models(self) -> list[str]:
         httpx = _httpx()

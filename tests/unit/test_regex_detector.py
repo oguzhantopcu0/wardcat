@@ -427,7 +427,7 @@ class TestVehiclePlate:
     def test_vehicle_plate_in_guard(self):
         from wardcat import Wardcat
 
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         guard.add_entity("VEHICLE_PLATE", action="warn")
         result = guard.scan("Araç plakası: 34 ABC 123")
         assert any(v.entity_type == "VEHICLE_PLATE" for v in result.violations)
@@ -488,7 +488,7 @@ class TestFinancialAmount:
         # _REGEX_ENTITIES set, so enabling it had no effect.
         from wardcat import Wardcat
 
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         guard.add_entity("FINANCIAL_AMOUNT", action="redact")
         result = guard.scan("Sözleşme bedeli 2.1 milyon TL olarak belirlendi.")
         assert any(v.entity_type == "FINANCIAL_AMOUNT" for v in result.violations)
@@ -653,7 +653,7 @@ class TestVatNumber:
     def test_vat_in_guard(self):
         from wardcat import Wardcat
 
-        guard = Wardcat(use_ner=False).add_entity("VAT_NUMBER", "warn")
+        guard = Wardcat().add_entity("VAT_NUMBER", "warn")
         result = guard.scan("Firma USt-IdNr DE123456789 ile kayıtlı.")
         assert any(v.entity_type == "VAT_NUMBER" for v in result.violations)
 

@@ -18,7 +18,25 @@ If Ollama is not running, the scan still completes with the regex + NER
 layers; the LLM layer's absence is reported on ``result.scan_error``.
 """
 
+import os
+
 from wardcat import Action, Backend, Entity, Wardcat
+
+
+def resolve_salt() -> str:
+    """Get the hashing salt from the environment.
+
+    wardcat never reads env vars itself — that boundary is deliberate: the
+    library takes the salt as a plain argument, and *your* application supplies
+    it (from an env var, a secrets manager, a vault, …). This example plays the
+    role of that app. In production, fail if it is unset rather than fall back.
+    """
+    salt = os.environ.get("WARDCAT_SALT")
+    if not salt:
+        print("⚠  WARDCAT_SALT not set — using a throwaway demo salt (dev only).")
+        salt = "demo-only-salt"
+    return salt
+
 
 # Bilingual sample: Turkish + English, several PII types in each.
 SAMPLE = """\
@@ -33,16 +51,15 @@ The card on file is 4111 1111 1111 1111 and the gateway IP is 192.168.1.10.
 def build_guard() -> Wardcat:
     """One Wardcat with all three layers active, built fluently."""
     return (
-        Wardcat(salt="example-salt")
+        Wardcat(salt=resolve_salt())
         # NER: one SpaCy model per language of the text. Running only the
         # English model over Turkish (or vice versa) produces false positives.
         .with_ner(spacy_model=["tr_core_news_md", "en_core_web_sm"])
-        # LLM: local Ollama. base_url is plain http, so opt in with allow_http.
+        # LLM: local Ollama. Loopback HTTP is allowed with no allow_http needed.
         # adjudicate=True → the LLM double-checks the regex/NER candidates too.
         .with_llm(
             backend=Backend.OLLAMA,
             model="gemma3:12b",
-            allow_http=True,
             adjudicate=True,
             timeout=120,
         )

@@ -15,12 +15,12 @@ from enum import Enum
 class Language(str, Enum):
     """Supported NER languages, as constants — for documented, typo-proof selection.
 
-    Pass these to ``Wardcat(language=...)`` instead of bare ISO codes::
+    Pass these to ``Wardcat().with_ner(language=...)`` instead of bare ISO codes::
 
         from wardcat import Wardcat, Language
 
-        Wardcat(language=Language.EN)                 # one language
-        Wardcat(language=[Language.EN, Language.DE])  # multilingual NER
+        Wardcat().with_ner(language=Language.EN)                 # one language
+        Wardcat().with_ner(language=[Language.EN, Language.DE])  # multilingual NER
 
     Each member *is* its ISO 639-1 code (``Language.EN == "en"``), so the plain
     string form is still accepted.
@@ -324,13 +324,13 @@ def supported_languages() -> list[str]:
     A hook for the *detect-then-select* pattern: wardcat deliberately does not
     bundle language detection (that would add an opinion and a dependency), but a
     caller that detects the language with its own tool can check support here
-    before passing the code to ``Wardcat(language=...)``::
+    before passing the code to ``Wardcat().with_ner(language=...)``::
 
         from wardcat import Wardcat, supported_languages
 
         code = detect(text)  # your language detector of choice
         if code in supported_languages():
-            guard = Wardcat(language=code)
+            guard = Wardcat().with_ner(language=code)
     """
     return sorted({m.lang_code for m in SPACY_CATALOG})
 

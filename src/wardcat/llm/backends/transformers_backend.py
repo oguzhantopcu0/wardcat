@@ -13,21 +13,19 @@ Installation::
 
 Usage::
 
-    from wardcat import Wardcat
+    from wardcat import Backend, Wardcat
 
-    guard = Wardcat(
-        use_llm=True,
-        llm_backend="transformers",
-        llm_model="meta-llama/Llama-3.1-8B-Instruct",
+    guard = Wardcat(salt="s").with_llm(
+        backend=Backend.TRANSFORMERS,
+        model="meta-llama/Llama-3.1-8B-Instruct",
     )
 
 8-bit / 4-bit quantization (VRAM savings)::
 
-    guard = Wardcat(
-        use_llm=True,
-        llm_backend="transformers",
-        llm_model="meta-llama/Llama-3.1-8B-Instruct",
-        llm_load_in_8bit=True,   # 16 GB → ~8 GB
+    guard = Wardcat(salt="s").with_llm(
+        backend=Backend.TRANSFORMERS,
+        model="meta-llama/Llama-3.1-8B-Instruct",
+        load_in_8bit=True,   # 16 GB → ~8 GB
     )
 
 Environment variables:

@@ -44,21 +44,21 @@ class TestConfigErrorRaised:
     def test_still_catchable_as_value_error(self):
         # Existing `except ValueError` code must keep working.
         with pytest.raises(ValueError):
-            Wardcat(use_ner=False).add_entity("EMAIL", action="nope")
+            Wardcat().add_entity("EMAIL", action="nope")
 
     def test_catchable_as_aiguard_error(self):
         with pytest.raises(WardcatError):
-            Wardcat(use_ner=False).add_entity("EMAIL", layers=["bogus"])
+            Wardcat().add_entity("EMAIL", layers=["bogus"])
 
 
 class TestUnsupportedLanguage:
     def test_unsupported_language_raises_specific_type(self):
         with pytest.raises(UnsupportedLanguageError):
-            Wardcat(language="zz", use_ner=False)
+            Wardcat().with_ner(language="zz")
 
     def test_still_catchable_as_value_error(self):
         with pytest.raises(ValueError):
-            Wardcat(language="zz", use_ner=False)
+            Wardcat().with_ner(language="zz")
 
 
 class TestModelDownloadError:

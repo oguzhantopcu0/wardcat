@@ -119,7 +119,7 @@ class TestLargeInput:
         """Performance check: batch of 10 items each 10 KB."""
         texts = [("temiz metin " * 500) for _ in range(10)]
         t0 = time.perf_counter()
-        results = Wardcat(use_ner=False).scan_batch(texts)
+        results = Wardcat().scan_batch(texts)
         elapsed = time.perf_counter() - t0
         assert len(results) == 10
         assert elapsed < 10.0, f"Batch too slow: {elapsed:.2f}s"
@@ -134,7 +134,7 @@ class TestThreadSafety:
         The same Wardcat instance should be callable from 10 concurrent threads.
         Results should be consistent and no exceptions should occur.
         """
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         texts = [
             "email: test@example.com",
             "kart: 4111111111111111",
@@ -165,7 +165,7 @@ class TestThreadSafety:
 
     def test_concurrent_scan_batch(self):
         """scan_batch should be callable concurrently."""
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         batch = ["a@b.com", "temiz", "4111111111111111"] * 10
         errors: list[Exception] = []
 
@@ -216,7 +216,7 @@ class TestScanBatchIsolation:
         assert any(v.entity_type == "EMAIL" for v in results[2].violations)
 
     def test_empty_batch_returns_empty(self):
-        assert Wardcat(use_ner=False).scan_batch([]) == []
+        assert Wardcat().scan_batch([]) == []
 
 
 # ── Environment Variable Configuration ───────────────────────────────────────
@@ -246,14 +246,14 @@ class TestLibraryIgnoresEnv:
         from wardcat import Wardcat
 
         with patch.dict(os.environ, {"WARDCAT_SALT": "env-salt"}):
-            guard = Wardcat(use_ner=False)
+            guard = Wardcat()
         assert guard._config["salt"] == ""  # explicit only
 
     def test_explicit_salt_wins_over_env(self):
         from wardcat import Wardcat
 
         with patch.dict(os.environ, {"WARDCAT_SALT": "env-salt"}):
-            guard = Wardcat(use_ner=False, salt="explicit-salt")
+            guard = Wardcat(salt="explicit-salt")
         assert guard._config["salt"] == "explicit-salt"
 
 
@@ -293,7 +293,7 @@ class TestConfigValidation:
             validate_config(cfg)
 
     def test_add_entity_invalid_action_raises(self):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         with pytest.raises(ValueError, match="Invalid action"):
             guard.add_entity("EMAIL", action="delete")
 
@@ -314,7 +314,7 @@ class TestEntityTypeWarning:
         assert "CREIDT_CARD" in caplog.text
 
     def test_configure_unknown_entity_warns(self, caplog):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         with caplog.at_level(logging.WARNING, logger="wardcat.core.models"):
             guard.add_entity("TYPO_ENTITY", action="warn")
         assert "TYPO_ENTITY" in caplog.text
@@ -331,7 +331,7 @@ class TestSaltWarning:
 
     def test_nonempty_salt_no_warning(self, caplog):
         with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
-            Wardcat(use_ner=False, salt="my-secret-salt")
+            Wardcat(salt="my-secret-salt")
         assert "WARDCAT_SALT" not in caplog.text
 
 

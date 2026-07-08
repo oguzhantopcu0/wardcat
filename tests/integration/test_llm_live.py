@@ -23,7 +23,7 @@ import os
 
 import pytest
 
-from wardcat import Wardcat
+from wardcat import Entity, Wardcat
 from wardcat.llm.backends.ollama import OllamaBackend
 
 pytestmark = pytest.mark.slow
@@ -72,12 +72,10 @@ needs_ollama = pytest.mark.skipif(
 @pytest.fixture(scope="module")
 def llm_guard() -> Wardcat:
     """LLM-only guard (NER off) — so PERSON detection proves the LLM ran."""
-    return Wardcat(
-        use_ner=False,
-        use_llm=True,
-        llm_model=_MODEL,
-        llm_timeout=120,
-        salt="live-test-salt",
+    return (
+        Wardcat(salt="live-test-salt")
+        .with_llm(model=_MODEL, timeout=120)
+        .add_entities([Entity.PERSON, Entity.EMAIL], action="redact", layers=["llm"])
     )
 
 
@@ -92,7 +90,7 @@ class TestLiveLLMDetection:
 
     def test_detects_contextual_secret(self):
         # db_pass=VALUE has no known prefix → regex can't catch it; only the LLM can.
-        guard = Wardcat(use_ner=False, salt="s").with_llm(model=_MODEL, timeout=120)
+        guard = Wardcat(salt="s").with_llm(model=_MODEL, timeout=120)
         guard._config["llm_detector"]["entities"]["CUSTOM_SECRET"] = {
             "enabled": True,
             "action": "hash",
@@ -113,14 +111,11 @@ class TestLiveAdjudication:
     def test_deterministic_kept_and_pipeline_runs(self):
         # Full stack (regex + NER + LLM adjudication). spaCy is required here.
         pytest.importorskip("spacy")
-        guard = Wardcat(
-            use_ner=True,
-            spacy_model="en_core_web_sm",
-            use_llm=True,
-            llm_model=_MODEL,
-            llm_timeout=120,
-            llm_adjudicate=True,
-            salt="adj",
+        guard = (
+            Wardcat(salt="adj")
+            .with_ner(spacy_model="en_core_web_sm", auto_download=False)
+            .with_llm(model=_MODEL, timeout=120, adjudicate=True)
+            .add_entities([Entity.CREDIT_CARD, Entity.PERSON])
         )
         result = guard.scan("John Smith paid with card 4111 1111 1111 1111.")
         types = {v.entity_type for v in result.violations}

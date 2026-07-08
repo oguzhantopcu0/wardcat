@@ -89,8 +89,8 @@ The simplest path is to let wardcat resolve and download it for you via the
 from wardcat import Wardcat, Language
 
 # Turns NER on, picks the right model from the catalog, and downloads it if missing
-guard = Wardcat(language=Language.EN)                   # → en_core_web_sm
-guard = Wardcat(language=Language.TR, spacy_size="md")  # → tr_core_news_md
+guard = Wardcat().with_ner(language=Language.EN)                   # → en_core_web_sm
+guard = Wardcat().with_ner(language=Language.TR, spacy_size="md")  # → tr_core_news_md
 ```
 
 Or download a model yourself with SpaCy's own CLI:
@@ -186,7 +186,7 @@ and applies them in a single rebuild:
 ```python
 from wardcat import Wardcat, turkish_entities
 
-guard = Wardcat(use_ner=False)
+guard = Wardcat()
 
 # a) a whole predefined group with one action
 guard.add_entities(turkish_entities(), action="hash")
@@ -217,7 +217,7 @@ exclusion" pattern is often the quickest way to a strict policy:
 from wardcat import Wardcat, Entity
 
 guard = (
-    Wardcat(salt="my-secret-salt", use_ner=False)
+    Wardcat(salt="my-secret-salt")
     .add_entity(Entity.ALL, action="hash")   # everything on, hashed
     .remove_entity(Entity.ORG)               # …except organisation names
     .remove_entities([Entity.UUID, Entity.MAC_ADDRESS])
@@ -447,7 +447,7 @@ guard = Wardcat(salt="s").with_llm(backend="my_backend", model="...")
 By default the three layers run independently and their findings are merged (union). With `with_llm(adjudicate=True)`, the engine instead sends the regex/NER candidates to the LLM, which — in a **single call** — verifies each one (keep / relabel / drop) and adds any PII the other layers missed. Deterministic, checksum-validated regex spans are always kept regardless of the LLM verdict. This sharply reduces NER noise (e.g. job titles mislabeled as names, or a model run on the wrong language):
 
 ```python
-guard = Wardcat(use_ner=True, spacy_model="de_core_news_sm").with_llm(
+guard = Wardcat().with_ner(spacy_model="de_core_news_sm").with_llm(
     model="gemma3:12b",
     adjudicate=True,   # LLM acts as detector + arbiter in one call
 )
@@ -521,21 +521,21 @@ Runnable scripts in [`examples/`](examples/):
 | `ORG` | `warn` | Organization / company names |
 | `ADDRESS` | `warn` | Location entities (complements regex) |
 
-> **NER requires an explicit model — there is no default.** NER is **off by default**; `Wardcat(use_ner=True)` without a model (or language) raises `ConfigError`. Choose a model in a documented way via `language=` (recommended) or `spacy_model=`. Running, say, the Turkish model on German text produces noisy results, so pick the model per language (or rely on the LLM layer for cross-language names). A multilingual gazetteer filters out job titles, HR terms, and abbreviations (EN/DE/FR/TR) that NER models commonly mislabel.
+> **NER requires an explicit model — there is no default.** NER is **off by default**; calling `with_ner()` without a model (or language) raises `ConfigError`. Choose a model in a documented way via `language=` (recommended) or `spacy_model=`. Running, say, the Turkish model on German text produces noisy results, so pick the model per language (or rely on the LLM layer for cross-language names). A multilingual gazetteer filters out job titles, HR terms, and abbreviations (EN/DE/FR/TR) that NER models commonly mislabel.
 
 **Pick a language, not a model name.** Use the `Language` constants (or their ISO codes) and an optional size tier — wardcat resolves the right model from its catalog and **downloads it automatically if it is missing**:
 
 ```python
 from wardcat import Wardcat, Language
 
-# Selecting a language turns NER on and implies auto-download (off with spacy_auto_download=False)
-guard = Wardcat(language=Language.DE)                  # → de_core_news_sm
-guard = Wardcat(language=Language.FR, spacy_size="md") # → fr_core_news_md (sm/md/lg/trf)
-guard = Wardcat(language=Language.TR, spacy_size="lg") # → tr_core_news_lg
+# Selecting a language turns NER on and implies auto-download (off with auto_download=False)
+guard = Wardcat().with_ner(language=Language.DE)                  # → de_core_news_sm
+guard = Wardcat().with_ner(language=Language.FR, spacy_size="md") # → fr_core_news_md (sm/md/lg/trf)
+guard = Wardcat().with_ner(language=Language.TR, spacy_size="lg") # → tr_core_news_lg
 
 # Or name the SpaCy package(s) explicitly — one or several:
-guard = Wardcat(spacy_model="en_core_web_sm")
-guard = Wardcat(spacy_model=["en_core_web_sm", "de_core_news_sm"])
+guard = Wardcat().with_ner(spacy_model="en_core_web_sm")
+guard = Wardcat().with_ner(spacy_model=["en_core_web_sm", "de_core_news_sm"])
 ```
 
 Supported languages: `Language.EN`, `DE`, `FR`, `ES`, `IT`, `NL`, `PT`, `TR` (plain ISO codes like `"de"` are also accepted). If the requested size is unavailable for a language, the recommended model is used.
@@ -554,7 +554,7 @@ For text that mixes several languages you have two options:
 
    ```python
    from wardcat import Wardcat, Language
-   guard = Wardcat(language=[Language.EN, Language.DE, Language.FR])  # 3 NER models, auto-downloaded
+   guard = Wardcat().with_ner(language=[Language.EN, Language.DE, Language.FR])  # 3 NER models, auto-downloaded
    ```
 
    This is **explicit** — you list the languages; wardcat does not guess the language of the input. The regex layer is multilingual regardless of these choices.

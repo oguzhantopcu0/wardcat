@@ -32,7 +32,7 @@ def _guard_with_llm(response: str, entities: set[str] | None = None) -> Wardcat:
     Instead of patching Wardcat's _build_llm_detector directly,
     we inject the detector afterwards.
     """
-    guard = Wardcat(use_ner=False)  # build without LLM first
+    guard = Wardcat()  # build without LLM first
     enabled = entities or {
         "CREDIT_CARD",
         "EMAIL",
@@ -124,7 +124,7 @@ class TestLLMPlusRegex:
         llm_response = json.dumps([{"type": "CUSTOM_SECRET", "text": secret}])
         guard = _guard_with_llm(llm_response, {"CUSTOM_SECRET"})
         # Verify regex does not catch this first
-        regex_only = Wardcat(use_ner=False)
+        regex_only = Wardcat()
         assert regex_only.scan(f"kod: {secret}").is_clean
 
         # LLM should catch it
@@ -178,7 +178,7 @@ class TestLLMFaultTolerance:
         failing_backend.complete.side_effect = ConnectionError("Ollama çevrimdışı")
         failing_backend.complete_messages.side_effect = ConnectionError("Ollama çevrimdışı")
 
-        guard = Wardcat(use_ner=False).add_entity("CREDIT_CARD", "warn")
+        guard = Wardcat().add_entity("CREDIT_CARD", "warn")
         llm_det = LLMDetector(backend=failing_backend, enabled_entities={"PERSON"})
         guard._detectors.append(llm_det)
         from wardcat.core.engine import DetectionEngine
@@ -211,13 +211,13 @@ class TestLLMFaultTolerance:
 
 class TestWardcatConfig:
     def test_use_llm_false_no_llm_detector(self):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         from wardcat.detectors.llm_detector import LLMDetector
 
         assert not any(isinstance(d, LLMDetector) for d in guard._detectors)
 
     def test_llm_config_stored_correctly(self):
-        guard = Wardcat(use_ner=False).with_llm(
+        guard = Wardcat().with_llm(
             model="mistral",
             base_url="http://10.0.0.5:11434",
             allow_http=True,  # remote HTTP allowed for this config-only check (no connection)
@@ -227,7 +227,7 @@ class TestWardcatConfig:
         assert cfg["base_url"] == "http://10.0.0.5:11434"
 
     def test_invalid_backend_raises(self):
-        guard = Wardcat(use_ner=False)
+        guard = Wardcat()
         guard._config["llm_detector"]["enabled"] = True
         guard._config["llm_detector"]["backend"] = "bilinmeyen_backend"
         with pytest.raises(ValueError, match="bilinmeyen_backend"):

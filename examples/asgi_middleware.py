@@ -180,7 +180,7 @@ try:
     from fastapi import FastAPI, Request
 
     guard = (
-        Wardcat(use_ner=False, salt="example-salt")
+        Wardcat(salt="example-salt")
         .add_entity("EMAIL", action="warn")
         .add_entity("CREDIT_CARD", action="hash")
     )

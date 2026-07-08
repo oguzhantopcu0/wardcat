@@ -10,7 +10,7 @@ _LOCALHOST_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]"}
 
 
 def _warn_if_http(url: str, allow_http: bool = False) -> None:
-    """Enforce HTTPS for remote hosts; warn only for localhost.
+    """Allow loopback HTTP silently; enforce HTTPS for remote hosts.
 
     See :func:`wardcat.llm.backends.ollama._warn_if_http` for policy details.
     """
@@ -20,17 +20,12 @@ def _warn_if_http(url: str, allow_http: bool = False) -> None:
         return
     host = url[len("http://") :].split("/")[0].split(":")[0]
     if host in _LOCALHOST_HOSTS:
-        logger.warning(
-            "LLM backend is using HTTP: %s — PII will be transmitted unencrypted. "
-            "Use HTTPS in production (e.g. nginx/Caddy reverse proxy).",
-            url,
-        )
-    else:
-        raise ValueError(
-            f"LLM backend HTTP connection to remote host is not allowed: {url}\n"
-            "PII would be transmitted unencrypted over the network.\n"
-            "Use HTTPS, or pass Wardcat(llm_allow_http=True) to override (not recommended)."
-        )
+        return
+    raise ValueError(
+        f"LLM backend HTTP connection to remote host is not allowed: {url}\n"
+        "PII would be transmitted unencrypted over the network.\n"
+        "Use HTTPS, or pass allow_http=True to with_llm(...) to override (not recommended)."
+    )
 
 
 def _httpx():

@@ -88,12 +88,64 @@ class TestLLMDetectorPropagates:
             det.detect("Mail me at a@b.com please.")
 
 
+class TestOrphanEntityWarning:
+    """Enabling an entity whose only layer is off is a silent no-op — warn about it."""
+
+    def test_person_without_a_model_layer_warns(self, caplog):
+        import logging
+
+        from wardcat import Entity, Wardcat
+
+        guard = Wardcat(salt="s").add_entity(Entity.PERSON)  # needs NER or LLM, has neither
+        with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
+            guard.scan("John Smith called.")
+        assert any("PERSON" in r.message and "no active layer" in r.message for r in caplog.records)
+
+    def test_person_covered_once_ner_is_added(self, caplog):
+        import logging
+
+        from wardcat import Entity, Wardcat
+
+        # Same PERSON entity, but now with a NER layer → no orphan warning.
+        guard = (
+            Wardcat(salt="s")
+            .with_ner(spacy_model="en_core_web_sm", auto_download=False)
+            .add_entity(Entity.PERSON)
+        )
+        with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
+            guard.scan("John Smith called.")
+        assert not any("no active layer" in r.message for r in caplog.records)
+
+    def test_no_warning_when_layer_is_active(self, caplog):
+        import logging
+
+        from wardcat import Entity, Wardcat
+
+        # EMAIL is a regex entity and the regex layer is always on when enabled.
+        guard = Wardcat(salt="s").add_entity(Entity.EMAIL)
+        with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
+            guard.scan("a@b.com")
+        assert not any("no active layer" in r.message for r in caplog.records)
+
+    def test_warns_once_not_every_scan(self, caplog):
+        import logging
+
+        from wardcat import Entity, Wardcat
+
+        guard = Wardcat(salt="s").add_entity(Entity.PERSON)
+        with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
+            guard.scan("John Smith")
+            guard.scan("Jane Doe")
+        orphan_warnings = [r for r in caplog.records if "no active layer" in r.message]
+        assert len(orphan_warnings) == 1
+
+
 class TestGuardIntegration:
     def test_scan_surfaces_llm_unavailable(self):
         from wardcat import Backend, Wardcat
 
         guard = (
-            Wardcat(salt="s", use_ner=False)
+            Wardcat(salt="s")
             .add_entity("EMAIL", "redact")
             .with_llm(backend=Backend.OLLAMA, base_url="http://127.0.0.1:59999", model="x")
         )
