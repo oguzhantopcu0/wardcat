@@ -4,7 +4,10 @@ import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from wardcat.detectors.llm_detector import LLMDetector
 
 from wardcat._entity_policy import EntityPolicyMixin
 from wardcat.config.loader import load_config
@@ -20,6 +23,7 @@ from wardcat.detectors.base import BaseDetector
 from wardcat.detectors.regex_detector import RegexDetector
 from wardcat.exceptions import ConfigError, UnsupportedLanguageError
 from wardcat.llm.backends.base import Backend
+from wardcat.llm.prompt import build_sensitivity_messages, parse_sensitivity
 from wardcat.ner.spacy_catalog import Language
 
 logger = logging.getLogger(__name__)
@@ -183,6 +187,53 @@ class Wardcat(EntityPolicyMixin):
         """
         self._warn_orphan_entities()
         return await self._engine.scan_async(text)
+
+    # ------------------------------------------------------------------
+    # Semantic sensitivity check (LLM-only)
+    # ------------------------------------------------------------------
+
+    def is_sensitive(self, text: str) -> bool:
+        """Return whether *text* contains sensitive information, judged semantically.
+
+        A general, holistic LLM decision — *not* the per-entity detection of
+        :meth:`scan`. It asks the configured LLM whether the text as a whole
+        contains sensitive information (PII, credentials, financial, health, or
+        confidential business data) and returns a single ``True``/``False`` flag.
+        Useful as a lightweight guardrail before sending text to an external
+        service.
+
+        Requires the LLM layer (:meth:`with_llm`); no entities need to be enabled
+        and no regex/NER runs. Empty text is ``False``. Fail-closed: if the LLM
+        backend is unreachable the underlying error propagates, so a guardrail
+        never silently treats sensitive text as safe.
+
+        :raises ConfigError: if the LLM layer is not configured.
+        """
+        backend, timeout = self._require_llm("is_sensitive")
+        if not text.strip():
+            return False
+        reply = backend.complete_messages(build_sensitivity_messages(text), timeout=timeout)
+        return parse_sensitivity(reply)
+
+    async def is_sensitive_async(self, text: str) -> bool:
+        """Async variant of :meth:`is_sensitive` (native async LLM I/O when available)."""
+        backend, timeout = self._require_llm("is_sensitive_async")
+        if not text.strip():
+            return False
+        reply = await backend.complete_messages_async(
+            build_sensitivity_messages(text), timeout=timeout
+        )
+        return parse_sensitivity(reply)
+
+    def _require_llm(self, feature: str) -> tuple[Any, int]:
+        """Return the configured LLM (backend, timeout) or raise if none is set."""
+        detector = self._llm_detector
+        if detector is None:
+            raise ConfigError(
+                f"{feature}() needs the LLM layer — configure it with "
+                "with_llm(...) (e.g. Wardcat().with_llm(model='llama3.1:8b'))."
+            )
+        return detector.backend, detector.timeout
 
     def scan_batch(self, texts: list[str], *, max_workers: int | None = None) -> list[ScanResult]:
         """
@@ -552,6 +603,7 @@ class Wardcat(EntityPolicyMixin):
         """Rebuild detectors and engine when configuration changes."""
         self._maybe_warn_unsalted()
         self._detectors: list[BaseDetector] = []
+        self._llm_detector: LLMDetector | None = None
         entity_cfg = self._config.get("entities", {})
 
         # Regex detector
@@ -605,14 +657,16 @@ class Wardcat(EntityPolicyMixin):
                             exc,
                         )
 
-        # LLM detector (optional)
+        # LLM detector (optional). Kept on a dedicated attribute too, so the
+        # semantic is_sensitive() check can reuse its backend directly.
         llm_cfg = self._config.get("llm_detector", {})
         if llm_cfg.get("enabled", False):
-            self._detectors.append(self._build_llm_detector(llm_cfg))
+            self._llm_detector = self._build_llm_detector(llm_cfg)
+            self._detectors.append(self._llm_detector)
 
         self._engine = DetectionEngine(self._config, self._detectors)
 
-    def _build_llm_detector(self, llm_cfg: dict[str, Any]) -> BaseDetector:
+    def _build_llm_detector(self, llm_cfg: dict[str, Any]) -> LLMDetector:
         """Build the LLM detector according to configuration."""
         from wardcat.detectors.llm_detector import LLMDetector
         from wardcat.llm.backends.registry import create_backend

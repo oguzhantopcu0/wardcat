@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`Wardcat.is_sensitive(text) -> bool` — a semantic sensitivity gate (LLM-only).** A holistic true/false decision about whether a text contains sensitive information (PII, credentials, financial, health/special-category, or confidential business data), as opposed to `scan()`'s per-entity extraction. It runs a single classification call against the configured LLM — no regex/NER, no entities to enable — so it catches things the enumerated detectors miss (e.g. unreleased financials or a confidential project). Configure it through the existing `with_llm(...)` builder and call `guard.is_sensitive(text)` (or `await guard.is_sensitive_async(text)`). Requires the LLM layer (raises `ConfigError` otherwise); empty text is `False`; **fail-closed** — if the backend is unreachable the error propagates rather than silently returning `False`.
+
 ## [0.7.0] — 2026-07-09
 
 ### Added

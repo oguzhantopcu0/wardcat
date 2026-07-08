@@ -455,6 +455,28 @@ guard = Wardcat().with_ner(spacy_model="de_core_news_sm").with_llm(
 
 > Adjudication has no effect in LLM-only deployments (no regex/NER candidates to judge) — the LLM simply runs as a pure detector.
 
+### Is this text sensitive? (semantic gate)
+
+Sometimes you don't need *what* the PII is — just a yes/no on whether a text is safe to send onward. `is_sensitive()` asks the configured LLM for a single **holistic** judgement (a general semantic decision, not the per-entity extraction of `scan()`), so it also catches things the enumerated detectors don't — unreleased financials, deal terms, a confidential project:
+
+```python
+from wardcat import Wardcat, Backend
+
+guard = Wardcat().with_llm(backend=Backend.OLLAMA, model="gemma3:12b")
+
+guard.is_sensitive("Ödeme için IBAN TR33 0006 1005 1978 6457 8413 26")   # True
+guard.is_sensitive("Aksa Teknoloji'nin açıklanmamış Q2 net kârı 47,3M TL")  # True (confidential)
+guard.is_sensitive("What's the weather like tomorrow?")                    # False
+
+# guardrail before calling an external service
+if guard.is_sensitive(user_text):
+    raise ValueError("won't forward sensitive text")
+```
+
+- **LLM-only** — configured through `with_llm(...)`; no entities to enable, no regex/NER runs. Raises `ConfigError` if the LLM layer isn't set up.
+- **Fail-closed** — if the backend is unreachable the error propagates (a guardrail never silently treats sensitive text as safe). Empty text is `False`.
+- Async: `await guard.is_sensitive_async(text)`.
+
 ---
 
 ### Examples

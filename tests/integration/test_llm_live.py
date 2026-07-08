@@ -122,3 +122,11 @@ class TestLiveAdjudication:
         # The Luhn-valid card is a deterministic regex span — must survive adjudication.
         assert "CREDIT_CARD" in types
         assert "4111 1111 1111 1111" not in result.sanitized_text
+
+
+@needs_ollama
+class TestLiveIsSensitive:
+    def test_flags_sensitive_and_clean_text(self):
+        guard = Wardcat(salt="s").with_llm(model=_MODEL, timeout=120)
+        assert guard.is_sensitive("Ödeme için IBAN TR330006100519786457841326.") is True
+        assert guard.is_sensitive("Bugün hava çok güzel, pikniğe gideceğiz.") is False

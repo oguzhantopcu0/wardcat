@@ -11,6 +11,8 @@ For good results with small models (3B–8B):
 
 from __future__ import annotations
 
+import re
+
 # Entity descriptions: teaches the model what to look for.
 _ENTITY_DESCRIPTIONS: dict[str, str] = {
     "ORG": "name of a specific company, institution, or organization that could identify a person in context (e.g. 'Acme Corp', 'İş Bankası', 'Google LLC')",
@@ -299,6 +301,72 @@ def build_messages(
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
+
+
+# ---------------------------------------------------------------------------
+# Semantic sensitivity classification (one boolean, not per-entity extraction)
+# ---------------------------------------------------------------------------
+
+_SENSITIVITY_SYSTEM = """\
+You are a classifier that decides whether a piece of text contains SENSITIVE
+information. Judge the text as a whole — this is a general semantic decision,
+not a search for specific patterns.
+
+Sensitive information includes (non-exhaustive):
+- Personal data that identifies a person: full names tied to other details,
+  emails, phone numbers, postal addresses, national IDs, dates of birth.
+- Credentials & secrets: passwords, API keys, tokens, private keys, connection
+  strings.
+- Financial data: card numbers, IBANs / bank accounts, salaries, monetary
+  figures tied to an identifiable party.
+- Special-category data: health or medical conditions, religion, ethnicity,
+  political opinions, sexual orientation, trade-union membership.
+- Confidential business information: unreleased financial results, M&A / deal
+  terms, planned layoffs, trade secrets, confidential project details, pending
+  legal disputes.
+
+NOT sensitive: generic or public facts, small talk, a public company name on its
+own, general knowledge, opinions that contain no personal or confidential data.
+
+The text may be written in Turkish, English, German, or French.
+
+Answer with EXACTLY one lowercase word and nothing else:
+"true" if the text contains sensitive information, or "false" if it does not."""
+
+_SENSITIVITY_USER = 'Text:\n"""{text}"""\n\nAnswer (true or false):'
+
+
+def build_sensitivity_messages(text: str) -> list[dict]:
+    """Build system + user messages for the semantic sensitivity check.
+
+    Unlike :func:`build_messages` (which extracts typed spans), this asks the
+    model for a single holistic true/false decision about whether the text
+    contains sensitive information. Parse the reply with :func:`parse_sensitivity`.
+    """
+    return [
+        {"role": "system", "content": _SENSITIVITY_SYSTEM},
+        {"role": "user", "content": _SENSITIVITY_USER.format(text=text)},
+    ]
+
+
+def parse_sensitivity(reply: str) -> bool:
+    """Interpret a sensitivity-classification reply as a boolean.
+
+    The prompt asks for exactly ``true``/``false``, but small models sometimes
+    add words or punctuation. We read the first meaningful word and accept common
+    affirmatives/negatives (EN/TR). Anything ambiguous is treated as **sensitive**
+    (the cautious default for a guardrail).
+    """
+    words = re.findall(r"[a-zçğıöşü]+", reply.strip().lower())
+    negatives = {"false", "no", "hayır", "hayir", "none", "nein", "non"}
+    affirmatives = {"true", "yes", "evet", "ja", "oui"}
+    for word in words:
+        if word in negatives:
+            return False
+        if word in affirmatives:
+            return True
+    # No clear signal → err on the side of "sensitive".
+    return True
 
 
 def build_prompt(

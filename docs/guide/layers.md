@@ -159,4 +159,21 @@ candidates **and** adds what they missed, in a single call — cleaning NER nois
 (e.g. a job title mislabeled as a name). Deterministic regex spans are always
 kept regardless of the LLM verdict.
 
+### Semantic sensitivity gate — `is_sensitive()`
+
+For a yes/no guardrail rather than per-entity extraction, `Wardcat.is_sensitive(text)`
+returns a single boolean: does the text contain sensitive information (PII,
+credentials, financial, special-category, or confidential business data)? It is
+a holistic LLM judgement, so it also flags things the typed detectors don't —
+unreleased financials, deal terms, a confidential project.
+
+```python
+guard = Wardcat().with_llm(model="gemma3:12b")
+if guard.is_sensitive(user_text):   # or: await guard.is_sensitive_async(...)
+    raise ValueError("won't forward sensitive text")
+```
+
+LLM-only (no entities to enable); requires `with_llm(...)`; empty text is `False`.
+Fail-closed — a backend error propagates rather than returning a misleading `False`.
+
 See the full API on the [Wardcat reference page](../reference/wardcat.md).
