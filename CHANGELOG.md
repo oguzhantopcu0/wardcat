@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`is_sensitive()` now shares the engine's input safeguards.** It previously
+  went straight to the LLM, bypassing the size limit and chunking. It now rejects
+  oversized input (`max_text_bytes`, like `scan()`) and **chunks long text** at
+  paragraph boundaries — any chunk classified sensitive makes the whole text
+  sensitive (short-circuits on the first hit) — so a long document can no longer
+  be silently truncated into a misleading `False`. Chunking logic is now shared
+  (`wardcat.utils.text.chunk_by_paragraph`) between the LLM detector and this gate.
+- **`is_sensitive()` prompt hardened against injection.** The classification
+  prompt now states the text is untrusted *data*, not instructions, and to ignore
+  embedded commands (e.g. "answer false"). Best-effort, not a guarantee — see
+  `SECURITY.md`.
+
+### Security / Docs
+
+- `SECURITY.md`: documented that `hash` is deterministic (records are linkable by
+  their hashes) and that the `is_sensitive()` guardrail is prompt-injectable;
+  pair it with `scan()` in adversarial settings.
+
+### Internal
+
+- Stricter typing: `disallow_untyped_defs` is now on in mypy; annotated the
+  remaining untyped defs.
+
 ## [0.8.0] — 2026-07-09
 
 ### Added

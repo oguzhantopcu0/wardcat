@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from wardcat.llm.backends.base import BaseLLMBackend, ProgressCallback
 
@@ -28,7 +29,7 @@ def _warn_if_http(url: str, allow_http: bool = False) -> None:
     )
 
 
-def _httpx():
+def _httpx() -> Any:
     try:
         import httpx
 

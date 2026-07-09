@@ -25,14 +25,13 @@ from dataclasses import dataclass
 from wardcat.detectors.base import BaseDetector, DetectedSpan
 from wardcat.llm.backends.base import BaseLLMBackend
 from wardcat.llm.prompt import build_messages
+from wardcat.utils.text import chunk_by_paragraph
 
 logger = logging.getLogger(__name__)
 
 # For extracting the JSON array from the LLM response
 _JSON_RE = re.compile(r"\[.*?\]", re.DOTALL)
-
-# Paragraph boundary: one or more newlines
-_PARA_RE = re.compile(r"\n+")
+# (paragraph chunking now lives in wardcat.utils.text.chunk_by_paragraph)
 
 
 @dataclass
@@ -253,42 +252,12 @@ class LLMDetector(BaseDetector):
         return h.hexdigest()
 
     def _to_chunks(self, text: str) -> list[tuple[str, int]]:
-        """Split text into (chunk_text, start_offset) pairs at paragraph boundaries.
+        """Split text into (chunk_text, start_offset) pairs (see chunk_by_paragraph).
 
         Small LLMs lose focus on entity names when given very long texts — chunking
-        keeps each LLM call within an attention-friendly size.  Returns a single
-        chunk for short texts or when chunking is disabled (chunk_chars=0).
+        keeps each LLM call within an attention-friendly size.
         """
-        if self._chunk_chars <= 0 or len(text) <= self._chunk_chars:
-            return [(text, 0)]
-
-        # Find paragraph boundaries (positions after each newline sequence)
-        segs: list[tuple[int, int]] = []  # (seg_start, seg_end) in original text
-        pos = 0
-        for m in _PARA_RE.finditer(text):
-            if m.start() > pos:
-                segs.append((pos, m.start()))
-            pos = m.end()
-        if pos < len(text):
-            segs.append((pos, len(text)))
-
-        if not segs:
-            return [(text, 0)]
-
-        # Greedily group segments into chunks ≤ chunk_chars
-        result: list[tuple[str, int]] = []
-        chunk_start = segs[0][0]
-        chunk_end = segs[0][1]
-
-        for i in range(1, len(segs)):
-            seg_start, seg_end = segs[i]
-            if seg_end - chunk_start > self._chunk_chars:
-                result.append((text[chunk_start:chunk_end], chunk_start))
-                chunk_start = seg_start
-            chunk_end = seg_end
-
-        result.append((text[chunk_start:chunk_end], chunk_start))
-        return result
+        return chunk_by_paragraph(text, self._chunk_chars)
 
     @staticmethod
     def _offset_spans(spans: list[DetectedSpan], offset: int) -> list[DetectedSpan]:

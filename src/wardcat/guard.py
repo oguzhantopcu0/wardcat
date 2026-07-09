@@ -25,8 +25,15 @@ from wardcat.exceptions import ConfigError, UnsupportedLanguageError
 from wardcat.llm.backends.base import Backend
 from wardcat.llm.prompt import build_sensitivity_messages, parse_sensitivity
 from wardcat.ner.spacy_catalog import Language
+from wardcat.utils.text import chunk_by_paragraph
 
 logger = logging.getLogger(__name__)
+
+# Max characters per LLM call in is_sensitive(). Classification tolerates more
+# context than span extraction, but long inputs are still chunked (any chunk
+# sensitive → the whole text is sensitive) so nothing is silently truncated.
+_SENSITIVITY_CHUNK_CHARS = 4000
+_DEFAULT_MAX_TEXT_BYTES = 500_000
 
 
 def _resolve_spacy_model(model: str) -> str:
@@ -210,20 +217,44 @@ class Wardcat(EntityPolicyMixin):
         :raises ConfigError: if the LLM layer is not configured.
         """
         backend, timeout = self._require_llm("is_sensitive")
+        self._check_text_size(text)
         if not text.strip():
             return False
-        reply = backend.complete_messages(build_sensitivity_messages(text), timeout=timeout)
-        return parse_sensitivity(reply)
+        # Long inputs are chunked; a single sensitive chunk makes the whole
+        # text sensitive, and we short-circuit on the first hit.
+        for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
+            if not chunk.strip():
+                continue
+            reply = backend.complete_messages(build_sensitivity_messages(chunk), timeout=timeout)
+            if parse_sensitivity(reply):
+                return True
+        return False
 
     async def is_sensitive_async(self, text: str) -> bool:
         """Async variant of :meth:`is_sensitive` (native async LLM I/O when available)."""
         backend, timeout = self._require_llm("is_sensitive_async")
+        self._check_text_size(text)
         if not text.strip():
             return False
-        reply = await backend.complete_messages_async(
-            build_sensitivity_messages(text), timeout=timeout
-        )
-        return parse_sensitivity(reply)
+        for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
+            if not chunk.strip():
+                continue
+            reply = await backend.complete_messages_async(
+                build_sensitivity_messages(chunk), timeout=timeout
+            )
+            if parse_sensitivity(reply):
+                return True
+        return False
+
+    def _check_text_size(self, text: str) -> None:
+        """Reject oversized input (mirrors the engine's DoS guard for scan())."""
+        limit = self._config.get("max_text_bytes", _DEFAULT_MAX_TEXT_BYTES)
+        byte_len = len(text.encode("utf-8", errors="replace"))
+        if byte_len > limit:
+            raise ValueError(
+                f"Input text is too large: {byte_len:,} bytes (maximum: {limit:,} bytes). "
+                "Split the text into smaller chunks."
+            )
 
     def _require_llm(self, feature: str) -> tuple[Any, int]:
         """Return the configured LLM (backend, timeout) or raise if none is set."""

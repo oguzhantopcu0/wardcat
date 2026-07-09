@@ -10,6 +10,7 @@ cohesive unit and slims the ``Wardcat`` facade.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Mapping
 from typing import Any, Self
 
 from wardcat.core.models import KNOWN_ENTITY_TYPES, Action, Entity, warn_unknown_entity
@@ -74,7 +75,7 @@ class EntityPolicyMixin:
 
     def add_entities(
         self,
-        entities,
+        entities: Iterable[str | Entity] | Mapping[str | Entity, Any],
         *,
         action: str | Action | None = None,
         layers: list[str] | None = None,
@@ -143,7 +144,7 @@ class EntityPolicyMixin:
         self._rebuild()
         return self
 
-    def remove_entities(self, entities) -> Self:
+    def remove_entities(self, entities: Iterable[str | Entity]) -> Self:
         """
         Disable many entity types at once (single rebuild). Supports chaining.
 

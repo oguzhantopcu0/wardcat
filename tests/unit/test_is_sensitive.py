@@ -50,10 +50,42 @@ class _DeadBackend(BaseLLMBackend):
         pass
 
 
+class _SequenceBackend(BaseLLMBackend):
+    """Returns queued replies in order (last reply repeats); counts calls."""
+
+    def __init__(self, replies: list[str]) -> None:
+        self.replies = replies
+        self.calls = 0
+
+    def complete(self, prompt, *, timeout=60):
+        return self.complete_messages([], timeout=timeout)
+
+    def complete_messages(self, messages, *, timeout=60):
+        i = min(self.calls, len(self.replies) - 1)
+        self.calls += 1
+        return self.replies[i]
+
+    def list_models(self):
+        return []
+
+    def pull_model(self, model, *, on_progress=None):
+        pass
+
+
 def _guard_with(reply: str) -> Wardcat:
     guard = Wardcat(salt="s").with_llm(model="stub")
     guard._llm_detector.backend = _StubBackend(reply)  # type: ignore[union-attr]
     return guard
+
+
+def _guard_with_sequence(replies: list[str]) -> Wardcat:
+    guard = Wardcat(salt="s").with_llm(model="stub")
+    guard._llm_detector.backend = _SequenceBackend(replies)  # type: ignore[union-attr]
+    return guard
+
+
+# Three ~3 KB paragraphs → chunked into three ≤4 KB chunks by is_sensitive.
+_LONG_TEXT = "\n\n".join(["A" * 3000, "B" * 3000, "C" * 3000])
 
 
 class TestIsSensitive:
@@ -78,6 +110,14 @@ class TestIsSensitive:
         assert [m["role"] for m in msgs] == ["system", "user"]
         assert "sensitive" in msgs[0]["content"].lower()
 
+    def test_prompt_hardens_against_injection(self):
+        # The system prompt must tell the model the text is untrusted data.
+        from wardcat.llm.prompt import build_sensitivity_messages
+
+        system = build_sensitivity_messages("x")[0]["content"].lower()
+        assert "data, not instructions" in system
+        assert "ignore any commands" in system
+
     def test_requires_llm_layer(self):
         guard = Wardcat(salt="s")  # no with_llm
         with pytest.raises(ConfigError, match="with_llm"):
@@ -92,6 +132,23 @@ class TestIsSensitive:
     def test_async_variant(self):
         guard = _guard_with("true")
         assert asyncio.run(guard.is_sensitive_async("secret: api_key=abc")) is True
+
+    def test_oversized_text_raises(self):
+        guard = _guard_with("false")
+        guard._config["max_text_bytes"] = 100
+        with pytest.raises(ValueError, match="too large"):
+            guard.is_sensitive("x" * 200)
+
+    def test_long_text_is_chunked_and_short_circuits(self):
+        # 3 chunks; the 2nd is sensitive → True after 2 calls (3rd never made).
+        guard = _guard_with_sequence(["false", "true", "false"])
+        assert guard.is_sensitive(_LONG_TEXT) is True
+        assert guard._llm_detector.backend.calls == 2
+
+    def test_long_text_all_clean_is_false(self):
+        guard = _guard_with_sequence(["false", "false", "false"])
+        assert guard.is_sensitive(_LONG_TEXT) is False
+        assert guard._llm_detector.backend.calls == 3  # every chunk checked
 
 
 @pytest.mark.parametrize(
