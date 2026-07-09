@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-07-09
+
 ### Added
 
 - **Localized `is_sensitive()` prompt — `with_llm(language=...)`.** The semantic sensitivity gate can now run its system prompt in one of the base languages — `tr`, `de`, `fr` (or `en`) — selected via `with_llm(language="tr")`. A prompt in the text's own language can improve smaller models' judgement; any other/unset value keeps the English, multilingual-aware prompt. This affects only `is_sensitive()`, not the `scan()` entity-detection prompt (which stays multilingual by design). Available on the YAML side as `llm_detector.language`.
@@ -230,7 +232,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
-[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/oguzhantopcu0/wardcat/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/oguzhantopcu0/wardcat/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/oguzhantopcu0/wardcat/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/oguzhantopcu0/wardcat/compare/v0.6.0...v0.7.0
