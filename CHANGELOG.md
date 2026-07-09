@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-07-09
+
 ### Changed
 
 - **`is_sensitive()` now shares the engine's input safeguards.** It previously
@@ -220,7 +222,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
-[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/oguzhantopcu0/wardcat/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/oguzhantopcu0/wardcat/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/oguzhantopcu0/wardcat/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/oguzhantopcu0/wardcat/compare/v0.5.0...v0.6.0
