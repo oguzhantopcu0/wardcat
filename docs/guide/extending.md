@@ -21,25 +21,15 @@ guard = Wardcat(salt="s").add_entity("EMAIL", "tokenize")
 Detection and anonymization are separate stages: `DetectionEngine` finds spans, a
 standalone `Anonymizer` applies the actions — so you can reuse either independently.
 
-## Custom LLM backends
+## LLM backends are fixed
 
-Backends are looked up in a registry, so you can add Azure OpenAI, Anthropic, or a
-bespoke gateway:
-
-```python
-from wardcat import Wardcat, BaseLLMBackend, register_backend, registered_backends
-
-class MyBackend(BaseLLMBackend):
-    def complete(self, prompt, *, timeout=60): ...
-    def complete_messages(self, messages, *, timeout=60): ...
-    def list_models(self): return []
-    def pull_model(self, model, *, on_progress=None): ...
-
-register_backend("my_backend", lambda cfg: MyBackend())
-registered_backends()   # frozenset({"ollama", "openai_compatible", "vllm", "transformers", "my_backend"})
-
-guard = Wardcat(salt="s").with_llm(backend="my_backend", model="...")
-```
+Unlike actions, LLM backends are **not** user-extensible. wardcat ships four —
+`ollama`, `openai_compatible`, `vllm`, `transformers` — selected via the
+`Backend` enum. A third-party backend would sit outside wardcat's safety checks
+(the plaintext-HTTP-to-remote guard, PII handling), which is exactly where
+sensitive data would leak, so point a built-in at your endpoint instead:
+`openai_compatible` covers most OpenAI-style gateways (LM Studio, LocalAI,
+LiteLLM, and hosted OpenAI-compatible APIs).
 
 ## Custom detectors
 

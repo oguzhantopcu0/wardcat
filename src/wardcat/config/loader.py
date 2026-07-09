@@ -10,7 +10,7 @@ import yaml
 
 from wardcat.core.actions import registered_actions
 from wardcat.exceptions import ConfigError
-from wardcat.llm.backends.registry import registered_backends
+from wardcat.llm.backends.registry import supported_backends
 
 logger = logging.getLogger(__name__)
 
@@ -275,10 +275,10 @@ def _validate_denylist(denylist: Any) -> None:
 
 def _validate_llm_detector(llm_cfg: dict[str, Any]) -> None:
     backend = llm_cfg.get("backend", "ollama")
-    valid_backends = registered_backends()
+    valid_backends = supported_backends()
     if backend not in valid_backends:
         raise ConfigError(
-            f"Invalid LLM backend '{backend}'. Registered backends: {sorted(valid_backends)}"
+            f"Invalid LLM backend '{backend}'. Supported backends: {sorted(valid_backends)}"
         )
 
     timeout = llm_cfg.get("timeout", 60)

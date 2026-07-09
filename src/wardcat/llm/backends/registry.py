@@ -1,19 +1,12 @@
-"""Registry of LLM backends — the extension point for new backends.
+"""LLM backend construction — one factory per built-in backend.
 
-Each backend is registered as a factory ``(llm_cfg) -> BaseLLMBackend``. Adding a
-backend (e.g. Azure OpenAI) needs no change to the core: register a factory and
-wardcat can build it. The built-in factories lazy-import their heavy deps
-(torch/transformers), so importing this module stays cheap.
-
-::
-
-    from wardcat import register_backend, BaseLLMBackend
-
-    class MyBackend(BaseLLMBackend):
-        ...
-
-    register_backend("my_backend", lambda cfg: MyBackend(cfg["model"]))
-    guard = Wardcat(salt="s").with_llm(backend="my_backend", model="...")
+wardcat ships four backends — Ollama, OpenAI-compatible, vLLM and Transformers —
+selected via the :class:`~wardcat.Backend` enum (or the ``backend`` config value).
+Backends are **not** user-extensible on purpose: a third-party backend would sit
+outside wardcat's safety checks (e.g. the plaintext-HTTP-to-remote guard) and its
+PII-handling guarantees, which is exactly where sensitive data would leak. Point
+one of the built-ins at your endpoint instead (``openai_compatible`` covers most
+OpenAI-style gateways).
 """
 
 from __future__ import annotations
@@ -27,36 +20,8 @@ from wardcat.llm.backends.base import BaseLLMBackend
 #: A factory builds a backend from the ``llm_detector`` config sub-dict.
 BackendFactory = Callable[[dict[str, Any]], BaseLLMBackend]
 
-_REGISTRY: dict[str, BackendFactory] = {}
 
-
-def register_backend(name: str, factory: BackendFactory) -> None:
-    """Register (or override) an LLM backend factory under *name*.
-
-    *factory* receives the ``llm_detector`` config dict (``base_url``, ``model``,
-    ``api_key``, ``allow_http``, …) and returns a :class:`BaseLLMBackend`.
-    """
-    _REGISTRY[name] = factory
-
-
-def registered_backends() -> frozenset[str]:
-    """The names of all currently-registered backends (built-in + custom)."""
-    return frozenset(_REGISTRY)
-
-
-def create_backend(llm_cfg: dict[str, Any]) -> BaseLLMBackend:
-    """Build the backend named by ``llm_cfg['backend']`` (default ``"ollama"``)."""
-    name = llm_cfg.get("backend", "ollama")
-    factory = _REGISTRY.get(name)
-    if factory is None:
-        raise ConfigError(
-            f"Unknown LLM backend {name!r}. Registered backends: {sorted(_REGISTRY)}. "
-            "Add one with wardcat.register_backend(name, factory)."
-        )
-    return factory(llm_cfg)
-
-
-# ── Built-in backends (lazy factories — no heavy imports at module load) ──────
+# ── Built-in backend factories (lazy imports — no heavy deps at module load) ──
 
 
 def _make_ollama(cfg: dict[str, Any]) -> BaseLLMBackend:
@@ -107,7 +72,23 @@ def _make_transformers(cfg: dict[str, Any]) -> BaseLLMBackend:
     )
 
 
-register_backend("ollama", _make_ollama)
-register_backend("openai_compatible", _make_openai_compatible)
-register_backend("vllm", _make_vllm)
-register_backend("transformers", _make_transformers)
+_BACKENDS: dict[str, BackendFactory] = {
+    "ollama": _make_ollama,
+    "openai_compatible": _make_openai_compatible,
+    "vllm": _make_vllm,
+    "transformers": _make_transformers,
+}
+
+
+def supported_backends() -> frozenset[str]:
+    """The names of the built-in LLM backends."""
+    return frozenset(_BACKENDS)
+
+
+def create_backend(llm_cfg: dict[str, Any]) -> BaseLLMBackend:
+    """Build the backend named by ``llm_cfg['backend']`` (default ``"ollama"``)."""
+    name = llm_cfg.get("backend", "ollama")
+    factory = _BACKENDS.get(name)
+    if factory is None:
+        raise ConfigError(f"Unknown LLM backend {name!r}. Supported backends: {sorted(_BACKENDS)}.")
+    return factory(llm_cfg)

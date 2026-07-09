@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from wardcat.llm.backends.base import Backend
-from wardcat.llm.backends.registry import create_backend, registered_backends
+from wardcat.llm.backends.registry import create_backend, supported_backends
 from wardcat.llm.backends.vllm import DEFAULT_VLLM_BASE_URL, VLLMBackend
 
 
@@ -38,7 +38,7 @@ class TestVLLMDefaults:
         assert Backend.VLLM == "vllm"
 
     def test_registered_as_vllm(self):
-        assert "vllm" in registered_backends()
+        assert "vllm" in supported_backends()
 
     def test_create_backend_builds_vllm(self):
         backend = create_backend(

@@ -29,11 +29,7 @@ from wardcat.exceptions import (
     WardcatError,
 )
 from wardcat.guard import Wardcat
-from wardcat.llm.backends.base import Backend, BaseLLMBackend
-from wardcat.llm.backends.registry import (
-    register_backend,
-    registered_backends,
-)
+from wardcat.llm.backends.base import Backend
 from wardcat.ner.spacy_catalog import Language, supported_languages
 
 try:
@@ -52,9 +48,6 @@ __all__ = [
     "Language",
     "supported_languages",
     "Backend",
-    "BaseLLMBackend",
-    "register_backend",
-    "registered_backends",
     "register_action",
     "registered_actions",
     "ActionContext",

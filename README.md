@@ -421,26 +421,11 @@ guard = Wardcat(salt="s").add_entity("EMAIL", "tokenize")   # use it like any bu
 > spans, and a standalone `Anonymizer` applies the actions — so you can reuse the
 > action registry or the `Anonymizer` independently.
 
-#### Custom backends (extensible)
-
-Backends are looked up in a registry, so you can add your own (e.g. Azure
-OpenAI, Anthropic, a bespoke gateway) **without changing wardcat**:
-
-```python
-from wardcat import Wardcat, BaseLLMBackend, register_backend, registered_backends
-
-class MyBackend(BaseLLMBackend):
-    def complete(self, prompt, *, timeout=60): ...
-    def complete_messages(self, messages, *, timeout=60): ...
-    def list_models(self): return []
-    def pull_model(self, model, *, on_progress=None): ...
-
-# factory receives the llm config dict (base_url, model, api_key, allow_http, …)
-register_backend("my_backend", lambda cfg: MyBackend())
-
-registered_backends()   # frozenset({"ollama", "openai_compatible", "vllm", "transformers", "my_backend"})
-guard = Wardcat(salt="s").with_llm(backend="my_backend", model="...")
-```
+> **LLM backends are not user-extensible.** wardcat ships four — `ollama`,
+> `openai_compatible`, `vllm`, `transformers` — selected via the `Backend` enum.
+> A third-party backend would sit outside wardcat's safety checks (the
+> plaintext-HTTP-to-remote guard, PII handling), so point a built-in at your
+> endpoint instead: `openai_compatible` covers most OpenAI-style gateways.
 
 #### Ensemble adjudication
 

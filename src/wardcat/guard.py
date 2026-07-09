@@ -702,8 +702,7 @@ class Wardcat(EntityPolicyMixin):
         from wardcat.detectors.llm_detector import LLMDetector
         from wardcat.llm.backends.registry import create_backend
 
-        # The backend is built from the registry — adding a backend needs no
-        # change here (wardcat.register_backend(name, factory)).
+        # Build one of the built-in backends selected by llm_cfg["backend"].
         backend = create_backend(llm_cfg)
         timeout = llm_cfg.get("timeout", 60)
 

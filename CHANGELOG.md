@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING — LLM backends are no longer user-extensible.** Removed the public `register_backend()` / `registered_backends()` helpers and dropped `BaseLLMBackend` from the package's public API. A user-supplied backend sits outside wardcat's safety checks (the plaintext-HTTP-to-remote guard, PII handling), which is exactly where sensitive data would leak, so backends are now a fixed set of the four built-ins — `ollama`, `openai_compatible`, `vllm`, `transformers` — selected via the `Backend` enum. **Migration:** point a built-in at your endpoint instead; `openai_compatible` covers most OpenAI-style gateways (LM Studio, LocalAI, LiteLLM, hosted OpenAI-compatible APIs). Pluggable **actions** (`register_action`) are unaffected.
+
 ## [0.8.1] — 2026-07-09
 
 ### Changed

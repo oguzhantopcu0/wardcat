@@ -6,8 +6,6 @@ Extension points and the layer internals.
 
 ::: wardcat.register_action
 
-::: wardcat.register_backend
-
 ::: wardcat.ActionContext
 
 ## Detector interface
@@ -18,7 +16,9 @@ Extension points and the layer internals.
 
 ## LLM backends
 
-::: wardcat.BaseLLMBackend
+The built-in backends are selected with the `Backend` enum (not user-extensible).
+
+::: wardcat.Backend
 
 ## Engine & anonymizer
 
