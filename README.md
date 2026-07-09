@@ -41,6 +41,7 @@ print(result.sanitized_text)
 ## Features
 
 - **Hybrid detection** — Regex + SpaCy NER + on-prem LLM (Ollama, vLLM, OpenAI-compatible, HuggingFace Transformers)
+- **Semantic sensitivity gate** — `is_sensitive(text) → bool`: a holistic yes/no on whether text is safe to send onward (LLM-only), catching confidential content the typed detectors miss (unreleased financials, deal terms, a confidential project); optional per-language prompt
 - **Ensemble adjudication** (optional) — the LLM verifies/relabels/drops regex & NER candidates and adds what they missed, in one call; deterministic regex results are always protected
 - **Four actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt; the default when `action` is omitted), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking)
 - **Checksum validation** — TC_ID (Nüfus İdaresi algorithm), IBAN (mod-97), and CREDIT_CARD (Luhn mod-10) validated before flagging — eliminates false positives
@@ -49,6 +50,8 @@ print(result.sanitized_text)
 - **Multilingual support** — Turkish, English, German, and French for names, addresses, birth dates, and phone numbers; plus Spanish, Italian, Dutch address patterns; TC_ID, IBAN, SSN, NIN, DNI/NIE, UK postcodes, US ZIP+4, EU VAT numbers and more
 - **Secret detection** — API keys and tokens (OpenAI, Anthropic, Stripe, AWS, Google, GitHub, GitLab, Slack, Twilio, SendGrid, npm) and PEM private keys
 - **Passport detection** — contextual passport number detection (regex keyword-based + LLM) for any country
+- **Evasion resistance** — confusable/homoglyph folding catches lookalike-character tricks (Cyrillic/fullwidth/Arabic-Indic) that fool ASCII-oriented regex
+- **Fault tolerance** — a layer that can't run (e.g. LLM backend down) degrades gracefully and is surfaced on `ScanResult.warnings` instead of crashing the scan
 - **DoS protection** — inputs exceeding 500 KB are rejected
 - **Safe logging API** — `result.redacted()` returns a PII-free dict for logs and APIs
 
@@ -106,11 +109,10 @@ uv run python -m spacy download tr_core_news_md    # Turkish (recommended)
 
 ## Quick Start
 
-> **Migrating from 0.3.x:** the main class is now `Wardcat` (the old `LLMGuard`
-> name was removed — `from wardcat import Wardcat`). `configure_entity()` /
-> `configure_entities()` were renamed to `add_entity()` / `add_entities()` and
-> the old names were removed. `add_entity()` no longer takes an `enabled`
-> argument — adding enables; use `remove_entity()` to turn one off.
+> **Upgrading?** Being pre-1.0, `wardcat` still makes occasional breaking changes.
+> Each one is listed with migration steps in the [CHANGELOG](CHANGELOG.md) — e.g.
+> NER is now configured only via `with_ner(...)` (0.7.0) and LLM backends are no
+> longer user-extensible (0.9.0).
 
 ### Programmatic API
 
