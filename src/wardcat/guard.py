@@ -220,12 +220,15 @@ class Wardcat(EntityPolicyMixin):
         self._check_text_size(text)
         if not text.strip():
             return False
+        language = self._config.get("llm_detector", {}).get("language")
         # Long inputs are chunked; a single sensitive chunk makes the whole
         # text sensitive, and we short-circuit on the first hit.
         for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
             if not chunk.strip():
                 continue
-            reply = backend.complete_messages(build_sensitivity_messages(chunk), timeout=timeout)
+            reply = backend.complete_messages(
+                build_sensitivity_messages(chunk, language), timeout=timeout
+            )
             if parse_sensitivity(reply):
                 return True
         return False
@@ -236,11 +239,12 @@ class Wardcat(EntityPolicyMixin):
         self._check_text_size(text)
         if not text.strip():
             return False
+        language = self._config.get("llm_detector", {}).get("language")
         for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
             if not chunk.strip():
                 continue
             reply = await backend.complete_messages_async(
-                build_sensitivity_messages(chunk), timeout=timeout
+                build_sensitivity_messages(chunk, language), timeout=timeout
             )
             if parse_sensitivity(reply):
                 return True
@@ -430,6 +434,7 @@ class Wardcat(EntityPolicyMixin):
         device_map: str = "auto",
         load_in_8bit: bool = False,
         load_in_4bit: bool = False,
+        language: str | Language | None = None,
     ) -> Wardcat:
         """
         Enable the on-prem LLM detector. Supports chaining; mirrors :meth:`with_ner`.
@@ -445,7 +450,13 @@ class Wardcat(EntityPolicyMixin):
 
         ``backend`` is the backend *type* (:class:`~wardcat.Backend`); the
         *address* goes to ``base_url``.
+
+        :param language: selects a localized system prompt for :meth:`is_sensitive`
+            (``tr``/``de``/``fr``; anything else uses the English, multilingual-aware
+            prompt). It does not change the entity-detection prompt used by
+            :meth:`scan`, which is multilingual by design.
         """
+        lang_code = language.value if isinstance(language, Language) else language
         llm_cfg = self._config.setdefault("llm_detector", {})
         llm_cfg.update(
             {
@@ -461,6 +472,7 @@ class Wardcat(EntityPolicyMixin):
                 "device_map": device_map,
                 "load_in_8bit": load_in_8bit,
                 "load_in_4bit": load_in_4bit,
+                "language": lang_code,
             }
         )
         self._rebuild()

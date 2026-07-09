@@ -6,9 +6,9 @@ import asyncio
 
 import pytest
 
-from wardcat import ConfigError, Wardcat
+from wardcat import ConfigError, Language, Wardcat
 from wardcat.llm.backends.base import BaseLLMBackend
-from wardcat.llm.prompt import parse_sensitivity
+from wardcat.llm.prompt import build_sensitivity_messages, parse_sensitivity
 
 
 class _StubBackend(BaseLLMBackend):
@@ -149,6 +149,40 @@ class TestIsSensitive:
         guard = _guard_with_sequence(["false", "false", "false"])
         assert guard.is_sensitive(_LONG_TEXT) is False
         assert guard._llm_detector.backend.calls == 3  # every chunk checked
+
+
+class TestLocalizedPrompt:
+    def test_default_is_english(self):
+        system = build_sensitivity_messages("x")[0]["content"]
+        assert "Judge the text as a whole" in system
+
+    def test_turkish_prompt(self):
+        system = build_sensitivity_messages("x", "tr")[0]["content"]
+        assert "HASSAS" in system and "sınıflandır" in system.lower()
+
+    def test_german_and_french_prompts(self):
+        assert "SENSIBLE" in build_sensitivity_messages("x", "de")[0]["content"]
+        assert "SENSIBLES" in build_sensitivity_messages("x", "fr")[0]["content"]
+
+    def test_unknown_language_falls_back_to_english(self):
+        # es is a NER language but has no localized sensitivity prompt.
+        system = build_sensitivity_messages("x", "es")[0]["content"]
+        assert "Judge the text as a whole" in system
+
+    def test_with_llm_language_selects_prompt(self):
+        guard = Wardcat(salt="s").with_llm(model="stub", language="tr")
+        guard._llm_detector.backend = _StubBackend("false")  # type: ignore[union-attr]
+        guard.is_sensitive("merhaba")
+        assert "HASSAS" in guard._llm_detector.backend.messages[0]["content"]
+
+    def test_with_llm_language_enum_normalized(self):
+        guard = Wardcat(salt="s").with_llm(model="stub", language=Language.DE)
+        assert guard._config["llm_detector"]["language"] == "de"
+
+    def test_no_language_defaults_english_in_guard(self):
+        guard = _guard_with("false")
+        guard.is_sensitive("hello")
+        assert "Judge the text as a whole" in guard._llm_detector.backend.messages[0]["content"]
 
 
 @pytest.mark.parametrize(

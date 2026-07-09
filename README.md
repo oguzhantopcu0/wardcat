@@ -460,6 +460,8 @@ if guard.is_sensitive(user_text):
 
 - **LLM-only** — configured through `with_llm(...)`; no entities to enable, no regex/NER runs. Raises `ConfigError` if the LLM layer isn't set up.
 - **Fail-closed** — if the backend is unreachable the error propagates (a guardrail never silently treats sensitive text as safe). Empty text is `False`.
+- **Localized prompt** — `with_llm(language="tr")` (or `de`/`fr`) uses a system prompt written in that language, which can help smaller models; any other value uses the English, multilingual-aware prompt. (This affects only `is_sensitive()`, not the `scan()` detection prompt.)
+- **Long inputs** are chunked at paragraph boundaries — any sensitive chunk makes the whole text sensitive — and oversized input is rejected (`max_text_bytes`).
 - Async: `await guard.is_sensitive_async(text)`.
 
 ---
