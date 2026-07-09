@@ -13,24 +13,44 @@ Three detection layers cooperate behind one interface:
 | **ner** | SpaCy Named Entity Recognition — names, orgs, locations | fast, per-language model |
 | **llm** | On-prem LLM — contextual/semantic PII (GDPR Art.9, contextual secrets) | slow, strongest context |
 
-**Detection is opt-in:** a bare `Wardcat()` detects nothing — you enable the
-entities you want.
+**Detection is opt-in:** a bare `Wardcat()` detects nothing — you configure the
+layers and entities you want. The full picture — all three layers, a per-entity
+action policy, the semantic guardrail, and anonymization:
 
 ```python
 import os
-from wardcat import Wardcat, Entity, Action
+from wardcat import Wardcat, Backend, Entity, Action
 
+# One guard, all three detection layers — regex + SpaCy NER + on-prem LLM.
 guard = (
-    Wardcat(salt=os.environ.get("WARDCAT_SALT", ""))
-    .add_entity(Entity.CREDIT_CARD, Action.HASH)
-    .add_entity(Entity.EMAIL,       Action.WARN)
-    .add_entity(Entity.TC_ID,       Action.HASH)
+    Wardcat(salt=os.environ["WARDCAT_SALT"])               # your app supplies the salt
+    .with_ner(language="tr")                               # names / orgs  (needs wardcat[ner])
+    .with_llm(backend=Backend.OLLAMA, model="gemma3:12b")  # contextual + semantic (needs Ollama)
+    # An action per entity: hash IDs, mask contact details, redact names, flag IPs.
+    .add_entities([Entity.CREDIT_CARD, Entity.IBAN, Entity.TC_ID], action=Action.HASH)
+    .add_entities([Entity.EMAIL, Entity.PHONE], action=Action.MASK)
+    .add_entity(Entity.PERSON, Action.REDACT)
+    .add_entity(Entity.IP_ADDRESS, Action.WARN)
 )
 
-result = guard.scan("Name: Ali Veli, card: 4532 0151 1283 0366, email: ali@example.com")
-print(result.sanitized_text)
-# Name: Ali Veli, card: [CREDIT_CARD:ea782818c5a992a8], email: ali@example.com
+text = "Ben Ahmet Yılmaz, kartım 4532 0151 1283 0366, e-posta ahmet@firma.com."
+
+# 1) Semantic guardrail: does the text contain sensitive info at all? (holistic LLM yes/no)
+if guard.is_sensitive(text):
+
+    # 2) Anonymize the PII before the text is stored, logged, or forwarded.
+    result = guard.scan(text)
+    print(result.sanitized_text)
+    # Ben [PERSON], kartım [CREDIT_CARD:ea782818c5a992a8], e-posta a****@firma.com.
+
+    print(result.redacted())   # PII-free dict, safe for logs / APIs
 ```
+
+!!! tip "The NER and LLM layers are optional"
+    Regex-only detection needs no models — just
+    `Wardcat(salt=...).add_entity(Entity.CREDIT_CARD, Action.HASH)` and `.scan(...)`.
+    Add `with_ner(...)` / `with_llm(...)` when you want names or contextual/semantic
+    detection.
 
 ## Highlights
 
