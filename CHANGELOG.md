@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Adjacent IBANs are now split.** Two (or more) IBANs run together with no separator (`TR…1326DE…3000`) used to be read as one span that failed the checksum, so neither was flagged. The regex now captures the whole run and `_segment_ibans()` splits it back into individual IBANs using the ISO 13616 per-country lengths — each segment is mod-97-validated, so a valid IBAN followed by garbage is **not** force-split. Removed the corresponding `xfail`.
+
+### Docs
+
+- Trimmed the README "Known Limitations": dropped the now-fixed **adjacent-IBAN** row and the stale **Transformers-backend** row (the transformers backend *is* exercised against a real model in CI — nightly and on backend-file changes). Noted that a bare 5-digit number is still caught as the generic `POSTAL_CODE`.
+
 ## [0.9.0] — 2026-07-09
 
 ### Added

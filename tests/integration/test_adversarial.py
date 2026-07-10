@@ -144,12 +144,21 @@ class TestConsecutiveEntities:
         assert "PHONE" in types
         assert "EMAIL" in types
 
-    @pytest.mark.xfail(reason="Two IBANs without separator breaks word boundary")
     def test_two_ibans_no_separator(self, g):
-        ibans = "TR330006100519786457841326TR330006100519786457841327"
+        # Two valid IBANs (TR + DE, different lengths) concatenated with no
+        # separator — length-aware segmentation splits them back apart.
+        ibans = "TR330006100519786457841326" + "DE89370400440532013000"
         result = g.scan(ibans)
-        iban_violations = [v for v in result.violations if v.entity_type == "IBAN"]
-        assert len(iban_violations) == 2
+        iban_violations = [v.original for v in result.violations if v.entity_type == "IBAN"]
+        assert iban_violations == [
+            "TR330006100519786457841326",
+            "DE89370400440532013000",
+        ]
+
+    def test_invalid_second_iban_not_force_split(self, g):
+        # A run that is one valid IBAN + garbage must NOT be force-split.
+        result = g.scan("TR330006100519786457841326TR330006100519786457841327")
+        assert [v for v in result.violations if v.entity_type == "IBAN"] == []
 
 
 # ══════════════════════════════════════════════════════════════════════════

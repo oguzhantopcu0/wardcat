@@ -60,8 +60,11 @@ _PATTERNS: dict[str, tuple[str, int]] = {
     # Groups of 4 alphanumeric characters, optionally separated by single spaces.
     # Minimum BBAN: 2 full groups (e.g. Norway 15 chars); maximum: 8 groups + remainder.
     # Checksum is validated by _validate_iban() which strips spaces before mod-97.
+    # {2,24} groups (not {2,8}) so a run of several concatenated IBANs is captured
+    # as one span — _segment_ibans() then splits it back into the individual IBANs.
+    # The quantifier is bounded, so there is no catastrophic-backtracking risk.
     "IBAN": (
-        r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,8}(?:[ ]?[A-Z0-9]{1,4})?\b",
+        r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,24}(?:[ ]?[A-Z0-9]{1,4})?\b",
         re.IGNORECASE,
     ),
     # ── IP address ────────────────────────────────────────────────────
@@ -402,90 +405,23 @@ def _safe_finditer(pattern: re.Pattern, text: str) -> list:
             return []
 
 
-# ISO 3166-1 alpha-2 country codes that have published IBAN formats (SWIFT/IBAN registry).
-_VALID_IBAN_COUNTRIES: frozenset[str] = frozenset(
-    {
-        "AD",
-        "AE",
-        "AL",
-        "AT",
-        "AZ",
-        "BA",
-        "BE",
-        "BG",
-        "BH",
-        "BR",
-        "BY",
-        "CH",
-        "CR",
-        "CY",
-        "CZ",
-        "DE",
-        "DK",
-        "DO",
-        "EE",
-        "EG",
-        "ES",
-        "FI",
-        "FO",
-        "FR",
-        "GB",
-        "GE",
-        "GI",
-        "GL",
-        "GR",
-        "GT",
-        "HR",
-        "HU",
-        "IE",
-        "IL",
-        "IQ",
-        "IS",
-        "IT",
-        "JO",
-        "KW",
-        "KZ",
-        "LB",
-        "LC",
-        "LI",
-        "LT",
-        "LU",
-        "LV",
-        "LY",
-        "MC",
-        "MD",
-        "ME",
-        "MK",
-        "MR",
-        "MT",
-        "MU",
-        "NL",
-        "NO",
-        "PK",
-        "PL",
-        "PS",
-        "PT",
-        "QA",
-        "RO",
-        "RS",
-        "SA",
-        "SC",
-        "SD",
-        "SE",
-        "SI",
-        "SK",
-        "SM",
-        "ST",
-        "SV",
-        "TL",
-        "TN",
-        "TR",
-        "UA",
-        "VA",
-        "VG",
-        "XK",
-    }
-)
+# ISO 13616 IBAN registry: country code → total IBAN length. Used both to reject
+# unknown countries and to split a run of concatenated IBANs (see _segment_ibans).
+_IBAN_LENGTHS: dict[str, int] = {
+    "AD": 24, "AE": 23, "AL": 28, "AT": 20, "AZ": 28, "BA": 20, "BE": 16,
+    "BG": 22, "BH": 22, "BR": 29, "BY": 28, "CH": 21, "CR": 22, "CY": 28,
+    "CZ": 24, "DE": 22, "DK": 18, "DO": 28, "EE": 20, "EG": 29, "ES": 24,
+    "FI": 18, "FO": 18, "FR": 27, "GB": 22, "GE": 22, "GI": 23, "GL": 18,
+    "GR": 27, "GT": 28, "HR": 21, "HU": 28, "IE": 22, "IL": 23, "IQ": 23,
+    "IS": 26, "IT": 27, "JO": 30, "KW": 30, "KZ": 20, "LB": 28, "LC": 32,
+    "LI": 21, "LT": 20, "LU": 20, "LV": 21, "LY": 25, "MC": 27, "MD": 24,
+    "ME": 22, "MK": 19, "MR": 27, "MT": 31, "MU": 30, "NL": 18, "NO": 15,
+    "PK": 24, "PL": 28, "PS": 29, "PT": 25, "QA": 29, "RO": 24, "RS": 22,
+    "SA": 24, "SC": 31, "SD": 18, "SE": 24, "SI": 19, "SK": 24, "SM": 27,
+    "ST": 25, "SV": 28, "TL": 23, "TN": 24, "TR": 26, "UA": 29, "VA": 22,
+    "VG": 24, "XK": 20,
+}  # fmt: skip
+_VALID_IBAN_COUNTRIES: frozenset[str] = frozenset(_IBAN_LENGTHS)
 
 
 def _validate_iban(value: str) -> bool:
@@ -515,6 +451,29 @@ def _validate_iban(value: str) -> bool:
         return int(numeric) % 97 == 1
     except ValueError:
         return False
+
+
+def _segment_ibans(cleaned: str) -> list[tuple[int, int]] | None:
+    """Split a run of IBANs concatenated with no separator.
+
+    Two IBANs run together (``TR…1326TR…1326``) are matched as one span that
+    fails the checksum. Using the ISO 13616 per-country lengths, greedily peel
+    a valid IBAN at a time. Returns the ``(start, end)`` offsets within *cleaned*
+    for each IBAN, or ``None`` unless the run partitions **exactly** into two or
+    more mod-97-valid consecutive IBANs (so a single malformed value is not
+    force-split). *cleaned* must be space-free and upper-cased.
+    """
+    segments: list[tuple[int, int]] = []
+    pos, n = 0, len(cleaned)
+    while pos < n:
+        length = _IBAN_LENGTHS.get(cleaned[pos : pos + 2])
+        if length is None or pos + length > n:
+            return None
+        if not _validate_iban(cleaned[pos : pos + length]):
+            return None
+        segments.append((pos, pos + length))
+        pos += length
+    return segments if len(segments) >= 2 else None
 
 
 def _validate_luhn(value: str) -> bool:
@@ -656,6 +615,22 @@ class RegexDetector(BaseDetector):
                 # not defeat the checksum.
                 validator = _VALIDATORS.get(entity_type)
                 if validator is not None and not validator(folded_value):
+                    # Two IBANs concatenated with no separator fail as one span;
+                    # split them (offsets map 1:1 — no spaces, folding is
+                    # length-preserving) and emit each valid IBAN.
+                    if entity_type == "IBAN" and " " not in folded_value:
+                        segs = _segment_ibans(folded_value.upper())
+                        if segs:
+                            for s0, s1 in segs:
+                                spans.append(
+                                    DetectedSpan(
+                                        entity_type="IBAN",
+                                        text=text[match.start() + s0 : match.start() + s1],
+                                        start=match.start() + s0,
+                                        end=match.start() + s1,
+                                    )
+                                )
+                            continue
                     logger.debug(
                         "%s format match rejected (failed validation): %r — "
                         "if this is real PII, the value may be incorrectly formatted.",
