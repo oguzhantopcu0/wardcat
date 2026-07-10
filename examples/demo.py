@@ -1,5 +1,9 @@
 """
-wardcat kullanım örnekleri.
+wardcat usage examples.
+
+The sample text is intentionally Turkish — wardcat is Turkish-first (TC ID,
+Turkish NER, Turkish phone/IBAN formats), so a Turkish sample shows entities
+like TC_ID that only exist in that context.
 """
 
 from wardcat import Action, Entity, Wardcat
@@ -18,7 +22,7 @@ def demo_programmatic_api():
     print("=" * 60)
 
     guard = (
-        Wardcat(salt="gizli-tuz-123")
+        Wardcat(salt="example-salt-123")
         .add_entity(Entity.EMAIL, Action.WARN)
         .add_entity(Entity.CREDIT_CARD, Action.HASH)
         .add_entity(Entity.IBAN, Action.HASH)
@@ -27,8 +31,8 @@ def demo_programmatic_api():
 
     result = guard.scan(SAMPLE)
 
-    print(f"\nTemizlenmiş metin:\n{result.sanitized_text}")
-    print(f"\nToplam ihlal: {len(result.violations)}")
+    print(f"\nSanitized text:\n{result.sanitized_text}")
+    print(f"\nTotal violations: {len(result.violations)}")
     for v in result.violations:
         if v.action == "hash":
             print(f"  [{v.action}] {v.entity_type}: '{v.original}' → '{v.replacement}'")
@@ -44,8 +48,8 @@ def demo_yaml_api():
     guard = Wardcat(config_path="config/default.yaml")
     result = guard.scan(SAMPLE)
 
-    print(f"\nTemizlenmiş metin:\n{result.sanitized_text}")
-    print(f"\nTespit edilen entity tipleri: {sorted({v.entity_type for v in result.violations})}")
+    print(f"\nSanitized text:\n{result.sanitized_text}")
+    print(f"\nDetected entity types: {sorted({v.entity_type for v in result.violations})}")
 
 
 if __name__ == "__main__":
