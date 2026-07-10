@@ -15,11 +15,11 @@ from wardcat.config.loader import validate_config
 
 
 class TestHierarchy:
-    def test_config_error_is_aiguard_and_value_error(self):
+    def test_config_error_is_wardcat_and_value_error(self):
         assert issubclass(ConfigError, WardcatError)
         assert issubclass(ConfigError, ValueError)  # backward compatibility
 
-    def test_model_download_error_is_aiguard_and_runtime_error(self):
+    def test_model_download_error_is_wardcat_and_runtime_error(self):
         assert issubclass(ModelDownloadError, WardcatError)
         assert issubclass(ModelDownloadError, RuntimeError)  # backward compatibility
 
@@ -46,7 +46,7 @@ class TestConfigErrorRaised:
         with pytest.raises(ValueError):
             Wardcat().add_entity("EMAIL", action="nope")
 
-    def test_catchable_as_aiguard_error(self):
+    def test_catchable_as_wardcat_error(self):
         with pytest.raises(WardcatError):
             Wardcat().add_entity("EMAIL", layers=["bogus"])
 

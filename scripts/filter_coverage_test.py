@@ -360,11 +360,11 @@ def detector_of(confidence: float) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 print(f"{BOLD}{CYAN}Guard kuruluyor: Regex + NER(tr_core_news_lg) + LLM(gemma3:12b)…{RESET}")
-guard = Wardcat(
-    use_ner=True,
-    spacy_model="tr_core_news_lg",
-    salt="coverage-test-salt",
-).with_llm(backend="ollama", model="gemma3:12b", timeout=120)
+guard = (
+    Wardcat(salt="coverage-test-salt")
+    .with_ner(spacy_model="tr_core_news_lg", auto_download=False)
+    .with_llm(backend="ollama", model="gemma3:12b", timeout=120)
+)
 # Bağlamsal sırların LLM tarafından da yakalanması için CUSTOM_SECRET'i aç.
 guard._config.setdefault("llm_detector", {}).setdefault("entities", {})["CUSTOM_SECRET"] = {
     "enabled": True,

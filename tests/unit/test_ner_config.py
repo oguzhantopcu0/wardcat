@@ -91,7 +91,7 @@ def test_explicit_models_deduped():
 # ---------------------------------------------------------------------------
 
 
-def test_library_ignores_aiguard_env(monkeypatch):
+def test_library_ignores_env(monkeypatch):
     monkeypatch.setenv("WARDCAT_SALT", "env-salt-xyz")
     monkeypatch.setenv("WARDCAT_SPACY_MODEL", "tr_core_news_sm")
     guard = Wardcat()

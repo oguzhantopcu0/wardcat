@@ -225,10 +225,10 @@ class TestScanBatchIsolation:
 class TestLibraryIgnoresEnv:
     """The library is config-explicit: load_config / Wardcat never read env vars.
 
-    (Reading WARDCAT_* env vars is the CLI's job — see tests/unit/test_cli.py.)
+    Read secrets from the environment in *your* application and pass them in.
     """
 
-    def test_load_config_ignores_aiguard_salt(self):
+    def test_load_config_ignores_wardcat_salt(self):
         with patch.dict(os.environ, {"WARDCAT_SALT": "env-test-salt"}):
             cfg = load_config()
         assert cfg["salt"] == ""  # not read from env
@@ -242,7 +242,7 @@ class TestLibraryIgnoresEnv:
         assert cfg["llm_detector"]["base_url"] == "http://localhost:11434"
         assert cfg["llm_detector"]["model"] == "llama3.2"
 
-    def test_aiguard_ignores_env_salt(self):
+    def test_wardcat_ignores_env_salt(self):
         from wardcat import Wardcat
 
         with patch.dict(os.environ, {"WARDCAT_SALT": "env-salt"}):

@@ -48,7 +48,9 @@ def make_guard(entities: set[str] | None = None, use_ner: bool = False) -> Wardc
         "IP_ADDRESS",
         "CUSTOM_SECRET",
     }
-    guard = Wardcat(use_ner=use_ner)
+    guard = Wardcat()
+    if use_ner:
+        guard = guard.with_ner(spacy_model="tr_core_news_md", auto_download=False)
     for e in enabled:
         guard._config["entities"].setdefault(e, {"enabled": True, "action": "warn"})
     guard._config["entities"]["PERSON"] = {"enabled": True, "action": "hash"}
@@ -246,11 +248,7 @@ check(
 # ── 8. Batch tarama ──────────────────────────────────────────────────────────
 section("8 · Batch Tarama")
 
-batch_guard = Wardcat(
-    use_ner=False,
-    use_llm=True,
-    llm_model="gemma3:12b",
-)
+batch_guard = Wardcat().with_llm(model="gemma3:12b")
 lines = [
     "Sipariş veren: Zeynep Arslan, kart: 5500 0000 0000 0004",
     "Hava bugün çok güzel.",
