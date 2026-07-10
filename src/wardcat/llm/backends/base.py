@@ -10,11 +10,11 @@ from enum import Enum
 class Backend(str, Enum):
     """LLM backend types, as constants — for typo-proof selection.
 
-    Pass these to ``Wardcat(llm_backend=...)`` instead of bare strings::
+    Pass these to :meth:`Wardcat.with_llm` instead of bare strings::
 
         from wardcat import Wardcat, Backend
 
-        Wardcat(use_llm=True, llm_backend=Backend.OPENAI_COMPATIBLE, ...)
+        Wardcat(salt="s").with_llm(backend=Backend.OPENAI_COMPATIBLE, model="...")
 
     Each member *is* its string value (``Backend.OLLAMA == "ollama"``), so the
     plain string form is still accepted.

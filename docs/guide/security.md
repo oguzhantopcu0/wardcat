@@ -32,9 +32,11 @@ guard = Wardcat(salt=os.environ["WARDCAT_SALT"]).add_entity("CREDIT_CARD", "hash
 
 ## Transport
 
-HTTP connections to a **remote** LLM backend are blocked (PII would traverse the
-network in plaintext); localhost is only warned. Override with
-`with_llm(allow_http=True)` — not recommended. Prefer HTTPS via a reverse proxy.
+Loopback HTTP (`localhost` / `127.0.0.1` / `::1`) is allowed with no warning — it
+never leaves the machine, so a local Ollama needs no `allow_http`. HTTP to a
+**remote** LLM backend is blocked (PII would traverse the network in plaintext);
+override with `with_llm(allow_http=True)` — not recommended. Prefer HTTPS via a
+reverse proxy.
 
 ## Prompt injection (LLM layer)
 

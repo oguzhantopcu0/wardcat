@@ -416,7 +416,7 @@ guard = Wardcat(salt="s").with_llm(
 )
 ```
 
-> **Note:** HTTP connections to LLM backends (including localhost) log a warning. Use HTTPS in production via a reverse proxy (nginx, Caddy).
+> **Note:** Loopback HTTP (`localhost` / `127.0.0.1` / `::1`) is allowed with no warning — it never leaves the machine, so the common local-Ollama setup needs no `allow_http`. HTTP to a **remote** host is blocked (pass `allow_http=True` to override); use HTTPS in production via a reverse proxy (nginx, Caddy).
 
 #### Custom actions (extensible)
 

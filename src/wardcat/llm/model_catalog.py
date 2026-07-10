@@ -1,8 +1,7 @@
 """
 Catalog of recommended on-prem LLM models.
 
-The options presented to the user via the ``models setup`` command or
-``Wardcat(use_llm=True)`` are defined here.
+The recommended models used with ``Wardcat().with_llm(...)`` are defined here.
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ class ModelInfo:
     backend: str = "ollama"
     """Backend name: ``"ollama"`` or ``"transformers"``."""
     recommended: bool = False
-    """``True`` if ``models setup`` recommends this model by default."""
+    """``True`` if this model is a recommended default for its backend."""
 
 
 # Supported models — grouped by backend and VRAM
