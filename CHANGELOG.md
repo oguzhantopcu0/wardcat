@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-07-10
+
+### Fixed
+
+- Repaired the dev scripts under `scripts/` (`live_scan_test.py`, `filter_coverage_test.py`), which still called the removed constructor NER/LLM arguments (`Wardcat(use_ner=…, use_llm=…, llm_model=…)`) and would crash — rewritten to the `with_ner()`/`with_llm()` builders.
+
+### Docs
+
+- Consistency pass over README + docs (and docstrings that surface in the API reference): corrected the stale "localhost HTTP is warned" claim (loopback is allowed silently since 0.7.0 — only remote HTTP is blocked); updated the `Backend` enum / `model_catalog` docstrings that still showed the removed `Wardcat(use_llm=…)` constructor and `models setup` CLI; renamed leftover `aiguard`-named tests and a comment referencing the deleted `test_cli.py`.
+
 ## [0.9.1] — 2026-07-10
 
 ### Fixed
@@ -243,7 +253,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
-[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/oguzhantopcu0/wardcat/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/oguzhantopcu0/wardcat/compare/v0.8.0...v0.8.1
