@@ -756,17 +756,17 @@ uv run pytest --cov=src/wardcat --cov-report=term-missing
 
 ## Known Limitations
 
-| Case | Description |
-|---|---|
-| Homoglyph domain | Confusables (Cyrillic/Greek lookalikes, fullwidth/Arabic digits) are folded before matching by default (`normalize_confusables`), so `ali@tеst.com`, `４111…` are caught. Folding is a curated skeleton, not the full Unicode confusables table — an exotic lookalike may still slip through |
-| `US_ZIP_CODE` | Plain 5-digit ZIPs only matched with a `ZIP:` keyword; otherwise ZIP+4 (`12345-6789`) required to avoid false positives (a bare 5-digit number is still caught as the generic `POSTAL_CODE` when enabled) |
-| `EU_NATIONAL_ID` | Spanish DNI/NIE and French INSEE via regex; German IDs need the LLM layer |
-| `PASSPORT` | Regex requires a passport keyword (`passport no:`, `pasaport`, `Reisepass`, `passeport`); the LLM layer catches unlabeled cases |
-| `FINANCIAL_AMOUNT` / `VAT_NUMBER` | `FINANCIAL_AMOUNT` is off by default (enable for confidential docs); bare Turkish Vergi No needs a keyword |
-| Multilingual NER | One SpaCy model loads per language — select with `language=`/`spacy_model=` (a list enables several). wardcat does not bundle language *detection* by design (keeps the core dependency-light); detect with your own tool and pass the code — `supported_languages()` reports what's available. Or use the language-agnostic LLM layer |
-| European addresses | Regex requires a recognizable street-type keyword (Straße, Rue, Calle…); unnumbered informal addresses may be missed |
-| Turkish NER (`tr_core_news_trf`) | Transformer model incompatible with SpaCy 3.5+ — use `tr_core_news_md` or `tr_core_news_lg` |
-| Turkish NER quality | `tr_core_news_md/lg` trained on news text; may miss names in non-standard contexts. For best results combine with `.with_llm(...)` |
+| Case | Description | Mitigation |
+|---|---|---|
+| Homoglyph domain | Confusable folding (`normalize_confusables`, on by default) catches Cyrillic/Greek lookalikes and fullwidth/Arabic digits (`ali@tеst.com`, `４111…`), but it is a curated skeleton, not the full Unicode table — an exotic lookalike may slip through | Add an allowlist/extra validation for high-stakes fields; the LLM layer can flag suspicious text |
+| `US_ZIP_CODE` | A bare 5-digit ZIP is matched only with a `ZIP:` keyword; otherwise ZIP+4 (`12345-6789`) is required, to avoid false positives | Enable `POSTAL_CODE` (catches any bare 5-digit), or the LLM layer for contextual ZIPs |
+| `EU_NATIONAL_ID` | Spanish DNI/NIE and French INSEE are matched by regex; German IDs are not | Enable the LLM layer — it catches German (and other) national IDs contextually |
+| `PASSPORT` | Regex needs a passport keyword (`passport no:`, `pasaport`, `Reisepass`, `passeport`) — bare passport numbers are too generic to match safely | Enable the LLM layer — it catches unlabeled passport numbers |
+| `FINANCIAL_AMOUNT` / `VAT_NUMBER` | `FINANCIAL_AMOUNT` is off by default; a bare Turkish Vergi No needs a keyword | Enable `FINANCIAL_AMOUNT` for confidential docs; use a `Vergi No`/`VKN` keyword or the LLM layer for VAT |
+| Multilingual NER | One SpaCy model loads per language; wardcat bundles no language *detection* by design (keeps the core dependency-light) | Detect the language yourself (check `supported_languages()`) and pass several models via `language=[...]`, or use the language-agnostic LLM layer |
+| European addresses | Regex needs a street-type keyword (Straße, Rue, Calle…); unnumbered informal addresses may be missed | Use the NER `ADDRESS` / LLM layer, or add a `custom_patterns` rule for your address format |
+| Turkish NER (`tr_core_news_trf`) | The transformer model is incompatible with SpaCy 3.5+ | Use `tr_core_news_md` or `tr_core_news_lg` |
+| Turkish NER quality | `tr_core_news_md/lg` are news-trained and may miss names in non-standard contexts | Combine with `.with_llm(...)` — the LLM catches names NER misses |
 
 ---
 
