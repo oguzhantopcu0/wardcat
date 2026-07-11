@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-07-11
+
+### Docs
+
+- **Documented the async/concurrency API.** `scan_async` was essentially undocumented (the intro and examples were all synchronous). Added an "Async & concurrency" section to the README and the layers guide — `scan_async` / `scan_batch_async` / `is_sensitive_async`, `asyncio.gather` for overlapping requests, an async FastAPI handler, the "build one guard, share it, don't reconfigure while serving" rule, and the note that the LLM server (vLLM / `OLLAMA_NUM_PARALLEL`) is the real parallelism ceiling. Also fixed the docs FastAPI example (was calling sync `scan()` in an async handler).
+- Example prose in `examples/demo.py` is now English (docstring, print output, salt) while keeping the Turkish PII sample that demonstrates Turkish-specific entities like `TC_ID`.
+
 ## [0.9.2] — 2026-07-10
 
 ### Fixed
@@ -253,7 +260,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
-[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/oguzhantopcu0/wardcat/compare/v0.8.1...v0.9.0
