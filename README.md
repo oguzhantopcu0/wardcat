@@ -70,6 +70,8 @@ if guard.is_sensitive(text):
 - **DoS protection** — inputs exceeding 500 KB are rejected
 - **Safe logging API** — `result.redacted()` returns a PII-free dict for logs and APIs
 
+> **Disclaimer.** wardcat is a **best-effort** PII detector — it does not catch everything (false negatives and positives are expected) and is **not legal advice or a substitute for compliance review** (e.g. GDPR/KVKK); using it does not by itself make a system compliant. Validate it against your own data and requirements. Provided "as is" (MIT — see [LICENSE](LICENSE)).
+
 ---
 
 ## Installation
