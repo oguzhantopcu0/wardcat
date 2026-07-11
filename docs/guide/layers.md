@@ -130,12 +130,14 @@ warms it via `keep_alive`, ~5 min; vLLM stays loaded for the server's lifetime).
     app = FastAPI(lifespan=lifespan)
 
     @app.post("/scan")
-    def scan(text: str):
-        return guard.scan(text).sanitized_text   # warm model
+    async def scan(text: str):
+        # await the async API so concurrent requests overlap instead of blocking
+        return (await guard.scan_async(text)).sanitized_text   # warm model
     ```
 
     **Do not** build `Wardcat(...)` inside the request handler — that reloads the
-    model on every request.
+    model on every request. One shared guard is safe across concurrent scans;
+    just don't *reconfigure* it while it is serving requests.
 
 !!! warning "Multiple workers multiply VRAM"
     Each `uvicorn --workers N` / gunicorn worker is a separate process, so the
@@ -151,6 +153,24 @@ warms it via `keep_alive`, ~5 min; vLLM stays loaded for the server's lifetime).
 | Prod serving, multiple workers, high traffic | `vllm` / `ollama` |
 | Single long-lived process, batch jobs, dev, air-gapped | `transformers` |
 | Repeated short-lived CLI runs | `ollama` / `vllm` (daemon stays warm between runs) |
+
+### Async & concurrency
+
+Every scanning call has an async twin — `scan_async`, `scan_batch_async`,
+`is_sensitive_async`. CPU layers run in a thread pool; the LLM layer uses native
+async I/O, so concurrent requests overlap instead of blocking:
+
+```python
+import asyncio
+
+results = await asyncio.gather(*(guard.scan_async(t) for t in texts))
+```
+
+- A shared `Wardcat` is safe across concurrent scans (caches/detectors are
+  lock-protected); don't reconfigure it while it is serving.
+- `scan_async` is non-blocking, but a single Ollama on one GPU can still process
+  LLM requests near-sequentially — use **vLLM** (continuous batching) or raise
+  `OLLAMA_NUM_PARALLEL` for genuine parallel LLM throughput.
 
 ### Ensemble adjudication
 

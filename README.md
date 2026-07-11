@@ -61,6 +61,7 @@ if guard.is_sensitive(text):
 - **Checksum validation** — TC_ID (Nüfus İdaresi algorithm), IBAN (mod-97), and CREDIT_CARD (Luhn mod-10) validated before flagging — eliminates false positives
 - **Rainbow table protection** — user-defined salt for all hashes
 - **Two APIs** — method chaining (programmatic) and YAML (declarative)
+- **Async & batch** — `scan_async` / `scan_batch` / `is_sensitive_async`; concurrent requests overlap (native async LLM I/O), one shared guard is safe to reuse across scans
 - **Multilingual support** — Turkish, English, German, and French for names, addresses, birth dates, and phone numbers; plus Spanish, Italian, Dutch address patterns; TC_ID, IBAN, SSN, NIN, DNI/NIE, UK postcodes, US ZIP+4, EU VAT numbers and more
 - **Secret detection** — API keys and tokens (OpenAI, Anthropic, Stripe, AWS, Google, GitHub, GitLab, Slack, Twilio, SendGrid, npm) and PEM private keys
 - **Passport detection** — contextual passport number detection (regex keyword-based + LLM) for any country
@@ -313,6 +314,57 @@ for r in results:
 # False 1
 # False 1
 # True  0
+```
+
+### Async & concurrency
+
+Every scanning entry point has an async twin — `scan_async`, `scan_batch_async`,
+`is_sensitive_async`. CPU layers (regex, NER) run in a thread pool; the LLM layer
+uses native async I/O (`httpx.AsyncClient`), so concurrent requests **overlap**
+instead of blocking each other:
+
+```python
+import asyncio
+
+guard = Wardcat(salt="s").with_llm(model="llama3.1:8b").add_entity("EMAIL")
+
+texts = ["mail me at a@b.com", "card 4111 1111 1111 1111", "clean text"]
+
+async def main():
+    # one async scan
+    result = await guard.scan_async(texts[0])
+
+    # many at once — their LLM calls overlap (asyncio.gather)
+    results = await asyncio.gather(*(guard.scan_async(t) for t in texts))
+
+asyncio.run(main())
+```
+
+**Concurrency notes**
+- **Build one guard and share it.** A `Wardcat` instance is safe to reuse across
+  concurrent scans (the SpaCy model cache, LLM cache, and detectors are shared and
+  lock-protected). Don't *reconfigure* it (`add_entity` / `with_ner` / `with_llm`)
+  while it is serving scans — configure once at startup.
+- **`scan_async` is non-blocking, but the LLM server is the real ceiling.** Your
+  requests overlap in Python, yet a single Ollama on one GPU may still process them
+  near-sequentially. For genuine parallel LLM throughput use **vLLM** (continuous
+  batching) or raise `OLLAMA_NUM_PARALLEL` with enough VRAM.
+- Regex/NER-only scans are already sub-millisecond to ~100 ms, so concurrency there
+  is rarely the bottleneck.
+
+**FastAPI (async handler):**
+
+```python
+from fastapi import FastAPI
+from wardcat import Wardcat
+
+guard = Wardcat(salt="s").add_entities(["EMAIL", "CREDIT_CARD", "TC_ID"])
+app = FastAPI()
+
+@app.post("/scan")
+async def scan(text: str):
+    result = await guard.scan_async(text)      # await — does not block the loop
+    return {"sanitized": result.sanitized_text, "clean": result.is_clean}
 ```
 
 ### Catching every occurrence (value propagation)
