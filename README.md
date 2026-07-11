@@ -6,6 +6,14 @@ __        ___    ____  ____   ____    _  _____
    \_/\_/_/   \_\_| \_\____/ \____/_/   \_\_|
 ```
 
+[![CI](https://github.com/oguzhantopcu0/wardcat/actions/workflows/ci.yml/badge.svg)](https://github.com/oguzhantopcu0/wardcat/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/oguzhantopcu0/wardcat?label=release)](https://github.com/oguzhantopcu0/wardcat/releases)
+![Platforms](https://img.shields.io/badge/tested%20on-Linux%20%7C%20macOS-informational)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+![Coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-brightgreen)
+
 **PII detection and anonymization for LLM inputs** — hybrid regex + NER + on-prem LLM engine.
 
 `wardcat` scans text for personally identifiable information (PII) before it reaches an LLM, and either warns about or replaces the sensitive data with salted SHA-256 hashes. It supports Turkish, English, German, and French out of the box.
@@ -71,6 +79,12 @@ if guard.is_sensitive(text):
 - **Safe logging API** — `result.redacted()` returns a PII-free dict for logs and APIs
 
 > **Disclaimer.** wardcat is a **best-effort** PII detector — it does not catch everything (false negatives and positives are expected) and is **not legal advice or a substitute for compliance review** (e.g. GDPR/KVKK); using it does not by itself make a system compliant. Validate it against your own data and requirements. Provided "as is" (MIT — see [LICENSE](LICENSE)).
+
+---
+
+## Contents
+
+[Installation](#installation) · [Quick Start](#quick-start) · [Supported Entity Types](#supported-entity-types) · [Output Structure](#output-structure) · [Security](#security) · [Configuration](#configuration) · [Project Structure](#project-structure) · [Testing](#testing) · [Known Limitations](#known-limitations) · [Development](#development)
 
 ---
 

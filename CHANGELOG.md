@@ -9,8 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- The test matrix now runs on **macOS** in addition to Linux (× Python 3.11–3.13), so the "tested on Linux | macOS" badge is honest.
+
 ### Docs
 
+- **README readability:** added a status-badge row (CI, release, platforms, Python, license, Ruff, coverage) and a compact table of contents.
 - Added a short **Disclaimer** to the README: wardcat is a best-effort PII detector, not legal advice or a substitute for compliance review (GDPR/KVKK), and users are responsible for validating it against their own data. (The MIT `LICENSE` already covers warranty/liability.)
 
 ## [0.9.3] — 2026-07-11
