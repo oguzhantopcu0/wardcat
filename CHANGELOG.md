@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-07-14
+
+### Security
+
+- **Fixed a regex-denial-of-service (ReDoS) in the built-in `EMAIL` and URI-credential patterns.** Their unbounded character classes backtracked in *quadratic* time on adversarial input such as `"a.a.a…"`; a ~500 KB string (under the default `max_text_bytes` cap) could burn **minutes** of CPU in a single `scan()`, and the URI-credential pattern ran on *every* scan regardless of which entities were enabled. The patterns now use bounded quantifiers (RFC-justified: email local part ≤64, domain ≤255) so matching is linear, guarded by a cheap literal pre-filter. Worst-case input at the size cap now completes in well under a second. Added a ReDoS regression test.
+- **Hardened SpaCy model auto-download.** `download_model()` now validates the model name against `^[a-z]{2,3}_[a-z0-9]+(?:_[a-z0-9]+)*$` before it reaches `spacy download` / `pip install` / a release-download URL, so an application that lets end users choose a model name cannot turn it into an arbitrary package or URL path segment.
+- The custom-pattern ReDoS timeout now returns promptly on timeout instead of blocking on the still-running match thread (the executor is shut down with `wait=False`).
+
 ## [1.0.0] — 2026-07-13
 
 First stable release — published to **PyPI** (`pip install wardcat`). The public

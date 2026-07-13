@@ -5,7 +5,34 @@ from __future__ import annotations
 import pytest
 
 from wardcat import Wardcat
+from wardcat.exceptions import ModelDownloadError
 from wardcat.ner import downloader
+
+
+class TestModelNameValidation:
+    """download_model must reject names it would otherwise pass to a subprocess."""
+
+    @pytest.mark.parametrize("name", ["de_core_news_md", "en_core_web_sm", "tr_core_news_lg"])
+    def test_valid_model_names_accepted(self, name):
+        downloader._validate_model_name(name)  # does not raise
+
+    @pytest.mark.parametrize(
+        "name",
+        ["../evil", "x; rm -rf /", "http://evil.example/pkg", "foo-bar", "", "en core web"],
+    )
+    def test_malicious_or_malformed_names_rejected(self, name):
+        with pytest.raises(ModelDownloadError):
+            downloader._validate_model_name(name)
+
+    def test_download_model_rejects_bad_name_before_any_subprocess(self, monkeypatch):
+        import subprocess
+
+        def _boom(*a, **k):  # pragma: no cover - must never be reached
+            raise AssertionError("subprocess must not run for an invalid model name")
+
+        monkeypatch.setattr(subprocess, "run", _boom)
+        with pytest.raises(ModelDownloadError):
+            downloader.download_model("../evil")
 
 
 class TestIsInstalled:

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,21 @@ from wardcat.exceptions import ModelDownloadError
 from wardcat.ner.spacy_catalog import get_spacy_model
 
 logger = logging.getLogger(__name__)
+
+# SpaCy model package names look like ``de_core_news_md`` / ``en_core_web_sm``.
+# ``model_name`` is passed to ``spacy download`` / ``pip install`` and interpolated
+# into a release-download URL, so constrain it to this shape before it reaches a
+# subprocess — an app that lets end users pick a model name must not be able to
+# turn that into an arbitrary package or URL path segment.
+_MODEL_NAME_RE = re.compile(r"^[a-z]{2,3}_[a-z0-9]+(?:_[a-z0-9]+)*$")
+
+
+def _validate_model_name(model_name: str) -> None:
+    if not _MODEL_NAME_RE.match(model_name):
+        raise ModelDownloadError(
+            f"Refusing to download an invalid SpaCy model name: {model_name!r}. "
+            "Expected a package name like 'de_core_news_md'."
+        )
 
 
 def is_installed(model_name: str) -> bool:
@@ -56,6 +72,7 @@ def download_model(model_name: str, *, verbose: bool = False) -> None:
     :raises ModelDownloadError: if the model is incompatible or the install fails
                                 (subclass of ``RuntimeError``).
     """
+    _validate_model_name(model_name)
 
     def _say(msg: str) -> None:
         # A library should not print — route to the logger. ``verbose`` selects

@@ -31,7 +31,10 @@ _PATTERNS: dict[str, tuple[str, int]] = {
     ),
     # ── Email ──────────────────────────────────────────────────────────
     "EMAIL": (
-        r"\b[\w._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b",
+        # Bounded quantifiers (RFC 5321: local part ≤64, domain ≤255) keep this
+        # linear — an unbounded [..]+ before "@" backtracks quadratically on
+        # adversarial input like "a.a.a…". See _REDOS_GATE.
+        r"\b[\w._%+\-]{1,64}@[A-Za-z0-9.\-]{1,255}\.[A-Za-z]{2,}\b",
         0,
     ),
     # ── Phone ──────────────────────────────────────────────────────────
@@ -377,21 +380,34 @@ _COMPILED: dict[str, re.Pattern] = {
 # resolution — leaving the real secret undetected. We capture the password and
 # suppress the spurious EMAIL match that starts at the same offset.
 _URI_CREDENTIAL: re.Pattern = re.compile(
-    r"[a-z][a-z0-9+.\-]*://[^\s:/@]*:(?P<pwd>[^\s@/]+)@",
+    # Bounded quantifiers keep this linear; an unbounded run before the required
+    # "://" backtracks quadratically on adversarial input. See _REDOS_GATE.
+    r"[a-z][a-z0-9+.\-]{0,31}://[^\s:/@]{0,255}:(?P<pwd>[^\s@/]{1,255})@",
     re.IGNORECASE,
 )
 
-# Timeout for custom pattern execution (seconds). Built-in patterns are trusted.
+# Timeout for a single custom-pattern execution (seconds).
 _CUSTOM_PATTERN_TIMEOUT = 2.0
+
+# Cheap pre-filter for built-in patterns that only ever match when a given
+# literal is present ("@" for EMAIL). Skipping the scan when the literal is
+# absent is an O(n) substring check that avoids running the regex over
+# irrelevant text at all. (The patterns themselves are already linear thanks to
+# their bounded quantifiers; this is an optimization, not the ReDoS fix.)
+_REDOS_GATE: dict[str, str] = {"EMAIL": "@"}
 
 
 def _safe_finditer(pattern: re.Pattern, text: str) -> list:
-    """Execute a regex pattern with a timeout to prevent ReDoS at runtime.
+    """Execute a *custom* regex with a timeout so a user pattern can't ReDoS a scan.
 
-    Returns a list of match objects, or an empty list if the pattern times out.
-    Used only for user-supplied custom patterns; built-in patterns are trusted.
+    Returns the matches, or an empty list if the pattern exceeds
+    ``_CUSTOM_PATTERN_TIMEOUT``. ``shutdown(wait=False)`` lets the call return
+    promptly on timeout instead of blocking on the still-running match thread
+    (that orphaned thread finishes on its own). Built-in patterns don't need this
+    — they are bounded to linear time by construction.
     """
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
         future = executor.submit(list, pattern.finditer(text))
         try:
             return future.result(timeout=_CUSTOM_PATTERN_TIMEOUT)
@@ -403,6 +419,16 @@ def _safe_finditer(pattern: re.Pattern, text: str) -> list:
                 len(text),
             )
             return []
+    finally:
+        executor.shutdown(wait=False)
+
+
+def _finditer_builtin(entity_type: str, pattern: re.Pattern, text: str) -> list:
+    """finditer for a built-in pattern, skipping it when its required literal is absent."""
+    required = _REDOS_GATE.get(entity_type)
+    if required is not None and required not in text:
+        return []
+    return list(pattern.finditer(text))
 
 
 # ISO 13616 IBAN registry: country code → total IBAN length. Used both to reject
@@ -587,8 +613,11 @@ class RegexDetector(BaseDetector):
 
         # Connection-string credentials: capture the password as a secret and
         # mark its offset so the spurious EMAIL match (password@host) is dropped.
+        # Skip entirely without the required "://" (an O(n) check); the pattern's
+        # bounded quantifiers keep it linear when it does run.
         cred_pwd_starts: set[int] = set()
-        for match in _URI_CREDENTIAL.finditer(scan_text):
+        uri_matches = _URI_CREDENTIAL.finditer(scan_text) if "://" in scan_text else []
+        for match in uri_matches:
             cred_pwd_starts.add(match.start("pwd"))
             if "CUSTOM_SECRET" in self.enabled_entities:
                 spans.append(
@@ -603,7 +632,7 @@ class RegexDetector(BaseDetector):
         for entity_type, pattern in _COMPILED.items():
             if entity_type not in self.enabled_entities:
                 continue
-            for match in pattern.finditer(scan_text):
+            for match in _finditer_builtin(entity_type, pattern, scan_text):
                 folded_value = match.group()
                 original_value = text[match.start() : match.end()]
                 # Drop EMAIL matches that are actually a URI credential's

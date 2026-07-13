@@ -320,14 +320,11 @@ class TestCustomPatternsInRegexDetector:
         mock_future.result.side_effect = concurrent.futures.TimeoutError()
         mock_executor = MagicMock()
         mock_executor.submit.return_value = mock_future
-        mock_ctx = MagicMock()
-        mock_ctx.__enter__ = MagicMock(return_value=mock_executor)
-        mock_ctx.__exit__ = MagicMock(return_value=False)
 
         with (
             patch(
                 "wardcat.detectors.regex_detector.concurrent.futures.ThreadPoolExecutor",
-                return_value=mock_ctx,
+                return_value=mock_executor,
             ),
             caplog.at_level(logging.WARNING, logger="wardcat.detectors.regex_detector"),
         ):
@@ -335,6 +332,28 @@ class TestCustomPatternsInRegexDetector:
 
         assert result == []
         assert any("timed out" in r.message.lower() for r in caplog.records)
+        # The executor is shut down without waiting on the orphaned match thread.
+        mock_executor.shutdown.assert_called_once_with(wait=False)
+
+    def test_builtin_patterns_are_not_redos_vulnerable(self):
+        """Adversarial input must not turn a scan into quadratic-time CPU burn.
+
+        The EMAIL and URI-credential patterns once backtracked quadratically on
+        strings like "a.a.a…" (no "@"/"://"): a 500 KB input — under the default
+        size cap — took minutes. Bounded quantifiers + a literal pre-filter keep
+        every built-in linear. Scanning at the size cap must finish in well under
+        a second; the generous bound here just guards against a regression.
+        """
+        import time
+
+        from wardcat import Wardcat, all_entities
+
+        guard = Wardcat().add_entities(list(all_entities()), action="redact")
+        for payload in ("a." * 250_000, "x@" + "a." * 250_000, ("a://") * 125_000):
+            start = time.perf_counter()
+            guard.scan(payload[:500_000])
+            elapsed = time.perf_counter() - start
+            assert elapsed < 5.0, f"scan took {elapsed:.1f}s — possible ReDoS regression"
 
 
 class TestChecksumEdgeCases:
