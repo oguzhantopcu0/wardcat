@@ -39,7 +39,7 @@ overlaps.
 ## Allowlist / denylist
 
 ```python
-guard.add_allowlist(["no-reply@company.com"])                 # never flag
+guard.add_allowlist(["no-reply@example.com"])                 # never flag
 guard.add_denylist([{"value": "ProjectX", "entity_type": "CUSTOM_SECRET"}])  # always flag
 ```
 

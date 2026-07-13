@@ -33,7 +33,7 @@ guard = (
     .add_entity(Entity.IP_ADDRESS, Action.WARN)
 )
 
-text = "Ben Ahmet Yılmaz, kartım 4532 0151 1283 0366, e-posta ahmet@firma.com."
+text = "Ben Ahmet Yılmaz, kartım 4532 0151 1283 0366, e-posta ahmet@example.com."
 
 # 1) Semantic guardrail: does the text contain sensitive info at all? (holistic LLM yes/no)
 if guard.is_sensitive(text):
@@ -41,7 +41,7 @@ if guard.is_sensitive(text):
     # 2) Anonymize the PII before the text is stored, logged, or forwarded.
     result = guard.scan(text)
     print(result.sanitized_text)
-    # Ben [PERSON], kartım [CREDIT_CARD:ea782818c5a992a8], e-posta a****@firma.com.
+    # Ben [PERSON], kartım [CREDIT_CARD:ea782818c5a992a8], e-posta a****@example.com.
 
     print(result.redacted())   # PII-free dict, safe for logs / APIs
 ```

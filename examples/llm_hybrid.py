@@ -12,7 +12,7 @@ Requires:
 from wardcat import Wardcat
 
 TEXT = """\
-Müşteri Ali Veli (ali.veli@firma.com) ile görüşüldü.
+Müşteri Ali Veli (ali.veli@example.com) ile görüşüldü.
 Veritabanı şifresi db_pass=S3cr3t!42 loglarda açık kalmış.
 Kredi kartı 4111 1111 1111 1111 ile ödeme yapıldı.
 """

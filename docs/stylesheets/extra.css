@@ -42,3 +42,26 @@
   border-bottom: 1px solid rgba(224, 77, 255, 0.18);
   padding-bottom: 0.2em;
 }
+
+/* Stack the companion wardcat-mcp link under the wardcat repo link (top-right). */
+.md-header__source {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  line-height: 1.15;
+}
+.md-header__source .md-source {
+  height: auto;
+}
+.md-source--mcp {
+  font-size: 0.58rem;
+  opacity: 0.72;
+}
+.md-source--mcp .md-source__icon svg {
+  height: 0.9rem;
+  width: 0.9rem;
+}
+.md-source--mcp:hover {
+  opacity: 1;
+}

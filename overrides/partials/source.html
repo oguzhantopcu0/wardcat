@@ -1,0 +1,31 @@
+{#-
+  Overrides Material's header repo link to add a second link to the companion
+  wardcat-mcp repository, stacked right under the wardcat repo link (top-right).
+-#}
+{% import "partials/language.html" as lang with context %}
+{% set icon = config.theme.icon.repo or "fontawesome/brands/git-alt" %}
+<a
+  href="{{ config.repo_url }}"
+  title="{{ lang.t('source.link.title') }}"
+  class="md-source"
+  data-md-component="source"
+>
+  <div class="md-source__icon md-icon">
+    {% include ".icons/" ~ icon ~ ".svg" %}
+  </div>
+  <div class="md-source__repository">
+    {{ config.repo_name }}
+  </div>
+</a>
+<a
+  href="https://github.com/oguzhantopcu0/wardcat-mcp"
+  title="wardcat-mcp — MCP server so agents can call wardcat"
+  class="md-source md-source--mcp"
+>
+  <div class="md-source__icon md-icon">
+    {% include ".icons/" ~ icon ~ ".svg" %}
+  </div>
+  <div class="md-source__repository">
+    wardcat-mcp
+  </div>
+</a>

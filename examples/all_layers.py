@@ -40,7 +40,7 @@ def resolve_salt() -> str:
 
 # Bilingual sample: Turkish + English, several PII types in each.
 SAMPLE = """\
-Merhaba, ben Ayşe Kaya. TC kimliğim 10987654321, telefonum 0533 987 65 43.
+Merhaba, ben Ayşe Kaya. TC kimliğim 10987654321, telefonum 0555 000 00 00.
 Ödemeyi TR330006100519786457841326 IBAN'ına yapabilirsiniz.
 
 Hi, this is John Carter from the billing team. Reach me at john.carter@acme.com.
