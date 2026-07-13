@@ -16,7 +16,7 @@ guard = (
     .add_entity(Entity.TC_ID,       Action.HASH)
 )
 
-result = guard.scan("Customer: Ali Veli, TC: 12345678950, card: 4532 0151 1283 0366")
+result = guard.scan("Customer: Ali Veli, TC: 12345678950, card: 4111 1111 1111 1111")
 
 print(result.sanitized_text)
 for v in result.violations:

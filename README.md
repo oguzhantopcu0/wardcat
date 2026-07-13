@@ -47,7 +47,7 @@ guard = (
     .add_entity(Entity.IP_ADDRESS, Action.WARN)
 )
 
-text = "Ben Ahmet Yılmaz, kartım 4532 0151 1283 0366, e-posta ahmet@example.com."
+text = "Ben Ahmet Yılmaz, kartım 4111 1111 1111 1111, e-posta ahmet@example.com."
 
 # 1) Semantic guardrail: does the text contain sensitive info at all? (holistic LLM yes/no)
 if guard.is_sensitive(text):
@@ -55,7 +55,7 @@ if guard.is_sensitive(text):
     # 2) Anonymize the PII before the text is stored, logged, or forwarded.
     result = guard.scan(text)
     print(result.sanitized_text)
-    # Ben [PERSON], kartım [CREDIT_CARD:ea782818c5a992a8], e-posta a****@example.com.
+    # Ben [PERSON], kartım [CREDIT_CARD:b22b36262d8d2769], e-posta a****@example.com.
 
     print(result.redacted())   # PII-free dict, safe for logs / APIs
 ```
@@ -162,19 +162,19 @@ guard = (
 
 result = guard.scan("""
   Customer: Ali Veli, TC: 12345678950
-  Card: 4532 0151 1283 0366
+  Card: 4111 1111 1111 1111
   Email: ali.veli@example.com
 """)
 
 print(result.sanitized_text)
 # Customer: Ali Veli, TC: [TC_ID:86349f34a1bc2d5e]
-# Card: [CREDIT_CARD:ea782818c5a992a8]
+# Card: [CREDIT_CARD:b22b36262d8d2769]
 # Email: ali.veli@example.com   ← warn: text is kept
 
 for v in result.violations:
     print(f"[{v.action}] {v.entity_type}: {v.original!r}")
 # [hash] TC_ID: '12345678950'
-# [hash] CREDIT_CARD: '4532 0151 1283 0366'
+# [hash] CREDIT_CARD: '4111 1111 1111 1111'
 # [warn] EMAIL: 'ali.veli@example.com'
 ```
 
@@ -536,7 +536,7 @@ from wardcat import Wardcat, Backend
 
 guard = Wardcat().with_llm(backend=Backend.OLLAMA, model="gemma3:12b")
 
-guard.is_sensitive("Ödeme için IBAN TR33 0006 1005 1978 6457 8413 26")   # True
+guard.is_sensitive("Ödeme için IBAN TR58 0000 0011 1111 1111 1111 11")   # True
 guard.is_sensitive("Aksa Teknoloji'nin açıklanmamış Q2 net kârı 47,3M TL")  # True (confidential)
 guard.is_sensitive("What's the weather like tomorrow?")                    # False
 
@@ -719,7 +719,7 @@ class Violation:
 Sensitive values are replaced in the sanitized text using the format `[TYPE:16hex]` (64-bit entropy):
 
 ```
-4532 0151 1283 0366  →  [CREDIT_CARD:ea782818c5a992a8]
+4111 1111 1111 1111  →  [CREDIT_CARD:b22b36262d8d2769]
 12345678950          →  [TC_ID:86349f34a1bc2d5e]
 ```
 

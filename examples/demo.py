@@ -11,8 +11,8 @@ from wardcat import Action, Entity, Wardcat
 SAMPLE = """
 Merhaba, ben Ahmet Yılmaz. Şirketimizin sunucu IP'si 10.0.0.42.
 Bana fatih.demir@example.com adresinden veya 0555 000 00 00 numarasından ulaşabilirsin.
-Ödeme için IBAN: TR330006100519786457841326 kullanabilirsiniz.
-Kredi kartım: 4532015112830366. TC kimliğim: 10987654321.
+Ödeme için IBAN: TR580000001111111111111111 kullanabilirsiniz.
+Kredi kartım: 4111111111111111. TC kimliğim: 10987654321.
 """.strip()
 
 

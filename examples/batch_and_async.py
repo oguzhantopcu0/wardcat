@@ -13,7 +13,7 @@ TEXTS = [
     "Email me at ali@example.com",
     "Card: 4111 1111 1111 1111",
     "Just a clean sentence with no PII.",
-    "IBAN TR33 0006 1005 1978 6457 8413 26",
+    "IBAN TR58 0000 0011 1111 1111 1111 11",
 ]
 
 

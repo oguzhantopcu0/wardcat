@@ -5,7 +5,7 @@
 The `hash` action replaces a value with `[TYPE:16hex]` (64-bit entropy):
 
 ```
-4532 0151 1283 0366  →  [CREDIT_CARD:ea782818c5a992a8]
+4111 1111 1111 1111  →  [CREDIT_CARD:b22b36262d8d2769]
 ```
 
 The same value always hashes to the same token (intentional — it lets you

@@ -41,7 +41,7 @@ def resolve_salt() -> str:
 # Bilingual sample: Turkish + English, several PII types in each.
 SAMPLE = """\
 Merhaba, ben Ayşe Kaya. TC kimliğim 10987654321, telefonum 0555 000 00 00.
-Ödemeyi TR330006100519786457841326 IBAN'ına yapabilirsiniz.
+Ödemeyi TR580000001111111111111111 IBAN'ına yapabilirsiniz.
 
 Hi, this is John Carter from the billing team. Reach me at john.carter@acme.com.
 The card on file is 4111 1111 1111 1111 and the gateway IP is 192.168.1.10.
