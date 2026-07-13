@@ -1,10 +1,6 @@
-```
-__        ___    ____  ____   ____    _  _____
-\ \      / / \  |  _ \|  _ \ / ___|  / \|_   _|
- \ \ /\ / / _ \ | |_) | | | | |     / _ \ | |
-  \ V  V / ___ \|  _ <| |_| | |___ / ___ \| |
-   \_/\_/_/   \_\_| \_\____/ \____/_/   \_\_|
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/oguzhantopcu0/wardcat/main/docs/assets/logo.png" alt="wardcat" width="240">
+</p>
 
 [![CI](https://github.com/oguzhantopcu0/wardcat/actions/workflows/ci.yml/badge.svg)](https://github.com/oguzhantopcu0/wardcat/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/oguzhantopcu0/wardcat?label=release)](https://github.com/oguzhantopcu0/wardcat/releases)
