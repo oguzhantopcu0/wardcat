@@ -15,11 +15,9 @@
 
 [![CI](https://github.com/oguzhantopcu0/wardcat/actions/workflows/ci.yml/badge.svg)](https://github.com/oguzhantopcu0/wardcat/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/oguzhantopcu0/wardcat?label=release)](https://github.com/oguzhantopcu0/wardcat/releases)
-![Platforms](https://img.shields.io/badge/tested%20on-Linux%20%7C%20macOS-informational)
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-![Coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-brightgreen)
 
 **PII detection and anonymization for LLM inputs** — hybrid regex + NER + on-prem LLM engine.
 
