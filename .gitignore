@@ -17,3 +17,6 @@ live_test_results.txt
 
 # MkDocs build output
 site/
+
+# Local Claude Code config / agents (machine-local, not part of the package)
+.claude/

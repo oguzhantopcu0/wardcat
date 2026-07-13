@@ -35,7 +35,7 @@ from wardcat.ner.spacy_catalog import Language, supported_languages
 try:
     __version__: str = version("wardcat")
 except PackageNotFoundError:
-    __version__ = "0.9.3"  # development environment fallback
+    __version__ = "1.0.0"  # development environment fallback
 
 __all__ = [
     "Wardcat",

@@ -1,11 +1,17 @@
 # Installation
 
-> **Not yet published to PyPI.** Install from source until the first release.
-
 The base install is deliberately tiny — `pyyaml` + `httpx`. Optional detection
 layers are pulled in as extras.
 
-=== "uv (recommended)"
+=== "pip"
+
+    ```bash
+    pip install wardcat            # base: regex + Ollama/OpenAI-compatible LLM backend
+    pip install "wardcat[ner]"     # + SpaCy NER (PERSON, ORG, ADDRESS)
+    pip install "wardcat[all]"     # everything: SpaCy + Transformers
+    ```
+
+=== "uv (from source, for development)"
 
     ```bash
     git clone https://github.com/oguzhantopcu0/wardcat.git
@@ -13,14 +19,6 @@ layers are pulled in as extras.
     uv sync                 # base: regex + Ollama/OpenAI-compatible LLM backend
     uv sync --extra ner     # + SpaCy NER (PERSON, ORG, ADDRESS)
     uv sync --extra all     # everything: SpaCy + Transformers
-    ```
-
-=== "pip (from Git)"
-
-    ```bash
-    pip install "git+https://github.com/oguzhantopcu0/wardcat.git"
-    pip install "wardcat[ner]    @ git+https://github.com/oguzhantopcu0/wardcat.git"
-    pip install "wardcat[all]    @ git+https://github.com/oguzhantopcu0/wardcat.git"
     ```
 
 ## Extras

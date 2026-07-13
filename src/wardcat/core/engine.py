@@ -68,7 +68,7 @@ class DetectionEngine:
         if not self.salt:
             logger.debug(
                 "Hash salt is empty — identical values will produce the same hash. "
-                "Set the WARDCAT_SALT environment variable in production."
+                "Pass salt=... to Wardcat(...) in production."
             )
 
     # ------------------------------------------------------------------

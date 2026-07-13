@@ -327,12 +327,15 @@ class TestSaltWarning:
     def test_empty_salt_with_hash_action_logs_warning(self, caplog):
         with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
             make_legacy_guard(use_ner=False, salt="")
-        assert "WARDCAT_SALT" in caplog.text
+        assert "No hash salt set" in caplog.text
+        # The library never reads env vars — the warning must not suggest one.
+        assert "WARDCAT_SALT" not in caplog.text
+        assert "salt=" in caplog.text
 
     def test_nonempty_salt_no_warning(self, caplog):
         with caplog.at_level(logging.WARNING, logger="wardcat.guard"):
             Wardcat(salt="my-secret-salt")
-        assert "WARDCAT_SALT" not in caplog.text
+        assert "No hash salt set" not in caplog.text
 
 
 # ── Logging Integration ───────────────────────────────────────────────────────

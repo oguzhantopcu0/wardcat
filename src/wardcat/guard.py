@@ -376,7 +376,7 @@ class Wardcat(EntityPolicyMixin):
         return LAYER_ENTITIES[layer]
 
     # ------------------------------------------------------------------
-    # Layer builders (fluent alternative to the constructor's llm_*/spacy_* args)
+    # Layer builders (the only way to enable the NER/LLM layers programmatically)
     # ------------------------------------------------------------------
 
     def with_ner(
@@ -439,8 +439,8 @@ class Wardcat(EntityPolicyMixin):
         """
         Enable the on-prem LLM detector. Supports chaining; mirrors :meth:`with_ner`.
 
-        A fluent alternative to the constructor's ``llm_*`` arguments — keeps the
-        LLM configuration in one place::
+        The fluent way to configure the LLM layer (the constructor takes only
+        ``config_path`` and ``salt``) — keeps the LLM configuration in one place::
 
             guard = (
                 Wardcat(salt="s")
@@ -600,8 +600,8 @@ class Wardcat(EntityPolicyMixin):
             self._salt_warned = True
             logger.warning(
                 "No hash salt set — using unsalted hashes (identical PII always yields the "
-                "same hash, leaving them open to rainbow-table attacks). Pass salt=... or set "
-                "the WARDCAT_SALT environment variable in production."
+                "same hash, leaving them open to rainbow-table attacks). Pass salt=... to "
+                "Wardcat(...) in production — the library never reads environment variables."
             )
 
     def _warn_orphan_entities(self) -> None:

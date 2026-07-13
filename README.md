@@ -40,7 +40,7 @@ guard = (
     .add_entity(Entity.IP_ADDRESS, Action.WARN)
 )
 
-text = "Ben Ahmet Yılmaz, kartım 4532 0151 1283 0366, e-posta ahmet@firma.com."
+text = "Ben Ahmet Yılmaz, kartım 4532 0151 1283 0366, e-posta ahmet@example.com."
 
 # 1) Semantic guardrail: does the text contain sensitive info at all? (holistic LLM yes/no)
 if guard.is_sensitive(text):
@@ -48,7 +48,7 @@ if guard.is_sensitive(text):
     # 2) Anonymize the PII before the text is stored, logged, or forwarded.
     result = guard.scan(text)
     print(result.sanitized_text)
-    # Ben [PERSON], kartım [CREDIT_CARD:ea782818c5a992a8], e-posta a****@firma.com.
+    # Ben [PERSON], kartım [CREDIT_CARD:ea782818c5a992a8], e-posta a****@example.com.
 
     print(result.redacted())   # PII-free dict, safe for logs / APIs
 ```
@@ -90,9 +90,18 @@ if guard.is_sensitive(text):
 
 ## Installation
 
-> **Not yet published to PyPI.** Install from source until the first release.
+```bash
+# Base install — regex detection + Ollama/OpenAI-compatible LLM backend
+pip install wardcat
 
-With [uv](https://github.com/astral-sh/uv) (recommended):
+# + SpaCy NER (PERSON, ORG, ADDRESS detection)
+pip install "wardcat[ner]"
+
+# Everything at once (SpaCy + Transformers)
+pip install "wardcat[all]"
+```
+
+Or, for development, install from source with [uv](https://github.com/astral-sh/uv):
 
 ```bash
 git clone https://github.com/oguzhantopcu0/wardcat.git
@@ -100,19 +109,6 @@ cd wardcat
 uv sync                 # base: regex + Ollama/OpenAI-compatible LLM backend
 uv sync --extra ner     # + SpaCy NER (PERSON, ORG, ADDRESS)
 uv sync --extra all     # + HuggingFace Transformers backend
-```
-
-Or with pip, straight from Git:
-
-```bash
-# Base install — regex detection + Ollama/OpenAI-compatible LLM backend
-pip install "git+https://github.com/oguzhantopcu0/wardcat.git"
-
-# + SpaCy NER (PERSON, ORG, ADDRESS detection)
-pip install "wardcat[ner] @ git+https://github.com/oguzhantopcu0/wardcat.git"
-
-# Everything at once (SpaCy + Transformers)
-pip install "wardcat[all] @ git+https://github.com/oguzhantopcu0/wardcat.git"
 ```
 
 To use SpaCy NER (PERSON, ORG, ADDRESS detection) you need a language model.
@@ -140,10 +136,10 @@ uv run python -m spacy download tr_core_news_md    # Turkish (recommended)
 
 ## Quick Start
 
-> **Upgrading?** Being pre-1.0, `wardcat` still makes occasional breaking changes.
-> Each one is listed with migration steps in the [CHANGELOG](CHANGELOG.md) — e.g.
-> NER is now configured only via `with_ner(...)` (0.7.0) and LLM backends are no
-> longer user-extensible (0.9.0).
+> **Upgrading from a pre-1.0 version?** Each breaking change is listed with
+> migration steps in the [CHANGELOG](CHANGELOG.md) — e.g. NER is now configured
+> only via `with_ner(...)` (0.7.0) and LLM backends are no longer user-extensible
+> (0.9.0). As of 1.0, the public API is stable (semantic versioning).
 
 ### Programmatic API
 
@@ -169,7 +165,7 @@ print(result.sanitized_text)
 # Email: ali.veli@example.com   ← warn: text is kept
 
 for v in result.violations:
-    print(f"[{v.action.value}] {v.entity_type}: {v.original!r}")
+    print(f"[{v.action}] {v.entity_type}: {v.original!r}")
 # [hash] TC_ID: '12345678950'
 # [hash] CREDIT_CARD: '4532 0151 1283 0366'
 # [warn] EMAIL: 'ali.veli@example.com'
@@ -344,7 +340,7 @@ import asyncio
 
 guard = Wardcat(salt="s").with_llm(model="llama3.1:8b").add_entity("EMAIL")
 
-texts = ["mail me at a@b.com", "card 4111 1111 1111 1111", "clean text"]
+texts = ["mail me at a@example.com", "card 4111 1111 1111 1111", "clean text"]
 
 async def main():
     # one async scan

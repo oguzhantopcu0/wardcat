@@ -9,14 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-07-13
+
+First stable release — published to **PyPI** (`pip install wardcat`). The public
+API (`Wardcat`, the `with_ner`/`with_llm` builders, `Entity`/`Action`/`Language`/
+`Backend`, the `ScanResult`/`Violation` result types, and the exception
+hierarchy) is now considered stable and follows semantic versioning: breaking
+changes only in a future 2.0.
+
+### Fixed
+
+- **README Quick Start crashed:** the example printed `v.action.value`, but `Violation.action` is a plain `str` by design (it compares equal to the `Action` constants) — running the snippet raised `AttributeError`. The example now prints `v.action`.
+- **Misleading salt warnings:** the empty-salt warnings in `Wardcat` and the engine told users to "set the `WARDCAT_SALT` environment variable", but the library never reads environment variables (configuration is explicit by design). The warnings now say to pass `salt=...` to `Wardcat(...)`.
+
 ### CI
 
 - The test matrix now runs on **macOS** in addition to Linux (× Python 3.11–3.13), so the "tested on Linux | macOS" badge is honest.
+- The release workflow now **publishes to PyPI** via Trusted Publishing on every `v*` tag (in addition to cutting a GitHub Release).
 
 ### Docs
 
 - **README readability:** added a status-badge row (CI, release, platforms, Python, license, Ruff, coverage) and a compact table of contents.
 - Added a short **Disclaimer** to the README: wardcat is a best-effort PII detector, not legal advice or a substitute for compliance review (GDPR/KVKK), and users are responsible for validating it against their own data. (The MIT `LICENSE` already covers warranty/liability.)
+- Installation instructions (README + docs) now lead with `pip install wardcat`; the from-source instructions remain for development.
+- Removed stale docstring references to constructor `llm_*`/`spacy_*` arguments that no longer exist (the constructor takes only `config_path` and `salt`; layers are configured with the builders).
 
 ## [0.9.3] — 2026-07-11
 
