@@ -40,21 +40,21 @@ ner = [
 ]
 # HuggingFace Transformers backend (GPU/CPU inference)
 transformers = [
-    "transformers>=5.13.0,<6",
-    "torch>=2.12.1",
+    "transformers>=5.13.1,<6",
+    "torch>=2.13.0",
     "accelerate>=1.14.0",       # required for device_map="auto"
     "bitsandbytes>=0.43",     # required for 4-bit/8-bit quantization
-    "sentencepiece>=0.1.99",  # required for Mistral/Llama tokenizer
+    "sentencepiece>=0.2.2",  # required for Mistral/Llama tokenizer
     "protobuf>=7.35.1",         # required for tokenizer serialization
 ]
 # Full install — all optional backends
 all = [
     "spacy>=3.8.14,<4",
-    "transformers>=5.13.0,<6",
-    "torch>=2.12.1",
+    "transformers>=5.13.1,<6",
+    "torch>=2.13.0",
     "accelerate>=1.14.0",
     "bitsandbytes>=0.43",
-    "sentencepiece>=0.1.99",
+    "sentencepiece>=0.2.2",
     "protobuf>=7.35.1",
 ]
 
@@ -89,8 +89,8 @@ dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
     "pytest-timeout>=2.0",
-    "ruff>=0.15.20",
-    "mypy>=1.11",
+    "ruff>=0.15.21",
+    "mypy>=2.3.0",
     "types-PyYAML>=6.0",
     "spacy>=3.8.14,<4",
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
@@ -100,7 +100,7 @@ dev = [
 docs = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.5",
-    "mkdocstrings[python]>=1.0.4",
+    "mkdocstrings[python]>=1.0.6",
 ]
 
 [tool.ruff]
