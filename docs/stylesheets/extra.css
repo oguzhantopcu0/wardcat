@@ -49,19 +49,27 @@
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  line-height: 1.15;
+  line-height: 1.1;
 }
 .md-header__source .md-source {
   height: auto;
 }
+/* Compact, icon-less subtitle link. Material clips .md-source__repository by
+   default (overflow:hidden + max-height), which cut the text off — undo that so
+   "wardcat-mcp" shows in full. */
 .md-source--mcp {
-  font-size: 0.58rem;
-  opacity: 0.72;
-}
-.md-source--mcp .md-source__icon svg {
-  height: 0.9rem;
-  width: 0.9rem;
+  font-size: 0.6rem;
+  opacity: 0.75;
+  margin-top: 0.15rem;
 }
 .md-source--mcp:hover {
   opacity: 1;
+}
+.md-source__repository--mcp {
+  margin-left: 0;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  white-space: nowrap;
+  line-height: 1.3;
 }
