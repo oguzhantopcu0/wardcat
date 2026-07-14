@@ -10,9 +10,7 @@ TEXT = "mail bob@acme.com card 4111 1111 1111 1111"
 
 
 def _guard(action=Action.REDACT):
-    return Wardcat(salt="my-secret").add_entities(
-        [Entity.EMAIL, Entity.CREDIT_CARD], action=action
-    )
+    return Wardcat(salt="my-secret").add_entities([Entity.EMAIL, Entity.CREDIT_CARD], action=action)
 
 
 def test_reapply_matches_a_natively_configured_scan():

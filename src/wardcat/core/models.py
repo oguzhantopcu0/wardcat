@@ -224,9 +224,7 @@ class ScanResult:
             ],
         }
 
-    def reapply(
-        self, action: Action | str, entities: Iterable[str] | None = None
-    ) -> ScanResult:
+    def reapply(self, action: Action | str, entities: Iterable[str] | None = None) -> ScanResult:
         """Re-anonymize this already-detected result under a different ``action``.
 
         ``scan()`` does the expensive detection (regex + NER + LLM) once; this
