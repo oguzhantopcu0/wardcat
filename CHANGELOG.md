@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-07-14
+
+### Changed
+
+- **Broadened the project description.** `wardcat` detects and anonymizes not
+  only PII but sensitive data in general — secrets, credentials, and confidential
+  content surfaced by the `is_sensitive` semantic gate. Updated the PyPI summary,
+  README tagline/prose, and the repository description accordingly. No code or API
+  change.
+
 ## [1.1.0] — 2026-07-14
 
 ### Added
@@ -314,7 +324,11 @@ changes only in a future 2.0.
 - **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
-[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/oguzhantopcu0/wardcat/compare/v1.0.1...v1.1.0
+[1.0.1]: https://github.com/oguzhantopcu0/wardcat/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.3...v1.0.0
 [0.9.3]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/oguzhantopcu0/wardcat/compare/v0.9.0...v0.9.1
