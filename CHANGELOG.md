@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-07-14
+
+### Added
+
+- **`ScanResult.reapply(action, entities=None)`** — a public method to derive a
+  differently-anonymized result from a single scan without re-detecting. Detection
+  (regex + NER + LLM) is the expensive step and runs once; `reapply` reuses the
+  detected spans and re-runs only the cheap anonymization stage, reusing the
+  originating guard's salt so `hash` output stays consistent. Pass `entities` to
+  re-anonymize a subset of the detected types. Returns a new `ScanResult` (the
+  original is not mutated); raises `ConfigError` on an unknown action.
+
+  ```python
+  result = guard.scan(text)
+  masked = result.reapply(Action.MASK).sanitized_text
+  hashed = result.reapply(Action.HASH).sanitized_text
+  ```
+
+  This promotes what `wardcat-mcp` previously did with private internals into
+  supported public API.
+
 ## [1.0.1] — 2026-07-14
 
 ### Security

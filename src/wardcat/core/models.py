@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TypedDict
@@ -181,6 +182,11 @@ class ScanResult:
     layers, but a non-empty list means detection was **degraded**: some PII may
     be missed. Empty when every configured layer ran."""
 
+    _salt: str = field(default="", repr=False)
+    """Hashing salt inherited from the originating ``Wardcat``, so :meth:`reapply`
+    can produce ``hash`` output consistent with the guard. Internal; not exposed
+    by :meth:`redacted`."""
+
     @property
     def is_clean(self) -> bool:
         """``True`` if no PII was detected."""
@@ -217,6 +223,69 @@ class ScanResult:
                 for v in self.violations
             ],
         }
+
+    def reapply(
+        self, action: Action | str, entities: Iterable[str] | None = None
+    ) -> ScanResult:
+        """Re-anonymize this already-detected result under a different ``action``.
+
+        ``scan()`` does the expensive detection (regex + NER + LLM) once; this
+        reuses those spans and re-runs only the cheap anonymization step, so you
+        can derive several outputs from a single scan without re-scanning or
+        reloading any model::
+
+            result = guard.scan(text)
+            masked = result.reapply(Action.MASK).sanitized_text
+            hashed = result.reapply(Action.HASH).sanitized_text
+            # re-anonymize only a subset of the detected types:
+            emails = result.reapply(Action.HASH, entities=["EMAIL"])
+
+        The salt from the originating :class:`~wardcat.Wardcat` is reused, so
+        ``hash`` output matches what the guard would have produced. Types passed
+        in ``entities`` that were not detected are simply absent (nothing to
+        anonymize). Concurrency-safe: nothing shared is mutated.
+
+        :param action:   the action to apply (an :class:`Action` or its name).
+        :param entities: optional subset of entity types to re-anonymize;
+                         ``None`` applies ``action`` to every detected violation.
+        :returns:        a new :class:`ScanResult` under the requested action.
+        :raises ConfigError: if ``action`` is not a registered action.
+        """
+        from wardcat.core.actions import registered_actions
+        from wardcat.core.anonymizer import Anonymizer
+        from wardcat.detectors.base import DetectedSpan
+        from wardcat.exceptions import ConfigError
+
+        name = action.value if isinstance(action, Action) else str(action)
+        if name not in registered_actions():
+            raise ConfigError(
+                f"unknown action {name!r}; choose one of {sorted(registered_actions())}"
+            )
+
+        keep: set[str] | None = None
+        if entities is not None:
+            keep = {e.value if isinstance(e, Enum) else str(e) for e in entities}
+
+        violations = self.violations
+        if keep is not None:
+            violations = [v for v in violations if v.entity_type in keep]
+
+        spans = [
+            DetectedSpan(v.entity_type, v.original, v.start, v.end, v.confidence)
+            for v in violations
+        ]
+        config = {v.entity_type: {"action": name} for v in violations}
+        sanitized, new_violations = Anonymizer(config, salt=self._salt).apply(
+            self.original_text, spans
+        )
+        return ScanResult(
+            original_text=self.original_text,
+            sanitized_text=sanitized,
+            violations=new_violations,
+            scan_error=self.scan_error,
+            warnings=list(self.warnings),
+            _salt=self._salt,
+        )
 
     def __repr__(self) -> str:
         return f"ScanResult(is_clean={self.is_clean}, violations={len(self.violations)})"

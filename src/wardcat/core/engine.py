@@ -109,7 +109,11 @@ class DetectionEngine:
             elapsed_ms,
         )
         return ScanResult(
-            original_text=text, sanitized_text=sanitized, violations=violations, warnings=warnings
+            original_text=text,
+            sanitized_text=sanitized,
+            violations=violations,
+            warnings=warnings,
+            _salt=self.salt,
         )
 
     async def scan_async(self, text: str) -> ScanResult:
@@ -160,7 +164,11 @@ class DetectionEngine:
             elapsed_ms,
         )
         return ScanResult(
-            original_text=text, sanitized_text=sanitized, violations=violations, warnings=warnings
+            original_text=text,
+            sanitized_text=sanitized,
+            violations=violations,
+            warnings=warnings,
+            _salt=self.salt,
         )
 
     # ------------------------------------------------------------------
