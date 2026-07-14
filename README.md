@@ -19,9 +19,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-**PII detection and anonymization for LLM inputs** — hybrid regex + NER + on-prem LLM engine.
+**Detection & anonymization of PII and sensitive data for LLM inputs** — hybrid regex + NER + on-prem LLM engine.
 
-`wardcat` scans text for personally identifiable information (PII) before it reaches an LLM, and either warns about or replaces the sensitive data with salted SHA-256 hashes. It supports Turkish, English, German, and French out of the box.
+`wardcat` scans text for personally identifiable information (PII) and other sensitive data — secrets, credentials, and confidential content — before it reaches an LLM, and either warns about or replaces it with salted SHA-256 hashes. It supports Turkish, English, German, and French out of the box.
 
 > **📖 Documentation** lives in [`docs/`](docs/) (MkDocs + Material, with an auto-generated API reference). Preview it locally with `uv run --group docs mkdocs serve`.
 
