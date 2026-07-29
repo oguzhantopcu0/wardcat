@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] — 2026-07-29
+
 ### Fixed
 
 - **`with_llm(backend="vllm")` no longer silently talks to Ollama.** `with_llm`
