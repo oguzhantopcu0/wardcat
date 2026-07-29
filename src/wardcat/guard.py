@@ -425,7 +425,7 @@ class Wardcat(EntityPolicyMixin):
         *,
         backend: str | Backend = Backend.OLLAMA,
         model: str = "llama3.2",
-        base_url: str = "http://localhost:11434",
+        base_url: str | None = None,
         api_key: str = "",
         timeout: int = 60,
         allow_http: bool = False,
@@ -451,6 +451,13 @@ class Wardcat(EntityPolicyMixin):
         ``backend`` is the backend *type* (:class:`~wardcat.Backend`); the
         *address* goes to ``base_url``.
 
+        :param base_url: the backend's address. Leave it unset to use the
+            backend's own default — ``http://localhost:11434`` for ``ollama``
+            and ``openai_compatible``, ``http://localhost:8000/v1`` for
+            ``vllm``. Only pass it to point at a non-default host/port; passing
+            it here would otherwise override the backend-specific default (so
+            selecting ``vllm`` without a ``base_url`` must still reach vLLM,
+            not Ollama).
         :param language: selects a localized system prompt for :meth:`is_sensitive`
             (``tr``/``de``/``fr``; anything else uses the English, multilingual-aware
             prompt). It does not change the entity-detection prompt used by
@@ -463,7 +470,6 @@ class Wardcat(EntityPolicyMixin):
                 "enabled": True,
                 "backend": backend.value if isinstance(backend, Backend) else backend,
                 "model": model,
-                "base_url": base_url,
                 "api_key": api_key,
                 "timeout": timeout,
                 "allow_http": allow_http,
@@ -475,6 +481,13 @@ class Wardcat(EntityPolicyMixin):
                 "language": lang_code,
             }
         )
+        # Only pin base_url when the caller gave one; otherwise leave it out so
+        # each backend factory applies its own default (Ollama 11434 vs vLLM
+        # 8000/v1). A prior with_llm() call's base_url is cleared here too.
+        if base_url is not None:
+            llm_cfg["base_url"] = base_url
+        else:
+            llm_cfg.pop("base_url", None)
         self._rebuild()
         return self
 

@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`with_llm(backend="vllm")` no longer silently talks to Ollama.** `with_llm`
+  hardcoded `base_url="http://localhost:11434"` (Ollama's port) as its default,
+  which overrode each backend factory's own default — so selecting the `vllm`
+  backend without an explicit `base_url` sent requests to Ollama's port instead
+  of vLLM's `http://localhost:8000/v1`. `base_url` now defaults to unset and
+  each backend applies its own default (Ollama/OpenAI-compatible → `11434`,
+  vLLM → `8000/v1`); pass `base_url` only to point at a non-default host. An
+  explicit `base_url` is still respected, and reconfiguring to another backend
+  resets to that backend's default.
+
 ## [1.1.1] — 2026-07-14
 
 ### Changed
