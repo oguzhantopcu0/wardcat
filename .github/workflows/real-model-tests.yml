@@ -43,7 +43,7 @@ jobs:
           enable-cache: true
 
       - name: Cache HuggingFace models
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/huggingface
           key: hf-${{ runner.os }}-smollm2-135m
