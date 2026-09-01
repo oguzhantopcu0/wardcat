@@ -98,6 +98,42 @@ class TestTokenizeAction:
         assert "tokens" not in repr(ActionContext(salt="s"))
 
 
+class TestEveryDetectionLayer:
+    """The action runs after detection, so the layer that found a span is irrelevant."""
+
+    def test_an_llm_detected_span_is_tokenized_and_restorable(self) -> None:
+        from unittest.mock import MagicMock
+
+        from wardcat.llm.backends.base import Backend, BaseLLMBackend
+
+        backend = MagicMock(spec=BaseLLMBackend)
+        backend.complete_messages.return_value = (
+            '[{"type": "SPECIAL_CATEGORY", "text": "Type 1 diabetes"}]'
+        )
+        guard = (
+            Wardcat(salt="s")
+            .with_llm(backend=Backend.OLLAMA, model="stub")
+            .add_entity(Entity.SPECIAL_CATEGORY, Action.TOKENIZE, layers=["llm"])
+            .add_entity(Entity.EMAIL, Action.TOKENIZE)
+        )
+        guard._engine.detectors[-1].backend = backend
+
+        result = guard.scan(f"Patient reports Type 1 diabetes; contact {EMAIL_A}")
+
+        assert result.sanitized_text == ("Patient reports [SPECIAL_CATEGORY_1]; contact [EMAIL_1]")
+        assert result.token_map == {
+            "[SPECIAL_CATEGORY_1]": "Type 1 diabetes",
+            "[EMAIL_1]": EMAIL_A,
+        }
+
+        restored = result.restore("Regarding [SPECIAL_CATEGORY_1], I emailed [EMAIL_1].")
+
+        assert restored.text == f"Regarding Type 1 diabetes, I emailed {EMAIL_A}."
+        # The model-based span keeps its lower confidence in the source list.
+        assert restored.substitutions[0].confidence == 0.85
+        assert restored.substitutions[1].confidence == 0.97
+
+
 # ── token_map ─────────────────────────────────────────────────────────────────
 
 

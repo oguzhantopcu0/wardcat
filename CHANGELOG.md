@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-detecting. `ScanResult.token_map` exposes the placeholder → value mapping for
   callers that must restore in another process.
 
+  Anonymization runs after detection, so this is layer-independent: a span found
+  by regex, SpaCy NER or the LLM layer tokenizes and restores identically (covered
+  by a test with a stubbed LLM backend).
+
   **The reverse map is raw PII by design** — `token_map`, `restore()` and the
   source list all carry original values, so they belong on the trusted side.
   New exports: `RestoredText`, `Substitution`, `UnrestoredValue`, `TokenAllocator`.
