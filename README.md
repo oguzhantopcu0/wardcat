@@ -70,7 +70,7 @@ if guard.is_sensitive(text):
 - **Hybrid detection** — Regex + SpaCy NER + on-prem LLM (Ollama, vLLM, OpenAI-compatible, HuggingFace Transformers)
 - **Semantic sensitivity gate** — `is_sensitive(text) → bool`: a holistic yes/no on whether text is safe to send onward (LLM-only), catching confidential content the typed detectors miss (unreleased financials, deal terms, a confidential project); optional per-language prompt
 - **Ensemble adjudication** (optional) — the LLM verifies/relabels/drops regex & NER candidates and adds what they missed, in one call; deterministic regex results are always protected
-- **Four actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt; the default when `action` is omitted), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking)
+- **Five actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt; the default when `action` is omitted), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking), `tokenize` (`[TYPE_1]` — **reversible**, see [reversible masking](#reversible-masking-mask-on-the-way-out-restore-on-the-way-back))
 - **Checksum validation** — TC_ID (Nüfus İdaresi algorithm), IBAN (mod-97), and CREDIT_CARD (Luhn mod-10) validated before flagging — eliminates false positives
 - **Rainbow table protection** — user-defined salt for all hashes
 - **Two APIs** — method chaining (programmatic) and YAML (declarative)
@@ -408,6 +408,74 @@ match never displaces a checksum-validated one. Structural PII (email, phone,
 IBAN…) is already caught exhaustively by the regex layer, so propagation mainly
 helps names and other model-only entities.
 
+### Reversible masking (mask on the way out, restore on the way back)
+
+`hash`, `redact` and `mask` are one-way: the value is gone from the text for
+good. `Action.TOKENIZE` is the reversible one — each value is replaced by a
+numbered placeholder, and the mapping stays on the `ScanResult`, in memory, on
+your side of the wire:
+
+```python
+from wardcat import Wardcat, Entity, Action
+
+guard = (
+    Wardcat(salt="s")
+    .add_entities([Entity.EMAIL, Entity.CREDIT_CARD], action=Action.TOKENIZE)
+)
+
+result = guard.scan("Mail ali@example.com about card 4532 0151 1283 0366")
+print(result.sanitized_text)
+# Mail [EMAIL_1] about card [CREDIT_CARD_1]
+```
+
+Placeholders are numbered per entity type in order of appearance, and the *same
+value always gets the same token* — a name that repeats stays one referent, so
+the model can still reason about it. Send that text to the LLM, then put the real
+values back into its answer:
+
+```python
+answer = call_llm(result.sanitized_text)     # the model never sees the real values
+print(result.restore(answer))
+```
+
+```text
+I have emailed ali@example.com about the charge on 4532 0151 1283 0366.
+
+--- Sources ---
+[1] [EMAIL_1] → ali@example.com (EMAIL · tokenize · confidence 0.97)
+[2] [CREDIT_CARD_1] → 4532 0151 1283 0366 (CREDIT_CARD · tokenize · confidence 1.00)
+```
+
+Printing a restored result appends that source list: every placeholder that was
+put back, **in the order it appears in the text**, with the filter that caught it,
+the action applied, the value it stood for, an `xN` count when it occurs more than
+once, and the detection confidence. Use `.text` for the bare text, `.sources_block()`
+for the list alone (`title=` renames it, `notes=False` drops the trailing summary),
+and `.substitutions` for the same information as data:
+
+```python
+restored = result.restore(answer)
+restored.text                 # answer with the real values back in place
+restored.substitutions        # [Substitution(index=1, entity_type="EMAIL", …)]
+restored.unrestored           # what was not put back, and why
+restored.is_complete          # False if a placeholder was too ambiguous to reverse
+result.token_map              # {"[EMAIL_1]": "ali@example.com"} — hand it to another process
+```
+
+`restore()` with no argument reverses `sanitized_text` itself, which round-trips
+back to the original input. It also works on `hash` output (a salted digest is
+unique per value); with `redact` or `mask` two different values can collapse onto
+the same placeholder — those are reported in `.unrestored` as `ambiguous` and
+left in the text rather than guessed. Already scanned with another action? Derive
+a reversible view without re-detecting: `result.reapply(Action.TOKENIZE)`.
+
+> **The reverse map is raw PII.** `token_map`, `restore()` and the source list all
+> carry the original values by design — that is what reversibility means. Keep
+> them on the trusted side, out of logs and telemetry, and prefer a one-way action
+> when you do not need to bring the values back. Placeholder numbering is per
+> scan, so a `ScanResult` (or its `token_map`) is the only thing that can reverse
+> its own text.
+
 ### On-prem LLM
 
 > **Fluent setup (recommended).** Instead of passing a dozen `llm_*` / `spacy_*`
@@ -489,17 +557,18 @@ guard = Wardcat(salt="s").with_llm(
 
 #### Custom actions (extensible)
 
-Actions (`hash`/`redact`/`mask`/`warn`) come from a registry, so you can add your
-own — `tokenize`, `encrypt`, format-preserving masking — **without changing
-wardcat**. An action maps a span to its replacement (or `None` to keep the text):
+Actions (`hash`/`redact`/`mask`/`warn`/`tokenize`) come from a registry, so you
+can add your own — an external vault, `encrypt`, format-preserving masking —
+**without changing wardcat**. An action maps a span to its replacement (or `None`
+to keep the text):
 
 ```python
 from wardcat import Wardcat, register_action
 
 # ctx carries the salt; the span has .entity_type, .text, .start, .end
-register_action("tokenize", lambda span, ctx: f"<{span.entity_type}:{vault.put(span.text)}>")
+register_action("vault", lambda span, ctx: f"<{span.entity_type}:{vault.put(span.text)}>")
 
-guard = Wardcat(salt="s").add_entity("EMAIL", "tokenize")   # use it like any built-in
+guard = Wardcat(salt="s").add_entity("EMAIL", "vault")   # use it like any built-in
 ```
 
 > Detection and anonymization are separate stages: `DetectionEngine` finds the
