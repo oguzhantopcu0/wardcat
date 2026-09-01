@@ -89,6 +89,31 @@ under the source list). Scanned with a one-way action and want a reversible view
 without re-detecting? `result.reapply(Action.TOKENIZE)` reuses the spans and
 re-runs only the anonymization stage.
 
+## Keep the payload uniform
+
+A guard usually mixes actions — and `with_llm()` in particular switches on its own
+entity policy, so a scan can come back with `[EMAIL_1]` next to
+`[PERSON:5687e6a708553da8]`. Both restore, but a sixteen-hex-digit token is far
+easier for a model to mangle than `[PERSON_1]`, and one mangled token is one value
+that does not come back. Before sending, derive a uniformly tokenized payload —
+detection is not repeated, only the cheap anonymization stage:
+
+```python
+result  = guard.scan(text)
+payload = result.reapply(Action.TOKENIZE)   # every span becomes [TYPE_N]
+
+answer = call_llm(payload.sanitized_text)
+print(payload.restore(answer))              # restore through the same object
+```
+
+```text
+mixed     : [PERSON:5687e6a708553da8] mailed [EMAIL_1]
+uniform   : [PERSON_1] mailed [EMAIL_1]
+```
+
+Restore through the object you sent — `payload`, not `result`: the placeholders in
+the answer are the ones `reapply` produced.
+
 ## Handing the map to another process
 
 `restore()` needs the `ScanResult`. When the answer comes back somewhere else —
