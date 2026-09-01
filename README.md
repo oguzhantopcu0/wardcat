@@ -425,12 +425,15 @@ guard = (
 
 result = guard.scan("Mail ali@example.com about card 4532 0151 1283 0366")
 print(result.sanitized_text)
-# Mail [EMAIL_1] about card [CREDIT_CARD_1]
+# Mail [EMAIL_1_9f3a2c8b71d4] about card [CREDIT_CARD_1_9f3a2c8b71d4]
 ```
 
-Placeholders are numbered per entity type in order of appearance, and the *same
-value always gets the same token* — a name that repeats stays one referent, so
-the model can still reason about it. Send that text to the LLM, then put the real
+A placeholder is `[TYPE_index_contextid]`. The index is per entity type in order
+of appearance and the *same value always gets the same token* — a name that
+repeats stays one referent, so the model can still reason about it. The context
+id is drawn once per scan and shared by that scan's tokens, which is what keeps
+two concurrent requests apart: both hold an "`EMAIL` number 1", and without it
+their placeholders would be the same string. Send that text to the LLM, then put the real
 values back into its answer:
 
 ```python
@@ -442,8 +445,8 @@ print(result.restore(answer))
 I have emailed ali@example.com about the charge on 4532 0151 1283 0366.
 
 --- Sources ---
-[1] [EMAIL_1] → ali@example.com (EMAIL · tokenize · confidence 0.97)
-[2] [CREDIT_CARD_1] → 4532 0151 1283 0366 (CREDIT_CARD · tokenize · confidence 1.00)
+[1] [EMAIL_1_9f3a2c8b71d4] → ali@example.com (EMAIL · tokenize · confidence 0.97)
+[2] [CREDIT_CARD_1_9f3a2c8b71d4] → 4532 0151 1283 0366 (CREDIT_CARD · tokenize · confidence 1.00)
 ```
 
 Printing a restored result appends that source list: every placeholder that was
@@ -458,8 +461,21 @@ restored = result.restore(answer)
 restored.text                 # answer with the real values back in place
 restored.substitutions        # [Substitution(index=1, entity_type="EMAIL", …)]
 restored.unrestored           # what was not put back, and why
-restored.is_complete          # False if a placeholder was too ambiguous to reverse
-result.token_map              # {"[EMAIL_1]": "ali@example.com"} — hand it to another process
+restored.is_complete          # False if a placeholder was left sitting in the text
+result.token_map              # {"[EMAIL_1_9f3a…]": "ali@…"} — hand it to another process
+result.context_id             # the id stamped into this scan's placeholders
+```
+
+**A placeholder from another scan is never matched.** Restoring one request's
+answer against another request's result — a result kept in a module global, a
+cache, a queue — would otherwise substitute the wrong person's values, silently.
+Instead nothing is substituted: the token is reported as `foreign`, left in the
+text, and `is_complete` is `False`. Pass `strict=True` to raise `ContextMismatch`
+instead, and `also=[...]` when an answer legitimately carries an earlier turn's
+placeholders:
+
+```python
+turn2.restore(answer, also=[turn1], strict=True)
 ```
 
 Mixing actions is normal — `with_llm()` switches on its own entity policy, so a

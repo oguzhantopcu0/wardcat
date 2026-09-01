@@ -20,20 +20,22 @@ guard = (
 
 result = guard.scan("Mail ali@example.com about card 4532 0151 1283 0366")
 result.sanitized_text
-# 'Mail [EMAIL_1] about card [CREDIT_CARD_1]'
+# 'Mail [EMAIL_1_9f3a2c8b71d4] about card [CREDIT_CARD_1_9f3a2c8b71d4]'
 ```
 
-Placeholders are numbered **per entity type in order of appearance**, and the
-same value always gets the same token — a name that repeats stays one referent,
-so the model can still reason about it:
+A placeholder is **`[TYPE_index_contextid]`**. The index is per entity type in
+order of appearance, and the same value always gets the same token — a name that
+repeats stays one referent, so the model can still reason about it:
 
 ```python
 guard.scan("Ali wrote to Veli; reply to Ali").sanitized_text
-# '[PERSON_1] wrote to [PERSON_2]; reply to [PERSON_1]'
+# '[PERSON_1_4c81…] wrote to [PERSON_2_4c81…]; reply to [PERSON_1_4c81…]'
 ```
 
-Numbering restarts at 1 for every scan, and concurrent scans (`scan_batch`,
-`scan_async`) never share a counter.
+The index restarts at 1 for every scan, so it stays short; the **context id** is
+drawn once per scan (`result.context_id`) and shared by that scan's tokens. See
+[Why the context id](#why-the-context-id) — it is the difference between a
+misrouted answer restoring the wrong person's data and restoring nothing at all.
 
 Which layer found the value does not matter: anonymization runs after detection,
 so a span from regex, SpaCy NER or the LLM layer is tokenized and restored the
@@ -67,11 +69,53 @@ once, and the detection confidence.
 | `.with_sources()` | text + list; what `str(restored)` returns |
 | `.substitutions` | the same information as `Substitution` records |
 | `.unrestored` | detected values that were *not* put back, and why |
-| `.is_complete` | `False` if a placeholder was too ambiguous to reverse |
+| `.is_complete` | `False` if a placeholder was left sitting in the text (ambiguous or foreign) |
 
 `restore()` with no argument reverses `sanitized_text` itself, which round-trips
 back to the original input — a cheap way to assert a policy is reversible in
 tests.
+
+## Why the context id
+
+Two requests arriving together both hold an "`EMAIL` number 1". If placeholders
+were just `[EMAIL_1]`, the two scans would produce the *same string*, and
+restoring one request's answer against the other's result would match it and
+substitute the wrong person's address — silently, with no error and nothing in
+`unrestored`. That is the worst outcome this library can produce.
+
+The context id makes those tokens distinct, so the mistake has nothing to match:
+
+```python
+mine   = guard.scan("Ali: ali@example.com")      # [EMAIL_1_9f3a2c8b71d4]
+theirs = guard.scan("Beyza: beyza@example.com")  # [EMAIL_1_4c81b70a2e55]
+
+theirs.restore("Mailed [EMAIL_1_9f3a2c8b71d4].")
+# text        unchanged — nothing was substituted
+# unrestored  [UnrestoredValue(entity_type='EMAIL', reason='foreign', …)]
+# is_complete False
+```
+
+The id is 12 hex characters — 48 bits, so with a hundred thousand results alive
+at once the chance any two collide is about 1.8e-5, and request-scoped use puts
+it near 1e-9. It is drawn per scan, needs no shared counter, and holds across
+processes.
+
+Two knobs:
+
+```python
+result.restore(answer, strict=True)          # raise ContextMismatch instead of reporting
+turn2.restore(answer, also=[turn1])          # an earlier turn's tokens are legitimate here
+```
+
+`strict=True` is the right default for a request handler. `also=` is for
+multi-turn exchanges, where an answer may carry placeholders from a previous
+scan in the same conversation — those are restored too, and anything else still
+raises.
+
+A mangled token is covered by the same mechanism: if the model returns
+`[EMAIL_1_9f3a2c8b71d5]` for `[EMAIL_1_9f3a2c8b71d4]`, there is no match, so the
+value simply does not come back. The model's accuracy decides *how much* is
+restored; it can never decide *whether what comes back is correct*.
 
 ## Which actions can be reversed
 

@@ -6,6 +6,8 @@ then put the real values back into its answer. The "model" here is a stub so the
 example runs offline; swap `fake_llm` for a real call and nothing else changes.
 """
 
+import re
+
 from wardcat import Action, Entity, Wardcat
 
 PROMPT = (
@@ -15,11 +17,19 @@ PROMPT = (
 
 
 def fake_llm(prompt: str) -> str:
-    """Stand-in for the model: it only ever sees the placeholders."""
+    """Stand-in for the model: it only ever sees the placeholders.
+
+    It copies them out of the prompt rather than hard-coding them, because each
+    scan stamps its own context id into its tokens — that is what stops one
+    request's answer from being restored against another request's result.
+    """
     assert "ali@example.com" not in prompt, "the model must never see the real value"
+    person, card, email = (
+        re.search(rf"\[{t}_\d+_[0-9a-f]+\]", prompt) for t in ("PERSON", "CREDIT_CARD", "EMAIL")
+    )
     return (
-        "Hi [PERSON_1], I have checked the charge on [CREDIT_CARD_1] "
-        "and emailed the details to [EMAIL_1]."
+        f"Hi {person.group()}, I have checked the charge on {card.group()} "
+        f"and emailed the details to {email.group()}."
     )
 
 
@@ -44,6 +54,7 @@ def main() -> None:
 
     restored = result.restore(answer)
     print(f"\n(complete={restored.is_complete}, {len(restored.substitutions)} value(s) put back)")
+    print(f"(this scan's context id: {result.context_id} — another scan's tokens would be refused)")
 
 
 if __name__ == "__main__":

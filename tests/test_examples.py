@@ -19,7 +19,7 @@ EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 OFFLINE_EXAMPLES = [
     ("demo.py", "CREDIT_CARD"),
     ("batch_and_async.py", "EMAIL"),
-    ("reversible_roundtrip.py", "[CREDIT_CARD_1]"),
+    ("reversible_roundtrip.py", "complete=True"),
 ]
 
 

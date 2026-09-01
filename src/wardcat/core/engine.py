@@ -6,6 +6,7 @@ import re
 import time
 from typing import Any
 
+from wardcat.core.actions import new_context_id
 from wardcat.core.anonymizer import Anonymizer
 from wardcat.core.models import ScanResult
 from wardcat.detectors.base import BaseDetector, DetectedSpan
@@ -99,7 +100,10 @@ class DetectionEngine:
 
         raw_spans.extend(self._collect_denylist_spans(text))
         spans = self._filter_spans(raw_spans, text)
-        sanitized, violations = self._anonymizer.apply(text, spans)
+        # One context id per scan — it is what keeps this scan's reversible
+        # placeholders distinct from every other scan's (see TokenAllocator).
+        context_id = new_context_id()
+        sanitized, violations = self._anonymizer.apply(text, spans, context_id=context_id)
 
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         logger.info(
@@ -113,6 +117,7 @@ class DetectionEngine:
             sanitized_text=sanitized,
             violations=violations,
             warnings=warnings,
+            context_id=context_id,
             _salt=self.salt,
         )
 
@@ -154,7 +159,10 @@ class DetectionEngine:
             warnings.extend(w for _, w in results if w)
         raw_spans.extend(self._collect_denylist_spans(text))
         spans = self._filter_spans(raw_spans, text)
-        sanitized, violations = self._anonymizer.apply(text, spans)
+        # One context id per scan — it is what keeps this scan's reversible
+        # placeholders distinct from every other scan's (see TokenAllocator).
+        context_id = new_context_id()
+        sanitized, violations = self._anonymizer.apply(text, spans, context_id=context_id)
 
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         logger.info(
@@ -168,6 +176,7 @@ class DetectionEngine:
             sanitized_text=sanitized,
             violations=violations,
             warnings=warnings,
+            context_id=context_id,
             _salt=self.salt,
         )
 

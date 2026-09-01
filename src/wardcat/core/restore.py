@@ -24,7 +24,13 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from wardcat.core.models import Violation
 
 #: Why a detected value was not put back into the text.
-UnrestoredReason = Literal["not-present", "ambiguous", "not-replaced"]
+UnrestoredReason = Literal["not-present", "ambiguous", "not-replaced", "foreign"]
+
+#: The shape a ``tokenize`` placeholder has: ``[TYPE_index]`` or, once a scan
+#: stamps its context id, ``[TYPE_index_contextid]``. Used to spot placeholders
+#: in a text that this result cannot account for. ``hash`` (``[TYPE:digest]``)
+#: and ``redact`` (``[TYPE]``) output does not match, by construction.
+_TOKEN_SHAPE = re.compile(r"\[(?P<type>[A-Z][A-Z0-9_]*?)_\d+(?:_[0-9a-f]{6,})?\]")
 
 _SOURCES_TITLE = "Sources"
 
@@ -72,7 +78,9 @@ class UnrestoredValue:
     replacement, which a custom action may return, occurs nowhere locatable);
     ``"ambiguous"`` — it stood for more than one distinct value, so restoring it
     would be a guess; ``"not-replaced"`` — the action left the original text in
-    place (``warn``), so there is nothing to reverse."""
+    place (``warn``), so there is nothing to reverse; ``"foreign"`` — the text
+    carries a placeholder this result never produced (another scan's, or one the
+    model invented), so it was left alone."""
 
 
 @dataclass(frozen=True)
@@ -98,12 +106,14 @@ class RestoredText:
 
     @property
     def is_complete(self) -> bool:
-        """``True`` when nothing was skipped for being ambiguous.
+        """``True`` when no placeholder was left sitting in the text.
 
-        A ``not-present`` entry does not make a restore incomplete — an answer
-        that never mentions a placeholder has nothing to put back.
+        ``False`` when something was skipped for being ``ambiguous`` or was
+        ``foreign`` — in both cases a placeholder is still there for a reader to
+        trip over. A ``not-present`` entry does not make a restore incomplete: an
+        answer that never mentions a placeholder has nothing to put back.
         """
-        return not any(u.reason == "ambiguous" for u in self.unrestored)
+        return not any(u.reason in ("ambiguous", "foreign") for u in self.unrestored)
 
     def sources_block(self, *, title: str = _SOURCES_TITLE, notes: bool = True) -> str:
         """Render the ordered source list — which filter fired, and what it hid.
@@ -144,8 +154,16 @@ class RestoredText:
     def _notes(self) -> list[str]:
         """One trailing line per reason, summarizing what was left alone."""
         notes = []
+        foreign = [u for u in self.unrestored if u.reason == "foreign"]
         ambiguous = [u for u in self.unrestored if u.reason == "ambiguous"]
         absent = [u for u in self.unrestored if u.reason == "not-present"]
+        if foreign:
+            placeholders = ", ".join(sorted({u.placeholder or "" for u in foreign}))
+            notes.append(
+                f"(left in place: {placeholders} — not produced by this scan, so there "
+                "is nothing here to put back. Restore with the result that produced "
+                "them, or pass them in also=[...].)"
+            )
         if ambiguous:
             placeholders = ", ".join(sorted({u.placeholder or "" for u in ambiguous}))
             notes.append(
@@ -168,13 +186,18 @@ class RestoredText:
         )
 
 
-def restore_text(text: str, violations: list[Violation]) -> RestoredText:
+def restore_text(text: str, violations: list[Violation], *, strict: bool = False) -> RestoredText:
     """Put the originals recorded in *violations* back into *text*.
 
     Every placeholder is matched literally and all its occurrences are replaced in
     a single left-to-right pass, so a restored value can never be re-matched by
     another placeholder. Longer placeholders are tried first, so one that is a
     prefix of another (``ab**ef`` inside ``ab**efgh``) cannot shadow it.
+
+    Any remaining text shaped like a reversible placeholder that *violations* does
+    not account for is reported as ``foreign`` — another scan's token, or one the
+    model invented. It is never guessed at; ``strict`` turns the report into a
+    :class:`~wardcat.exceptions.ContextMismatch`.
     """
     by_placeholder: dict[str, list[Violation]] = {}
     unrestored: list[UnrestoredValue] = []
@@ -218,6 +241,8 @@ def restore_text(text: str, violations: list[Violation]) -> RestoredText:
         restorable[placeholder] = first
 
     if not restorable:
+        unrestored.extend(_foreign(text, set()))
+        _check(unrestored, strict)
         return RestoredText(text=text, substitutions=[], unrestored=unrestored)
 
     # Longest first: a placeholder that is a prefix of another must not win.
@@ -247,4 +272,32 @@ def restore_text(text: str, violations: list[Violation]) -> RestoredText:
         )
         for i, placeholder in enumerate(order, start=1)
     ]
+    unrestored.extend(_foreign(restored, set(restorable)))
+    _check(unrestored, strict)
     return RestoredText(text=restored, substitutions=substitutions, unrestored=unrestored)
+
+
+def _foreign(text: str, known: set[str]) -> list[UnrestoredValue]:
+    """Placeholders still in *text* that *known* does not account for."""
+    seen: dict[str, str] = {}
+    for match in _TOKEN_SHAPE.finditer(text):
+        token = match.group(0)
+        if token not in known:
+            seen.setdefault(token, match.group("type"))
+    return [
+        # The action that produced a foreign token is unknowable from here — it
+        # was not this result's doing.
+        UnrestoredValue(entity_type=entity, action="", placeholder=token, reason="foreign")
+        for token, entity in seen.items()
+    ]
+
+
+def _check(unrestored: list[UnrestoredValue], strict: bool) -> None:
+    """Raise when strict and something in the text belongs to another scan."""
+    if not strict:
+        return
+    foreign = [u.placeholder or "" for u in unrestored if u.reason == "foreign"]
+    if foreign:
+        from wardcat.exceptions import ContextMismatch
+
+        raise ContextMismatch(foreign)

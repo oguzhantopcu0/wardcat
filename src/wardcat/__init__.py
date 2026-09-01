@@ -30,6 +30,7 @@ from wardcat.entity_groups import (
 )
 from wardcat.exceptions import (
     ConfigError,
+    ContextMismatch,
     ModelDownloadError,
     UnsupportedLanguageError,
     WardcatError,
@@ -67,6 +68,7 @@ __all__ = [
     # Exceptions
     "WardcatError",
     "ConfigError",
+    "ContextMismatch",
     "ModelDownloadError",
     "UnsupportedLanguageError",
     # Entity group helpers

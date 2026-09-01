@@ -14,6 +14,7 @@ without touching the core::
 from __future__ import annotations
 
 import re
+import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -21,23 +22,49 @@ from wardcat.detectors.base import DetectedSpan
 from wardcat.exceptions import ConfigError
 from wardcat.utils.hashing import sha256_hash
 
+#: Hex characters in a context id. Twelve is 48 bits: with a hundred thousand
+#: results alive at once the chance that any two share an id is about 1.8e-5,
+#: and request-scoped use (a few hundred alive) puts it near 1e-9.
+_CONTEXT_ID_CHARS = 12
+
+
+def new_context_id() -> str:
+    """A fresh context id — the per-scan half of every reversible placeholder."""
+    return secrets.token_hex(_CONTEXT_ID_CHARS // 2)
+
 
 class TokenAllocator:
     """Hands out stable, unique placeholders for one scan — the ``tokenize`` vault.
 
-    Numbering is per entity type in order of first appearance (``[PERSON_1]``,
-    ``[PERSON_2]``, ``[EMAIL_1]``), and an *identical* value always gets the same
-    token, so a name repeated three times stays one referent for whatever reads
-    the anonymized text. Allocation state is per instance and the
-    :class:`Anonymizer <wardcat.core.anonymizer.Anonymizer>` builds a fresh one
-    for every ``apply()`` call — numbering therefore restarts at 1 for each scan
-    and concurrent scans never share a counter.
+    A placeholder is ``[TYPE_index_contextid]`` — ``[EMAIL_1_9f3a2c8b71d4]``. The
+    index is per entity type in order of first appearance and restarts at 1 for
+    every scan, so it stays short and readable; the context id is drawn once per
+    allocator and shared by every token it hands out, which is what makes one
+    scan's placeholders distinct from another's. An *identical* value always gets
+    the same token, so a name repeated three times stays one referent for whatever
+    reads the anonymized text.
+
+    That distinctness is the safety property behind
+    :meth:`~wardcat.ScanResult.restore`: two scans running side by side both hold
+    an "``EMAIL`` number 1", and without the context id their placeholders would be
+    the same string — restoring one request's answer against another's result
+    would silently substitute the wrong person's value. With it there is nothing to
+    match, so the mistake becomes a reported non-substitution instead.
+
+    Allocation state is per instance and the
+    :class:`Anonymizer <wardcat.core.anonymizer.Anonymizer>` builds a fresh one for
+    every ``apply()`` call, so concurrent scans never share a counter or an id.
+
+    :param context_id: the id to stamp into every token. Defaults to a fresh one;
+        pass ``""`` for bare ``[TYPE_index]`` placeholders (no cross-scan
+        protection), or a fixed value to make output reproducible in tests.
 
     .. warning::
         Holds the raw values it has seen for the lifetime of the instance.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, context_id: str | None = None) -> None:
+        self.context_id = new_context_id() if context_id is None else context_id
         self._tokens: dict[tuple[str, str], str] = {}
         self._counts: dict[str, int] = {}
 
@@ -48,7 +75,8 @@ class TokenAllocator:
         if token is None:
             count = self._counts.get(entity_type, 0) + 1
             self._counts[entity_type] = count
-            token = f"[{entity_type}_{count}]"
+            suffix = f"_{self.context_id}" if self.context_id else ""
+            token = f"[{entity_type}_{count}{suffix}]"
             self._tokens[key] = token
         return token
 
@@ -59,8 +87,9 @@ class ActionContext:
 
     salt: str = ""
     tokens: TokenAllocator = field(default_factory=TokenAllocator, repr=False, compare=False)
-    """Placeholder vault for reversible actions, scoped to a single scan. Excluded
-    from ``repr``/equality so two contexts with the same salt still compare equal."""
+    """Placeholder vault for reversible actions, scoped to a single scan — its
+    ``context_id`` is the one stamped into this scan's tokens. Excluded from
+    ``repr``/equality so two contexts with the same salt still compare equal."""
 
 
 #: An action maps ``(span, context)`` to a replacement string, or ``None`` to

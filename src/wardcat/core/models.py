@@ -195,6 +195,11 @@ class ScanResult:
     run (LLM backend unreachable). The scan still returns results from the other
     layers, but a non-empty list means detection was **degraded**: some PII may
     be missed. Empty when every configured layer ran."""
+    context_id: str = ""
+    """Identifies this scan's anonymization pass. It is stamped into every
+    reversible (:attr:`Action.TOKENIZE`) placeholder — ``[EMAIL_1_9f3a2c8b71d4]``
+    — so no two scans ever produce the same token and :meth:`restore` can tell
+    another scan's placeholder from its own. Empty when nothing stamped one."""
 
     _salt: str = field(default="", repr=False)
     """Hashing salt inherited from the originating ``Wardcat``, so :meth:`reapply`
@@ -257,7 +262,13 @@ class ScanResult:
         """
         return {v.replacement: v.original for v in self.violations if v.replacement is not None}
 
-    def restore(self, text: str | None = None) -> RestoredText:
+    def restore(
+        self,
+        text: str | None = None,
+        *,
+        strict: bool = False,
+        also: Iterable[ScanResult] = (),
+    ) -> RestoredText:
         """Put the real values back — the reverse of the anonymization stage.
 
         The round trip an LLM call needs: scan the prompt, send the anonymized
@@ -281,13 +292,32 @@ class ScanResult:
 
             reversible = result.reapply(Action.TOKENIZE)
 
+        Placeholders carry this scan's :attr:`context_id`, so a token produced by a
+        *different* scan cannot be matched by accident — restoring one request's
+        answer against another request's result would otherwise substitute the
+        wrong person's values. Such tokens are reported as ``foreign``, left in the
+        text, and make ``is_complete`` ``False``; ``strict=True`` raises
+        :class:`~wardcat.exceptions.ContextMismatch` instead. In a multi-turn
+        exchange an answer may legitimately carry an earlier scan's placeholders —
+        pass those results in ``also`` and they are restored too::
+
+            turn2.restore(answer, also=[turn1], strict=True)
+
         :param text: the text to restore; defaults to :attr:`sanitized_text`, which
                      round-trips back to the original input.
+        :param strict: raise :class:`~wardcat.exceptions.ContextMismatch` when the
+                     text carries a placeholder no known result produced.
+        :param also: other results whose placeholders are legitimate here.
         :returns: a :class:`~wardcat.core.restore.RestoredText`. **Contains raw PII.**
         """
         from wardcat.core.restore import restore_text
 
-        return restore_text(self.sanitized_text if text is None else text, self.violations)
+        violations = list(self.violations)
+        for other in also:
+            violations.extend(other.violations)
+        return restore_text(
+            self.sanitized_text if text is None else text, violations, strict=strict
+        )
 
     def reapply(self, action: Action | str, entities: Iterable[str] | None = None) -> ScanResult:
         """Re-anonymize this already-detected result under a different ``action``.
@@ -314,7 +344,7 @@ class ScanResult:
         :returns:        a new :class:`ScanResult` under the requested action.
         :raises ConfigError: if ``action`` is not a registered action.
         """
-        from wardcat.core.actions import registered_actions
+        from wardcat.core.actions import new_context_id, registered_actions
         from wardcat.core.anonymizer import Anonymizer
         from wardcat.detectors.base import DetectedSpan
         from wardcat.exceptions import ConfigError
@@ -338,8 +368,11 @@ class ScanResult:
             for v in violations
         ]
         config = {v.entity_type: {"action": name} for v in violations}
+        # A new pass produces new placeholders, so it gets its own context id —
+        # the derived result must not answer for the one it came from.
+        context_id = new_context_id()
         sanitized, new_violations = Anonymizer(config, salt=self._salt).apply(
-            self.original_text, spans
+            self.original_text, spans, context_id=context_id
         )
         return ScanResult(
             original_text=self.original_text,
@@ -347,6 +380,7 @@ class ScanResult:
             violations=new_violations,
             scan_error=self.scan_error,
             warnings=list(self.warnings),
+            context_id=context_id,
             _salt=self._salt,
         )
 
