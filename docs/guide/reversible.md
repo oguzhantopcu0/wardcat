@@ -35,6 +35,11 @@ guard.scan("Ali wrote to Veli; reply to Ali").sanitized_text
 Numbering restarts at 1 for every scan, and concurrent scans (`scan_batch`,
 `scan_async`) never share a counter.
 
+Which layer found the value does not matter: anonymization runs after detection,
+so a span from regex, SpaCy NER or the LLM layer is tokenized and restored the
+same way. Only the confidence in the source list gives the layer away — `1.00`
+for a checksum-validated regex match, `0.85` for a model-based one.
+
 ## Restoring
 
 ```python
