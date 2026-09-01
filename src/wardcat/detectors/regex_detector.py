@@ -40,6 +40,9 @@ _PATTERNS: dict[str, tuple[str, int]] = {
     # ── Phone ──────────────────────────────────────────────────────────
     # Turkish phone requires 0 or +90 prefix; bare 10 digits will not match.
     # International E.164 format is also supported (+1, +44, +49, etc.).
+    # A bare national 3-3-4 run ("123 456 7890") is deliberately NOT matched —
+    # it is indistinguishable from an ordinary number sequence, so the US form
+    # is accepted only with its area code in parentheses.
     "PHONE": (
         r"(?<!\d)"
         r"(?:"
@@ -52,8 +55,18 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         # German mobile: 015x/016x/017x + 6-8 digits, e.g. 0151 23456789
         r"01[5-7]\d[\s/\-]?\d{6,8}"
         r"|"
+        # US/NANP national, area code parenthesised: (415) 555-0142 / (415)555-0142
+        r"\(\d{3}\)[\s\-.]?\d{3}[\s\-.]?\d{4}"
+        r"|"
         # International E.164 (non-Turkish): +1..., +44..., +49..., etc.
-        r"\+(?!90)[1-9]\d{1,3}[\s\-]?\d{2,4}[\s\-]?\d{2,4}[\s\-]?\d{0,4}"
+        # The country code is 1–4 digits: `\d{0,3}` (not `{1,3}`) so a
+        # single-digit code followed by a separator — "+1 415 555 0142" — is not
+        # excluded. The lookahead requires 7–15 digits in total, which is what
+        # keeps the shorter country codes from turning this into a loose match
+        # on any "+" followed by a couple of numbers. Both quantifiers are
+        # bounded, so the pattern stays linear (see _REDOS_GATE).
+        r"\+(?!90)(?=(?:[\s\-]?\d){7,15}(?!\d))[1-9]\d{0,3}"
+        r"[\s\-]?\d{2,4}[\s\-]?\d{2,4}[\s\-]?\d{0,4}"
         r")"
         r"(?!\d)",
         0,

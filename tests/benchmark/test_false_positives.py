@@ -59,6 +59,8 @@ class TestPhoneFalsePositives:
         "Year: 2024",
         "Ref: 5551234567",
         "v1.2.3",
+        "+1 23",  # a "+" and a couple of digits is not an E.164 number
+        "see RFC +1 2345 draft",
     ]
 
     def test_no_false_positives(self):

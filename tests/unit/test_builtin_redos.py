@@ -21,6 +21,8 @@ _ADVERSARIAL = [
     (" " * 400),
     ("A" * 200) + ("0" * 200),
     ("4111 " * 120) + "z",  # card-like groups
+    "+" + ("1 " * 200) + "x",  # E.164-style separated-digit run (PHONE lookahead)
+    "+" + ("1" * 400) + "x",
 ]
 
 
