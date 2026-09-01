@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`with_llm()` now says what it switches on.** Unlike `with_ner()`, which enables
+  no entity by itself, the LLM layer carries its own default entity policy (~15
+  types with their own actions), so `.with_llm(...).add_entity(EMAIL, ...)` has
+  always detected and anonymized far more than the one type named — under the
+  policy's actions, not the caller's. The behaviour is unchanged; the first scan
+  now logs a **one-time warning** naming the entities that came along and how to
+  take control of them (`add_entity(name, action, layers=["llm"])` /
+  `remove_entity(name)`). Callers who supply a YAML `config_path` chose their own
+  policy and are not warned. The `with_llm` docstring no longer claims to mirror
+  `with_ner`, and the asymmetry is documented in the README and the configuration
+  guide.
+
 ## [1.1.2] — 2026-07-29
 
 ### Fixed
