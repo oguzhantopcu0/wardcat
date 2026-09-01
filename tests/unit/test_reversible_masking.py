@@ -282,6 +282,79 @@ class TestRestore:
         assert restored.unrestored == []
 
 
+class TestEchoRoundTrip:
+    """The full LLM round trip with a stub model that echoes the masked text back.
+
+    No network, no model weights: the "model" returns exactly what it was given,
+    which is the strictest possible round trip — every placeholder comes back, so
+    restoring must reproduce the input byte for byte.
+    """
+
+    PROMPT = (
+        "Customer Jonathan Blake wrote from jonathan.blake@example.com "
+        "about card 4532 0151 1283 0366; reply to jonathan.blake@example.com. "
+        "Refund to TR33 0006 1005 1978 6457 8413 26."
+    )
+    SECRETS = [
+        "jonathan.blake@example.com",
+        "4532 0151 1283 0366",
+        "TR33 0006 1005 1978 6457 8413 26",
+    ]
+
+    @staticmethod
+    def echo_llm(prompt: str) -> str:
+        """Stands in for the model: returns the masked text unchanged."""
+        return prompt
+
+    @pytest.fixture
+    def result(self):
+        guard = Wardcat(salt="round-trip").add_entities(
+            [Entity.EMAIL, Entity.CREDIT_CARD, Entity.IBAN], action=Action.TOKENIZE
+        )
+        return guard.scan(self.PROMPT)
+
+    def test_no_raw_value_reaches_the_model(self, result) -> None:
+        sent = result.sanitized_text
+
+        for secret in self.SECRETS:
+            assert secret not in sent, secret
+        assert sent == (
+            "Customer Jonathan Blake wrote from [EMAIL_1] "
+            "about card [CREDIT_CARD_1]; reply to [EMAIL_1]. "
+            "Refund to [IBAN_1]."
+        )
+
+    def test_echoed_answer_restores_to_the_original_byte_for_byte(self, result) -> None:
+        answer = self.echo_llm(result.sanitized_text)
+
+        restored = result.restore(answer)
+
+        assert restored.text == self.PROMPT
+        assert restored.is_complete
+        assert restored.unrestored == []
+
+    def test_every_masked_value_is_cited_in_order(self, result) -> None:
+        restored = result.restore(self.echo_llm(result.sanitized_text))
+
+        assert [(s.index, s.placeholder, s.occurrences) for s in restored.substitutions] == [
+            (1, "[EMAIL_1]", 2),  # the repeated address is one token, cited once
+            (2, "[CREDIT_CARD_1]", 1),
+            (3, "[IBAN_1]", 1),
+        ]
+        block = restored.sources_block()
+        for secret in self.SECRETS:
+            assert secret in block, secret
+
+    def test_the_round_trip_survives_a_second_pass(self, result) -> None:
+        """Restoring an already-restored text is a no-op, not a double substitution."""
+        once = result.restore(self.echo_llm(result.sanitized_text))
+
+        twice = result.restore(once.text)
+
+        assert twice.text == self.PROMPT
+        assert twice.substitutions == []  # nothing left to put back
+
+
 # ── The source list ───────────────────────────────────────────────────────────
 
 
