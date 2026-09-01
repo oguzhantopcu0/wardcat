@@ -462,6 +462,17 @@ restored.is_complete          # False if a placeholder was too ambiguous to reve
 result.token_map              # {"[EMAIL_1]": "ali@example.com"} — hand it to another process
 ```
 
+Mixing actions is normal — `with_llm()` switches on its own entity policy, so a
+scan can return `[EMAIL_1]` next to `[PERSON:5687e6a708553da8]`. Both restore, but
+a long hex token is far easier for a model to mangle, so derive a uniformly
+tokenized payload before sending; detection is not repeated:
+
+```python
+payload = result.reapply(Action.TOKENIZE)   # [PERSON_1] mailed [EMAIL_1]
+answer  = call_llm(payload.sanitized_text)
+print(payload.restore(answer))              # restore through the object you sent
+```
+
 `restore()` with no argument reverses `sanitized_text` itself, which round-trips
 back to the original input. It also works on `hash` output (a salted digest is
 unique per value); with `redact` or `mask` two different values can collapse onto
