@@ -19,8 +19,9 @@ and the static `Wardcat.supported_entities(layer=None)`.
 ## Actions
 
 `warn` (keep text, report only) · `hash` (`[TYPE:16hex]`, salted SHA-256) ·
-`redact` (`[TYPE]`) · `mask` (entity-aware partial masking). When `action` is
-omitted it defaults to `hash` (with a one-time warning). Actions are
+`redact` (`[TYPE]`) · `mask` (entity-aware partial masking) · `tokenize`
+(`[TYPE_1]`, [reversible](reversible.md)). When `action` is omitted it defaults
+to `hash` (with a one-time warning). Actions are
 [pluggable](extending.md#custom-actions).
 
 ## Value propagation

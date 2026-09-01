@@ -21,20 +21,24 @@ class Anonymizer:
 
     def __init__(self, entity_config: dict[str, Any], salt: str = "") -> None:
         self._entity_config = entity_config
-        self._ctx = ActionContext(salt=salt)
+        self._salt = salt
 
     def apply(self, text: str, spans: list[DetectedSpan]) -> tuple[str, list[Violation]]:
         """Return ``(sanitized_text, violations)`` for *spans* (already filtered).
 
         *spans* must be sorted/non-overlapping (the engine guarantees this).
         """
+        # A fresh context per call: reversible actions allocate placeholders in it,
+        # so state must not leak between scans — one Anonymizer instance is shared
+        # by every scan on a guard, including the concurrent ones in scan_batch.
+        ctx = ActionContext(salt=self._salt)
         violations: list[Violation] = []
         sanitized = text
         offset = 0
 
         for span in spans:
             action_name = self._entity_config.get(span.entity_type, {}).get("action", "warn")
-            replacement = get_action(action_name)(span, self._ctx)
+            replacement = get_action(action_name)(span, ctx)
 
             if replacement is not None:
                 adj_start = span.start + offset

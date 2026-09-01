@@ -9,6 +9,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Reversible masking — `Action.TOKENIZE` and `ScanResult.restore()`.** The
+  existing actions are one-way; `tokenize` replaces each value with a numbered
+  placeholder (`[EMAIL_1]`, `[PERSON_2]`) and keeps the mapping on the result, so
+  the values can be put back afterwards. Placeholders are numbered per entity type
+  in order of appearance and one token is reused for one distinct value, so a
+  repeated name stays a single referent for the model reading the text.
+
+  ```python
+  guard = Wardcat(salt="s").add_entities([Entity.EMAIL], action=Action.TOKENIZE)
+  result = guard.scan("Mail ali@example.com")   # → 'Mail [EMAIL_1]'
+  answer = call_llm(result.sanitized_text)      # the model never sees the value
+  print(result.restore(answer))
+  ```
+
+  `restore(text)` puts the originals back and returns a `RestoredText` whose
+  `str()` appends an ordered source list — per placeholder, the filter that caught
+  it, the action applied, the value it stood for, an occurrence count and the
+  detection confidence — with `.text`, `.sources_block()`, `.substitutions`,
+  `.unrestored` and `.is_complete` for programmatic use. It also reverses `hash`
+  output; `redact`/`mask` placeholders that stood for more than one value are
+  reported as `ambiguous` and left in the text rather than guessed, and
+  `reapply(Action.TOKENIZE)` derives a reversible view of an existing scan without
+  re-detecting. `ScanResult.token_map` exposes the placeholder → value mapping for
+  callers that must restore in another process.
+
+  **The reverse map is raw PII by design** — `token_map`, `restore()` and the
+  source list all carry original values, so they belong on the trusted side.
+  New exports: `RestoredText`, `Substitution`, `UnrestoredValue`, `TokenAllocator`.
+
+### Changed
+
+- **`tokenize` is now a built-in action name.** It was the running example of a
+  *custom* action in the README and docs; those now use `vault` instead.
+  `register_action("tokenize", ...)` still wins over the built-in — overriding a
+  registered name is unchanged behaviour — but a project that did so is now
+  shadowing a built-in rather than adding a new action.
+- `ActionContext` gained a `tokens` field (a per-scan `TokenAllocator`) for actions
+  that need stable, reversible placeholders. It is excluded from the dataclass's
+  `repr` and equality, so existing comparisons are unaffected. The
+  `Anonymizer` now builds one context per `apply()` call instead of one per
+  instance, which is what keeps placeholder numbering per scan and safe under
+  `scan_batch`.
+
+### Fixed
+
+- Test suite: registering an action in one test no longer leaks into the rest of
+  the session (the registry is process-global; a `conftest` fixture now restores
+  it after each test).
+
 ## [1.1.2] — 2026-07-29
 
 ### Fixed

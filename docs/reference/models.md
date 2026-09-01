@@ -8,6 +8,12 @@
 
 ::: wardcat.RedactedResult
 
+::: wardcat.RestoredText
+
+::: wardcat.Substitution
+
+::: wardcat.UnrestoredValue
+
 ## Constants
 
 ::: wardcat.Entity

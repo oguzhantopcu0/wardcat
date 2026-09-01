@@ -2,24 +2,55 @@
 
 An action turns a detected span into its replacement (or ``None`` to keep the
 text and only report it). Built-in actions are ``warn`` / ``hash`` / ``redact`` /
-``mask``; register your own (``encrypt``, ``tokenize``, format-preserving, …)
+``mask`` / ``tokenize``; register your own (``encrypt``, format-preserving, …)
 without touching the core::
 
     from wardcat import register_action
 
-    register_action("tokenize", lambda span, ctx: f"<{span.entity_type}:{vault.put(span.text)}>")
-    guard.add_entity("EMAIL", "tokenize")
+    register_action("vault", lambda span, ctx: f"<{span.entity_type}:{vault.put(span.text)}>")
+    guard.add_entity("EMAIL", "vault")
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from wardcat.detectors.base import DetectedSpan
 from wardcat.exceptions import ConfigError
 from wardcat.utils.hashing import sha256_hash
+
+
+class TokenAllocator:
+    """Hands out stable, unique placeholders for one scan — the ``tokenize`` vault.
+
+    Numbering is per entity type in order of first appearance (``[PERSON_1]``,
+    ``[PERSON_2]``, ``[EMAIL_1]``), and an *identical* value always gets the same
+    token, so a name repeated three times stays one referent for whatever reads
+    the anonymized text. Allocation state is per instance and the
+    :class:`Anonymizer <wardcat.core.anonymizer.Anonymizer>` builds a fresh one
+    for every ``apply()`` call — numbering therefore restarts at 1 for each scan
+    and concurrent scans never share a counter.
+
+    .. warning::
+        Holds the raw values it has seen for the lifetime of the instance.
+    """
+
+    def __init__(self) -> None:
+        self._tokens: dict[tuple[str, str], str] = {}
+        self._counts: dict[str, int] = {}
+
+    def token_for(self, entity_type: str, text: str) -> str:
+        """Return the placeholder for *text*, allocating a new one on first sight."""
+        key = (entity_type, text)
+        token = self._tokens.get(key)
+        if token is None:
+            count = self._counts.get(entity_type, 0) + 1
+            self._counts[entity_type] = count
+            token = f"[{entity_type}_{count}]"
+            self._tokens[key] = token
+        return token
 
 
 @dataclass(frozen=True)
@@ -27,6 +58,9 @@ class ActionContext:
     """Extra context an action may need beyond the span (e.g. the hash salt)."""
 
     salt: str = ""
+    tokens: TokenAllocator = field(default_factory=TokenAllocator, repr=False, compare=False)
+    """Placeholder vault for reversible actions, scoped to a single scan. Excluded
+    from ``repr``/equality so two contexts with the same salt still compare equal."""
 
 
 #: An action maps ``(span, context)`` to a replacement string, or ``None`` to
@@ -77,10 +111,15 @@ def _act_mask(span: DetectedSpan, ctx: ActionContext) -> str | None:
     return _mask_value(span.entity_type, span.text)
 
 
+def _act_tokenize(span: DetectedSpan, ctx: ActionContext) -> str | None:
+    return ctx.tokens.token_for(span.entity_type, span.text)
+
+
 register_action("warn", _act_warn)
 register_action("hash", _act_hash)
 register_action("redact", _act_redact)
 register_action("mask", _act_mask)
+register_action("tokenize", _act_tokenize)
 
 
 def _mask_value(entity_type: str, text: str) -> str:
