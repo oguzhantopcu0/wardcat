@@ -13,10 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Reversible masking — `Action.TOKENIZE` and `ScanResult.restore()`.** The
   existing actions are one-way; `tokenize` replaces each value with a numbered
-  placeholder (`[EMAIL_1]`, `[PERSON_2]`) and keeps the mapping on the result, so
-  the values can be put back afterwards. Placeholders are numbered per entity type
-  in order of appearance and one token is reused for one distinct value, so a
-  repeated name stays a single referent for the model reading the text.
+  placeholder and keeps the mapping on the result, so the values can be put back
+  afterwards. A placeholder is `[TYPE_index_contextid]` — `[EMAIL_1_9f3a2c8b71d4]`.
+  The index is per entity type in order of appearance and one token is reused for
+  one distinct value, so a repeated name stays a single referent for the model
+  reading the text.
+
+  The **context id** is drawn once per scan (`ScanResult.context_id`, 12 hex
+  characters) and stamped into that scan's tokens. Two requests arriving together
+  both hold an "EMAIL number 1"; without it their placeholders would be the same
+  string, and restoring one request's answer against the other's result would
+  silently substitute the wrong person's value. With it there is nothing to match:
+  the token is reported as `foreign`, left in the text, and `is_complete` is
+  `False`. `restore(answer, strict=True)` raises `ContextMismatch` instead — the
+  right default for a request handler — and `restore(answer, also=[earlier])`
+  accepts an earlier turn's placeholders in a multi-turn exchange. The same
+  mechanism covers a model that mangles a token: no match, so the value does not
+  come back, and it can never come back as somebody else's.
 
   ```python
   guard = Wardcat(salt="s").add_entities([Entity.EMAIL], action=Action.TOKENIZE)
@@ -42,7 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   **The reverse map is raw PII by design** — `token_map`, `restore()` and the
   source list all carry original values, so they belong on the trusted side.
-  New exports: `RestoredText`, `Substitution`, `UnrestoredValue`, `TokenAllocator`.
+  New exports: `RestoredText`, `Substitution`, `UnrestoredValue`, `TokenAllocator`,
+  `ContextMismatch`.
 
 ### Changed
 

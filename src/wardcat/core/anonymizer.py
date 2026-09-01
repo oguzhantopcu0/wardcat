@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from wardcat.core.actions import ActionContext, get_action
+from wardcat.core.actions import ActionContext, TokenAllocator, get_action
 from wardcat.core.models import Violation
 from wardcat.detectors.base import DetectedSpan
 
@@ -23,15 +23,26 @@ class Anonymizer:
         self._entity_config = entity_config
         self._salt = salt
 
-    def apply(self, text: str, spans: list[DetectedSpan]) -> tuple[str, list[Violation]]:
+    def apply(
+        self,
+        text: str,
+        spans: list[DetectedSpan],
+        *,
+        context_id: str | None = None,
+    ) -> tuple[str, list[Violation]]:
         """Return ``(sanitized_text, violations)`` for *spans* (already filtered).
 
         *spans* must be sorted/non-overlapping (the engine guarantees this).
+
+        :param context_id: stamped into reversible (``tokenize``) placeholders so
+            this call's tokens cannot collide with another scan's. Defaults to a
+            fresh id; pass one to record it alongside the result, or ``""`` for
+            bare ``[TYPE_index]`` placeholders.
         """
         # A fresh context per call: reversible actions allocate placeholders in it,
         # so state must not leak between scans — one Anonymizer instance is shared
         # by every scan on a guard, including the concurrent ones in scan_batch.
-        ctx = ActionContext(salt=self._salt)
+        ctx = ActionContext(salt=self._salt, tokens=TokenAllocator(context_id))
         violations: list[Violation] = []
         sanitized = text
         offset = 0

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from wardcat import Action, Entity, RestoredText, Violation, Wardcat
+from wardcat import Action, ContextMismatch, Entity, RestoredText, Violation, Wardcat
 from wardcat.core.actions import TokenAllocator
 from wardcat.core.restore import restore_text
 
@@ -21,6 +21,11 @@ def guard() -> Wardcat:
         .add_entity(Entity.EMAIL, Action.TOKENIZE)
         .add_entity(Entity.CREDIT_CARD, Action.TOKENIZE)
     )
+
+
+def tok(result: object, entity_type: str, index: int = 1) -> str:
+    """The placeholder *result* stamped for the *index*-th value of *entity_type*."""
+    return f"[{entity_type}_{index}_{result.context_id}]"  # type: ignore[attr-defined]
 
 
 def _violation(entity_type: str, original: str, replacement: str | None, **kw: object) -> Violation:
@@ -48,29 +53,39 @@ class TestTokenizeAction:
     def test_replaces_values_with_numbered_placeholders(self, guard: Wardcat) -> None:
         result = guard.scan(f"mail {EMAIL_A}, card {CARD}")
 
-        assert result.sanitized_text == "mail [EMAIL_1], card [CREDIT_CARD_1]"
+        assert result.sanitized_text == (
+            f"mail {tok(result, 'EMAIL')}, card {tok(result, 'CREDIT_CARD')}"
+        )
         assert EMAIL_A not in result.sanitized_text
         assert CARD not in result.sanitized_text
 
     def test_numbers_per_entity_type_in_order_of_appearance(self, guard: Wardcat) -> None:
         result = guard.scan(f"{EMAIL_A} then {EMAIL_B} then {CARD}")
 
-        assert result.sanitized_text == "[EMAIL_1] then [EMAIL_2] then [CREDIT_CARD_1]"
+        assert result.sanitized_text == (
+            f"{tok(result, 'EMAIL')} then {tok(result, 'EMAIL', 2)} "
+            f"then {tok(result, 'CREDIT_CARD')}"
+        )
 
     def test_same_value_keeps_the_same_token(self, guard: Wardcat) -> None:
         """A repeated value stays one referent — an LLM can still co-refer it."""
         result = guard.scan(f"{EMAIL_A} wrote to {EMAIL_B}; reply to {EMAIL_A}")
 
-        assert result.sanitized_text == "[EMAIL_1] wrote to [EMAIL_2]; reply to [EMAIL_1]"
+        assert result.sanitized_text == (
+            f"{tok(result, 'EMAIL')} wrote to {tok(result, 'EMAIL', 2)}; "
+            f"reply to {tok(result, 'EMAIL')}"
+        )
 
     def test_numbering_restarts_for_each_scan(self, guard: Wardcat) -> None:
         """State must not leak between scans through the shared Anonymizer."""
         first = guard.scan(f"mail {EMAIL_A}")
         second = guard.scan(f"mail {EMAIL_B}")
 
-        assert first.sanitized_text == second.sanitized_text == "mail [EMAIL_1]"
-        assert first.token_map == {"[EMAIL_1]": EMAIL_A}
-        assert second.token_map == {"[EMAIL_1]": EMAIL_B}
+        assert first.sanitized_text == f"mail {tok(first, 'EMAIL')}"
+        assert second.sanitized_text == f"mail {tok(second, 'EMAIL')}"
+        assert first.token_map == {tok(first, "EMAIL"): EMAIL_A}
+        assert second.token_map == {tok(second, "EMAIL"): EMAIL_B}
+        assert first.context_id != second.context_id
 
     def test_concurrent_scans_do_not_share_a_counter(self, guard: Wardcat) -> None:
         texts = [f"mail {EMAIL_A}", f"mail {EMAIL_B}", f"card {CARD}"]
@@ -78,13 +93,14 @@ class TestTokenizeAction:
         results = guard.scan_batch(texts, max_workers=3)
 
         assert [r.sanitized_text for r in results] == [
-            "mail [EMAIL_1]",
-            "mail [EMAIL_1]",
-            "card [CREDIT_CARD_1]",
+            f"mail {tok(results[0], 'EMAIL')}",
+            f"mail {tok(results[1], 'EMAIL')}",
+            f"card {tok(results[2], 'CREDIT_CARD')}",
         ]
+        assert len({r.context_id for r in results}) == 3
 
     def test_allocator_is_deterministic_and_stateful(self) -> None:
-        allocator = TokenAllocator()
+        allocator = TokenAllocator(context_id="")  # bare tokens, easier to read
 
         assert allocator.token_for("PERSON", "Ali") == "[PERSON_1]"
         assert allocator.token_for("PERSON", "Veli") == "[PERSON_2]"
@@ -120,13 +136,17 @@ class TestEveryDetectionLayer:
 
         result = guard.scan(f"Patient reports Type 1 diabetes; contact {EMAIL_A}")
 
-        assert result.sanitized_text == ("Patient reports [SPECIAL_CATEGORY_1]; contact [EMAIL_1]")
+        assert result.sanitized_text == (
+            f"Patient reports {tok(result, 'SPECIAL_CATEGORY')}; contact {tok(result, 'EMAIL')}"
+        )
         assert result.token_map == {
-            "[SPECIAL_CATEGORY_1]": "Type 1 diabetes",
-            "[EMAIL_1]": EMAIL_A,
+            tok(result, "SPECIAL_CATEGORY"): "Type 1 diabetes",
+            tok(result, "EMAIL"): EMAIL_A,
         }
 
-        restored = result.restore("Regarding [SPECIAL_CATEGORY_1], I emailed [EMAIL_1].")
+        restored = result.restore(
+            f"Regarding {tok(result, 'SPECIAL_CATEGORY')}, I emailed {tok(result, 'EMAIL')}."
+        )
 
         assert restored.text == f"Regarding Type 1 diabetes, I emailed {EMAIL_A}."
         # The model-based span keeps its lower confidence in the source list.
@@ -141,7 +161,10 @@ class TestTokenMap:
     def test_maps_placeholders_to_originals(self, guard: Wardcat) -> None:
         result = guard.scan(f"mail {EMAIL_A}, card {CARD}")
 
-        assert result.token_map == {"[EMAIL_1]": EMAIL_A, "[CREDIT_CARD_1]": CARD}
+        assert result.token_map == {
+            tok(result, "EMAIL"): EMAIL_A,
+            tok(result, "CREDIT_CARD"): CARD,
+        }
 
     def test_excludes_report_only_violations(self) -> None:
         guard = Wardcat(salt="s").add_entity(Entity.EMAIL, Action.WARN)
@@ -164,7 +187,9 @@ class TestRestore:
     def test_restores_placeholders_in_an_llm_answer(self, guard: Wardcat) -> None:
         result = guard.scan(f"mail {EMAIL_A}, card {CARD}")
 
-        restored = result.restore("I have emailed [EMAIL_1] about card [CREDIT_CARD_1].")
+        restored = result.restore(
+            f"I have emailed {tok(result, 'EMAIL')} about card {tok(result, 'CREDIT_CARD')}."
+        )
 
         assert restored.text == f"I have emailed {EMAIL_A} about card {CARD}."
         assert restored.is_complete
@@ -172,11 +197,13 @@ class TestRestore:
     def test_reports_substitutions_in_order_of_appearance(self, guard: Wardcat) -> None:
         result = guard.scan(f"mail {EMAIL_A}, card {CARD}")
 
-        restored = result.restore("Card [CREDIT_CARD_1] belongs to [EMAIL_1].")
+        restored = result.restore(
+            f"Card {tok(result, 'CREDIT_CARD')} belongs to {tok(result, 'EMAIL')}."
+        )
 
         assert [(s.index, s.placeholder) for s in restored.substitutions] == [
-            (1, "[CREDIT_CARD_1]"),
-            (2, "[EMAIL_1]"),
+            (1, tok(result, "CREDIT_CARD")),
+            (2, tok(result, "EMAIL")),
         ]
         assert restored.substitutions[0].entity_type == "CREDIT_CARD"
         assert restored.substitutions[0].action == "tokenize"
@@ -185,7 +212,8 @@ class TestRestore:
     def test_counts_occurrences(self, guard: Wardcat) -> None:
         result = guard.scan(f"mail {EMAIL_A}")
 
-        restored = result.restore("[EMAIL_1] and [EMAIL_1] and [EMAIL_1]")
+        email = tok(result, "EMAIL")
+        restored = result.restore(f"{email} and {email} and {email}")
 
         assert restored.text == f"{EMAIL_A} and {EMAIL_A} and {EMAIL_A}"
         assert restored.substitutions[0].occurrences == 3
@@ -243,7 +271,10 @@ class TestRestore:
 
         reversible = result.reapply(Action.TOKENIZE)
 
-        assert reversible.sanitized_text == "[EMAIL_1] and [EMAIL_2]"
+        assert reversible.sanitized_text == (
+            f"{tok(reversible, 'EMAIL')} and {tok(reversible, 'EMAIL', 2)}"
+        )
+        assert reversible.context_id != result.context_id  # a new pass, a new id
         assert reversible.restore().text == f"{EMAIL_A} and {EMAIL_B}"
 
     def test_a_restored_value_is_never_re_matched(self) -> None:
@@ -319,9 +350,9 @@ class TestEchoRoundTrip:
         for secret in self.SECRETS:
             assert secret not in sent, secret
         assert sent == (
-            "Customer Jonathan Blake wrote from [EMAIL_1] "
-            "about card [CREDIT_CARD_1]; reply to [EMAIL_1]. "
-            "Refund to [IBAN_1]."
+            f"Customer Jonathan Blake wrote from {tok(result, 'EMAIL')} "
+            f"about card {tok(result, 'CREDIT_CARD')}; reply to {tok(result, 'EMAIL')}. "
+            f"Refund to {tok(result, 'IBAN')}."
         )
 
     def test_echoed_answer_restores_to_the_original_byte_for_byte(self, result) -> None:
@@ -337,9 +368,9 @@ class TestEchoRoundTrip:
         restored = result.restore(self.echo_llm(result.sanitized_text))
 
         assert [(s.index, s.placeholder, s.occurrences) for s in restored.substitutions] == [
-            (1, "[EMAIL_1]", 2),  # the repeated address is one token, cited once
-            (2, "[CREDIT_CARD_1]", 1),
-            (3, "[IBAN_1]", 1),
+            (1, tok(result, "EMAIL"), 2),  # the repeated address is one token, cited once
+            (2, tok(result, "CREDIT_CARD"), 1),
+            (3, tok(result, "IBAN"), 1),
         ]
         block = restored.sources_block()
         for secret in self.SECRETS:
@@ -355,6 +386,101 @@ class TestEchoRoundTrip:
         assert twice.substitutions == []  # nothing left to put back
 
 
+class TestContextIsolation:
+    """Two scans must never produce the same placeholder.
+
+    Both hold an "EMAIL number 1", so without a per-scan id their tokens would be
+    the same string and restoring one request's answer against another request's
+    result would silently substitute the wrong person's value.
+    """
+
+    def test_two_scans_of_the_same_text_get_different_tokens(self, guard: Wardcat) -> None:
+        first = guard.scan(f"mail {EMAIL_A}")
+        second = guard.scan(f"mail {EMAIL_A}")
+
+        assert first.context_id != second.context_id
+        assert first.sanitized_text != second.sanitized_text
+        assert set(first.token_map) & set(second.token_map) == set()
+
+    def test_context_id_is_stamped_into_every_token(self, guard: Wardcat) -> None:
+        result = guard.scan(f"{EMAIL_A} and {EMAIL_B} and {CARD}")
+
+        assert len(result.context_id) == 12
+        assert all(p.endswith(f"_{result.context_id}]") for p in result.token_map)
+
+    def test_the_wrong_result_restores_nothing(self, guard: Wardcat) -> None:
+        mine = guard.scan(f"Ali: {EMAIL_A}")
+        theirs = guard.scan(f"Beyza: {EMAIL_B}")
+        answer = f"Mailed {tok(mine, 'EMAIL')} about the order."
+
+        restored = theirs.restore(answer)
+
+        assert restored.text == answer  # nothing was substituted
+        assert EMAIL_B not in restored.text  # and certainly not their value
+        assert restored.substitutions == []
+        assert not restored.is_complete
+
+    def test_the_foreign_token_is_named(self, guard: Wardcat) -> None:
+        mine = guard.scan(f"Ali: {EMAIL_A}")
+        theirs = guard.scan(f"Beyza: {EMAIL_B}")
+
+        restored = theirs.restore(f"Mailed {tok(mine, 'EMAIL')}.")
+
+        foreign = [u for u in restored.unrestored if u.reason == "foreign"]
+        assert [(u.entity_type, u.placeholder) for u in foreign] == [("EMAIL", tok(mine, "EMAIL"))]
+        assert "not produced by this scan" in restored.sources_block()
+
+    def test_strict_raises_on_a_foreign_token(self, guard: Wardcat) -> None:
+        mine = guard.scan(f"Ali: {EMAIL_A}")
+        theirs = guard.scan(f"Beyza: {EMAIL_B}")
+
+        with pytest.raises(ContextMismatch) as excinfo:
+            theirs.restore(f"Mailed {tok(mine, 'EMAIL')}.", strict=True)
+
+        assert excinfo.value.placeholders == [tok(mine, "EMAIL")]
+        assert "also=" in str(excinfo.value)
+
+    def test_strict_is_quiet_when_every_token_is_ours(self, guard: Wardcat) -> None:
+        result = guard.scan(f"mail {EMAIL_A}")
+
+        restored = result.restore(f"Mailed {tok(result, 'EMAIL')}.", strict=True)
+
+        assert restored.text == f"Mailed {EMAIL_A}."
+
+    def test_also_accepts_an_earlier_turn_s_placeholders(self, guard: Wardcat) -> None:
+        """A multi-turn answer may legitimately carry a previous scan's tokens."""
+        turn1 = guard.scan(f"Ali: {EMAIL_A}")
+        turn2 = guard.scan(f"card {CARD}")
+        answer = f"Charged {tok(turn2, 'CREDIT_CARD')} and emailed {tok(turn1, 'EMAIL')}."
+
+        restored = turn2.restore(answer, also=[turn1], strict=True)
+
+        assert restored.text == f"Charged {CARD} and emailed {EMAIL_A}."
+        assert restored.is_complete
+        assert len(restored.substitutions) == 2
+
+    def test_a_model_invented_placeholder_is_foreign_too(self, guard: Wardcat) -> None:
+        result = guard.scan(f"mail {EMAIL_A}")
+
+        restored = result.restore(f"Mailed {tok(result, 'EMAIL')}, SSN [SSN_4_deadbeef1234].")
+
+        assert "[SSN_4_deadbeef1234]" in restored.text  # never guessed at
+        assert [u.placeholder for u in restored.unrestored if u.reason == "foreign"] == [
+            "[SSN_4_deadbeef1234]"
+        ]
+        assert not restored.is_complete
+
+    def test_hash_and_redact_output_is_not_mistaken_for_a_foreign_token(self) -> None:
+        """Only the reversible shape is audited — [TYPE:digest] and [TYPE] are not."""
+        guard = Wardcat(salt="s").add_entity(Entity.EMAIL, Action.HASH)
+        result = guard.scan(f"mail {EMAIL_A}")
+
+        restored = result.restore()
+
+        assert restored.unrestored == []
+        assert restored.is_complete
+
+
 # ── The source list ───────────────────────────────────────────────────────────
 
 
@@ -362,33 +488,38 @@ class TestSourcesBlock:
     def test_lists_each_substitution_in_order(self, guard: Wardcat) -> None:
         result = guard.scan(f"mail {EMAIL_A}, card {CARD}")
 
-        block = result.restore("[EMAIL_1] paid with [CREDIT_CARD_1].").sources_block()
+        block = result.restore(
+            f"{tok(result, 'EMAIL')} paid with {tok(result, 'CREDIT_CARD')}."
+        ).sources_block()
 
         lines = block.splitlines()
         assert lines[0] == "--- Sources ---"
-        assert lines[1] == f"[1] [EMAIL_1] → {EMAIL_A} (EMAIL · tokenize · confidence 0.97)"
-        assert (
-            lines[2] == f"[2] [CREDIT_CARD_1] → {CARD} (CREDIT_CARD · tokenize · confidence 1.00)"
+        assert lines[1] == (
+            f"[1] {tok(result, 'EMAIL')} → {EMAIL_A} (EMAIL · tokenize · confidence 0.97)"
+        )
+        assert lines[2] == (
+            f"[2] {tok(result, 'CREDIT_CARD')} → {CARD} (CREDIT_CARD · tokenize · confidence 1.00)"
         )
 
     def test_marks_repeated_placeholders_with_a_count(self, guard: Wardcat) -> None:
         result = guard.scan(f"mail {EMAIL_A}")
 
-        block = result.restore("[EMAIL_1] and [EMAIL_1]").sources_block()
+        email = tok(result, "EMAIL")
+        block = result.restore(f"{email} and {email}").sources_block()
 
         assert "x2" in block
 
     def test_notes_the_values_that_were_not_mentioned(self, guard: Wardcat) -> None:
         result = guard.scan(f"mail {EMAIL_A}, card {CARD}")
 
-        block = result.restore("Emailed [EMAIL_1].").sources_block()
+        block = result.restore(f"Emailed {tok(result, 'EMAIL')}.").sources_block()
 
         assert "1 masked value(s) not mentioned here: CREDIT_CARD." in block
 
     def test_notes_can_be_turned_off(self, guard: Wardcat) -> None:
         result = guard.scan(f"mail {EMAIL_A}, card {CARD}")
 
-        block = result.restore("Emailed [EMAIL_1].").sources_block(notes=False)
+        block = result.restore(f"Emailed {tok(result, 'EMAIL')}.").sources_block(notes=False)
 
         assert "not mentioned" not in block
 
@@ -411,10 +542,11 @@ class TestSourcesBlock:
     def test_str_appends_the_block_below_the_text(self, guard: Wardcat) -> None:
         result = guard.scan(f"mail {EMAIL_A}")
 
-        rendered = str(result.restore("Emailed [EMAIL_1]."))
+        answer = f"Emailed {tok(result, 'EMAIL')}."
+        rendered = str(result.restore(answer))
 
         assert rendered.startswith(f"Emailed {EMAIL_A}.\n\n--- Sources ---")
-        assert rendered == result.restore("Emailed [EMAIL_1].").with_sources()
+        assert rendered == result.restore(answer).with_sources()
 
     def test_str_is_just_the_text_when_there_are_no_sources(self, guard: Wardcat) -> None:
         assert str(guard.scan("nothing here").restore("an answer")) == "an answer"
