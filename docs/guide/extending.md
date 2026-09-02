@@ -6,20 +6,26 @@ the library** (Open/Closed).
 ## Custom actions
 
 Actions map a detected span to its replacement (or `None` to keep the text).
-Register your own — `tokenize`, `encrypt`, format-preserving masking — and use it
-like any built-in:
+Register your own — an external vault, `encrypt`, format-preserving masking — and
+use it like any built-in:
 
 ```python
 from wardcat import Wardcat, register_action
 
 # ctx carries the salt; span has .entity_type, .text, .start, .end
-register_action("tokenize", lambda span, ctx: f"<{span.entity_type}:{vault.put(span.text)}>")
+register_action("vault", lambda span, ctx: f"<{span.entity_type}:{vault.put(span.text)}>")
 
-guard = Wardcat(salt="s").add_entity("EMAIL", "tokenize")
+guard = Wardcat(salt="s").add_entity("EMAIL", "vault")
 ```
 
 Detection and anonymization are separate stages: `DetectionEngine` finds spans, a
 standalone `Anonymizer` applies the actions — so you can reuse either independently.
+Registering an action under a built-in name (`hash`, `tokenize`, …) overrides that
+built-in for the whole process.
+
+`ctx.tokens` is a per-scan `TokenAllocator`: reuse it (as the built-in `tokenize`
+action does) if your action needs stable, unique placeholders that
+[`restore()`](reversible.md) can reverse.
 
 ## LLM backends are fixed
 

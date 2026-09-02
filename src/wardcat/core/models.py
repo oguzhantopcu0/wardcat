@@ -4,7 +4,10 @@ import logging
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from wardcat.core.restore import RestoredText
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +48,15 @@ class Action(str, Enum):
     ``EMAIL`` → ``u***@example.com``, ``SSN`` → ``***-**-6789``. Types without a
     specific rule fall back to *first 2 + ``*`` + last 2* (``abcdef`` → ``ab**ef``);
     values shorter than 4 characters are fully replaced with ``*``.
-    See ``wardcat.core.engine._mask_value`` for the per-type rules."""
+    See ``wardcat.core.actions._mask_value`` for the per-type rules."""
+    TOKENIZE = "tokenize"
+    """**Reversible** masking: replace with a numbered placeholder — ``[PERSON_1]``,
+    ``[EMAIL_1]``, ``[PERSON_2]`` — numbered per entity type in order of appearance,
+    with one token per distinct value (a name repeated stays one referent). The
+    mapping lives on the :class:`ScanResult`, so :meth:`ScanResult.restore` can put
+    the real values back into whatever comes out the other side — an LLM's answer,
+    typically. Unlike ``hash``/``redact``/``mask`` this keeps the originals in
+    memory: the result object is as sensitive as the input."""
 
 
 class Entity(str, Enum):
@@ -136,7 +147,9 @@ class Violation:
     ``"mask"``, or a custom registered action). Compares equal to the matching
     :class:`Action` constant (``v.action == Action.HASH``)."""
     replacement: str | None = None
-    """Placeholder produced by the hash action; ``None`` for warn."""
+    """What the original was replaced with — the hash/redact/mask output, or the
+    reversible ``tokenize`` placeholder. ``None`` for warn, which replaces nothing.
+    Together with :attr:`original` this is what :meth:`ScanResult.restore` reverses."""
     confidence: float = 1.0
     """Detection confidence in [0.0, 1.0], tiered by how certain the match is:
 
@@ -160,8 +173,9 @@ class ScanResult:
     """Result of a single ``guard.scan()`` call.
 
     .. warning::
-        The ``original_text`` and ``violations[].original`` fields contain raw PII.
-        When writing this object to logs, databases, or API responses, use only
+        The ``original_text`` and ``violations[].original`` fields contain raw PII,
+        as do :attr:`token_map` and anything :meth:`restore` returns. When writing
+        this object to logs, databases, or API responses, use only
         ``sanitized_text``. Use the :meth:`redacted` method to obtain a dict
         that contains no PII.
     """
@@ -181,6 +195,11 @@ class ScanResult:
     run (LLM backend unreachable). The scan still returns results from the other
     layers, but a non-empty list means detection was **degraded**: some PII may
     be missed. Empty when every configured layer ran."""
+    context_id: str = ""
+    """Identifies this scan's anonymization pass. It is stamped into every
+    reversible (:attr:`Action.TOKENIZE`) placeholder — ``[EMAIL_1_9f3a2c8b71d4]``
+    — so no two scans ever produce the same token and :meth:`restore` can tell
+    another scan's placeholder from its own. Empty when nothing stamped one."""
 
     _salt: str = field(default="", repr=False)
     """Hashing salt inherited from the originating ``Wardcat``, so :meth:`reapply`
@@ -224,6 +243,82 @@ class ScanResult:
             ],
         }
 
+    @property
+    def token_map(self) -> dict[str, str]:
+        """Placeholder → original value for every violation that replaced something.
+
+        The vault behind :meth:`restore`, exposed for callers that need to hand the
+        mapping to another process (a queue worker restoring a reply later, say)::
+
+            vault = result.token_map          # {"[EMAIL_1]": "ali@example.com"}
+
+        Meaningful for reversible placeholders — see :attr:`Action.TOKENIZE`; with
+        ``redact`` or ``mask`` several values can share one placeholder and the map
+        keeps only the last. ``warn`` violations are absent (nothing was replaced).
+
+        .. warning::
+            Raw PII. Never log or persist this without protecting it like the
+            original text.
+        """
+        return {v.replacement: v.original for v in self.violations if v.replacement is not None}
+
+    def restore(
+        self,
+        text: str | None = None,
+        *,
+        strict: bool = False,
+        also: Iterable[ScanResult] = (),
+    ) -> RestoredText:
+        """Put the real values back — the reverse of the anonymization stage.
+
+        The round trip an LLM call needs: scan the prompt, send the anonymized
+        text out, then restore the answer that comes back::
+
+            result = guard.scan(prompt)
+            answer = call_llm(result.sanitized_text)   # never sees the real values
+            print(result.restore(answer))              # answer + its source list
+
+        Printing the returned :class:`~wardcat.core.restore.RestoredText` appends an
+        ordered source list naming, per placeholder, which filter fired and what it
+        stood for; use ``.text`` for the bare restored text and ``.substitutions``
+        for the same information as data.
+
+        Restoring is reliable when the values were replaced with
+        :attr:`Action.TOKENIZE` (or ``hash``): each distinct value has its own
+        placeholder. With ``redact``/``mask`` two values can collapse onto the same
+        placeholder — those are reported in ``.unrestored`` as ``ambiguous`` and
+        left in the text rather than guessed. Use :meth:`reapply` to derive a
+        reversible view of a scan that used another action::
+
+            reversible = result.reapply(Action.TOKENIZE)
+
+        Placeholders carry this scan's :attr:`context_id`, so a token produced by a
+        *different* scan cannot be matched by accident — restoring one request's
+        answer against another request's result would otherwise substitute the
+        wrong person's values. Such tokens are reported as ``foreign``, left in the
+        text, and make ``is_complete`` ``False``; ``strict=True`` raises
+        :class:`~wardcat.exceptions.ContextMismatch` instead. In a multi-turn
+        exchange an answer may legitimately carry an earlier scan's placeholders —
+        pass those results in ``also`` and they are restored too::
+
+            turn2.restore(answer, also=[turn1], strict=True)
+
+        :param text: the text to restore; defaults to :attr:`sanitized_text`, which
+                     round-trips back to the original input.
+        :param strict: raise :class:`~wardcat.exceptions.ContextMismatch` when the
+                     text carries a placeholder no known result produced.
+        :param also: other results whose placeholders are legitimate here.
+        :returns: a :class:`~wardcat.core.restore.RestoredText`. **Contains raw PII.**
+        """
+        from wardcat.core.restore import restore_text
+
+        violations = list(self.violations)
+        for other in also:
+            violations.extend(other.violations)
+        return restore_text(
+            self.sanitized_text if text is None else text, violations, strict=strict
+        )
+
     def reapply(self, action: Action | str, entities: Iterable[str] | None = None) -> ScanResult:
         """Re-anonymize this already-detected result under a different ``action``.
 
@@ -249,7 +344,7 @@ class ScanResult:
         :returns:        a new :class:`ScanResult` under the requested action.
         :raises ConfigError: if ``action`` is not a registered action.
         """
-        from wardcat.core.actions import registered_actions
+        from wardcat.core.actions import new_context_id, registered_actions
         from wardcat.core.anonymizer import Anonymizer
         from wardcat.detectors.base import DetectedSpan
         from wardcat.exceptions import ConfigError
@@ -273,8 +368,11 @@ class ScanResult:
             for v in violations
         ]
         config = {v.entity_type: {"action": name} for v in violations}
+        # A new pass produces new placeholders, so it gets its own context id —
+        # the derived result must not answer for the one it came from.
+        context_id = new_context_id()
         sanitized, new_violations = Anonymizer(config, salt=self._salt).apply(
-            self.original_text, spans
+            self.original_text, spans, context_id=context_id
         )
         return ScanResult(
             original_text=self.original_text,
@@ -282,6 +380,7 @@ class ScanResult:
             violations=new_violations,
             scan_error=self.scan_error,
             warnings=list(self.warnings),
+            context_id=context_id,
             _salt=self._salt,
         )
 

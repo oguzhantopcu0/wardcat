@@ -8,6 +8,8 @@ Extension points and the layer internals.
 
 ::: wardcat.ActionContext
 
+::: wardcat.TokenAllocator
+
 ## Detector interface
 
 ::: wardcat.detectors.base.BaseDetector

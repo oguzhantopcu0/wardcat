@@ -1,7 +1,12 @@
 import logging
 from importlib.metadata import PackageNotFoundError, version
 
-from wardcat.core.actions import ActionContext, register_action, registered_actions
+from wardcat.core.actions import (
+    ActionContext,
+    TokenAllocator,
+    register_action,
+    registered_actions,
+)
 from wardcat.core.models import (
     KNOWN_ENTITY_TYPES,
     Action,
@@ -11,6 +16,7 @@ from wardcat.core.models import (
     ScanResult,
     Violation,
 )
+from wardcat.core.restore import RestoredText, Substitution, UnrestoredValue
 from wardcat.entity_groups import (
     all_entities,
     core_entities,
@@ -24,6 +30,7 @@ from wardcat.entity_groups import (
 )
 from wardcat.exceptions import (
     ConfigError,
+    ContextMismatch,
     ModelDownloadError,
     UnsupportedLanguageError,
     WardcatError,
@@ -41,6 +48,9 @@ __all__ = [
     "Wardcat",
     "ScanResult",
     "Violation",
+    "RestoredText",
+    "Substitution",
+    "UnrestoredValue",
     "RedactedResult",
     "RedactedViolation",
     "Action",
@@ -51,12 +61,14 @@ __all__ = [
     "register_action",
     "registered_actions",
     "ActionContext",
+    "TokenAllocator",
     "KNOWN_ENTITY_TYPES",
     "__version__",
     "redacted",
     # Exceptions
     "WardcatError",
     "ConfigError",
+    "ContextMismatch",
     "ModelDownloadError",
     "UnsupportedLanguageError",
     # Entity group helpers

@@ -10,16 +10,16 @@ from wardcat.exceptions import ConfigError
 
 
 def test_builtin_actions_registered():
-    assert {"warn", "hash", "redact", "mask"} <= registered_actions()
+    assert {"warn", "hash", "redact", "mask", "tokenize"} <= registered_actions()
 
 
 def test_register_and_use_custom_action():
-    register_action("tokenize", lambda span, ctx: f"<TOK:{span.entity_type}>")
-    assert "tokenize" in registered_actions()
-    guard = Wardcat(salt="s").add_entity("EMAIL", "tokenize")
+    register_action("vault", lambda span, ctx: f"<TOK:{span.entity_type}>")
+    assert "vault" in registered_actions()
+    guard = Wardcat(salt="s").add_entity("EMAIL", "vault")
     result = guard.scan("mail: a@b.com")
     assert result.sanitized_text == "mail: <TOK:EMAIL>"
-    assert result.violations[0].action == "tokenize"
+    assert result.violations[0].action == "vault"
 
 
 def test_custom_action_can_use_salt_from_context():
