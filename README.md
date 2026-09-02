@@ -604,6 +604,17 @@ guard = Wardcat(salt="s").with_llm(
 )
 ```
 
+> **`with_llm()` brings its own entity policy.** Unlike `with_ner()`, which enables
+> nothing on its own, the LLM layer ships a default list of ~15 entity types with
+> their own actions (`PERSON` → `hash`, `EMAIL` → `warn`, …). So
+> `.with_llm(...).add_entity(Entity.EMAIL, Action.TOKENIZE)` detects and anonymizes
+> far more than the one type you named, under those actions rather than yours —
+> `enabled_entities()` shows the full set, and the first scan logs a one-time
+> warning listing what came along. Take control of one with
+> `add_entity(name, action, layers=["llm"])`, switch it off with
+> `remove_entity(name)`, start from nothing with `remove_entity(Entity.ALL)`, or
+> replace the policy wholesale with a YAML `config_path`.
+
 > **Note:** Loopback HTTP (`localhost` / `127.0.0.1` / `::1`) is allowed with no warning — it never leaves the machine, so the common local-Ollama setup needs no `allow_http`. HTTP to a **remote** host is blocked (pass `allow_http=True` to override); use HTTPS in production via a reverse proxy (nginx, Caddy).
 
 #### Custom actions (extensible)

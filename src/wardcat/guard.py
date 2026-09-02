@@ -170,6 +170,16 @@ class Wardcat(EntityPolicyMixin):
         # entities in any order, so an init/rebuild-time check would false-fire.
         self._orphan_warned: set[str] = set()
 
+        # Entity types this caller configured by hand (add_entity / add_entities /
+        # change_entity_action). The LLM layer ships its own default entity policy,
+        # so this is the only way to tell "the user asked for PERSON" apart from
+        # "with_llm() switched PERSON on" — see _warn_implicit_llm_entities.
+        self._explicit_entities: set[str] = set()
+        # A caller who passed a policy file chose every entity in it; nothing about
+        # that configuration is implicit, so the warning is skipped for them.
+        self._policy_from_file = config_path is not None
+        self._implicit_llm_warned = False
+
         # Warn at most once when a hash action is active without a salt. Checked
         # in _rebuild() too, since entities are opt-in and usually added after init.
         self._salt_warned = False
@@ -183,6 +193,7 @@ class Wardcat(EntityPolicyMixin):
     def scan(self, text: str) -> ScanResult:
         """Scan text and return a ScanResult."""
         self._warn_orphan_entities()
+        self._warn_implicit_llm_entities()
         return self._engine.scan(text)
 
     async def scan_async(self, text: str) -> ScanResult:
@@ -193,6 +204,7 @@ class Wardcat(EntityPolicyMixin):
         so multiple concurrent calls do not block each other.
         """
         self._warn_orphan_entities()
+        self._warn_implicit_llm_entities()
         return await self._engine.scan_async(text)
 
     # ------------------------------------------------------------------
@@ -437,7 +449,18 @@ class Wardcat(EntityPolicyMixin):
         language: str | Language | None = None,
     ) -> Wardcat:
         """
-        Enable the on-prem LLM detector. Supports chaining; mirrors :meth:`with_ner`.
+        Enable the on-prem LLM detector. Supports chaining, like :meth:`with_ner`.
+
+        .. warning::
+            Unlike ``with_ner()``, this does **not** leave detection fully opt-in.
+            The LLM layer carries its own default entity policy, so ``with_llm()``
+            switches on around fifteen entity types with the actions that policy
+            names (``PERSON`` → ``hash``, ``EMAIL`` → ``warn``, …) — not the action
+            you pass to :meth:`add_entity` for something else. They are listed in a
+            one-time warning at the first scan. Override one with
+            ``add_entity(name, action, layers=["llm"])`` or drop it with
+            ``remove_entity(name)``; pass a YAML ``config_path`` to replace the
+            policy wholesale.
 
         The fluent way to configure the LLM layer (the constructor takes only
         ``config_path`` and ``salt``) — keeps the LLM configuration in one place::
@@ -654,6 +677,46 @@ class Wardcat(EntityPolicyMixin):
                 hint,
                 entity,
             )
+
+    def _warn_implicit_llm_entities(self) -> None:
+        """Warn once when the LLM layer detects entities the caller never configured.
+
+        ``with_ner()`` enables no entity on its own; ``with_llm()`` does, because
+        the LLM layer carries its own default entity policy (see
+        ``DEFAULT_CONFIG["llm_detector"]["entities"]``). So a chain like::
+
+            Wardcat(salt=s).with_llm(...).add_entity(Entity.EMAIL, Action.TOKENIZE)
+
+        detects and anonymizes a dozen more types than the one that was asked for,
+        under the LLM policy's own actions rather than the one just configured.
+        That is long-standing behaviour and stays — but it is surprising enough to
+        say out loud once, lazily at scan time so a builder chain can configure
+        entities and layers in any order.
+        """
+        if self._implicit_llm_warned or self._policy_from_file:
+            return
+        llm_cfg = self._config.get("llm_detector", {})
+        # The default entity map is present even with the layer off; nothing is
+        # detected then, so there is nothing to point out.
+        if not llm_cfg.get("enabled", False):
+            return
+        llm_entities = llm_cfg.get("entities", {})
+        implicit = {
+            name: cfg.get("action", "warn")
+            for name, cfg in llm_entities.items()
+            if cfg.get("enabled") and name not in self._explicit_entities
+        }
+        if not implicit:
+            return
+        self._implicit_llm_warned = True
+        logger.warning(
+            "with_llm() also switched on the LLM layer's own default entity policy: "
+            "%s — these are detected and anonymized under those actions even though "
+            "you did not configure them (unlike with_ner(), which enables nothing on "
+            "its own). Take control of one with add_entity(name, action, "
+            "layers=['llm']), or switch it off with remove_entity(name).",
+            ", ".join(f"{name} ({action})" for name, action in sorted(implicit.items())),
+        )
 
     def _rebuild(self) -> None:
         """Rebuild detectors and engine when configuration changes."""
