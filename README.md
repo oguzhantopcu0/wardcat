@@ -489,6 +489,24 @@ answer  = call_llm(payload.sanitized_text)
 print(payload.restore(answer))              # restore through the object you sent
 ```
 
+Tell the model to keep the placeholders, in those words — it matters more than the
+token format does. On a local Qwen2.5-1.5B, *"Copy every placeholder in square
+brackets EXACTLY as written"* preserved 0 of 9; naming the shape and forbidding
+invention preserved 6 of 9:
+
+```python
+INSTRUCTION = (
+    "The text contains placeholders like [EMAIL_1_9f3a2c8b71d4]. "
+    "Copy every placeholder EXACTLY as written, character for character. "
+    "Never invent placeholders and never renumber them."
+)
+```
+
+A model too weak to manage that is not a safety problem — the value does not come
+back and is listed in `.unrestored`; nothing wrong is ever substituted. See the
+[reversible masking guide](https://docs.wardcat.com/guide/reversible/) for the
+measurement and the partial-restore check.
+
 `restore()` with no argument reverses `sanitized_text` itself, which round-trips
 back to the original input. It also works on `hash` output (a salted digest is
 unique per value); with `redact` or `mask` two different values can collapse onto

@@ -117,6 +117,49 @@ A mangled token is covered by the same mechanism: if the model returns
 value simply does not come back. The model's accuracy decides *how much* is
 restored; it can never decide *whether what comes back is correct*.
 
+## Prompting the model to keep placeholders
+
+Restoring needs the model to reproduce the placeholders verbatim. Whether it does
+is a property of the model — and, more than anything, of the instruction you give
+it. Measured on a local Qwen2.5-1.5B with the same text and three runs each:
+
+| instruction | placeholders preserved |
+|---|---|
+| "Copy every placeholder in square brackets EXACTLY as written." | 0 / 9 |
+| "The text contains placeholders like `[EMAIL_1]`. Copy every placeholder EXACTLY as written, character for character. Never invent placeholders." | 6 / 9 |
+
+One model, three runs per instruction, nine placeholder slots each: the direction
+is worth acting on, the exact rate is not. A starting point:
+
+```python
+INSTRUCTION = (
+    "The text contains placeholders like [EMAIL_1_9f3a2c8b71d4]. "
+    "Copy every placeholder EXACTLY as written, character for character. "
+    "Never invent placeholders and never renumber them."
+)
+answer = call_llm(INSTRUCTION + "\n\n" + payload.sanitized_text)
+```
+
+Two things this measurement settled:
+
+**The context id does not cost recall.** The same comparison with the id stripped
+out preserved *fewer* placeholders, not more — consistent with the failure mode
+seen elsewhere, where a model turns `[CREDIT_CARD_1]` into `[CREDIT_CARD_2]` but
+copies `[CREDIT_CARD_49]` untouched. A trailing hex suffix reads as an opaque
+identifier to copy rather than an item to renumber.
+
+**A model too weak to copy placeholders is not a safety problem.** Small models
+paraphrase them away or drop them entirely; Qwen2.5-0.5B and SmolLM2-135M both
+did in testing. Nothing wrong is substituted — the value simply does not come
+back, and it is reported in `.unrestored`. Check it, and decide what your
+application does about a partial restore:
+
+```python
+restored = payload.restore(answer)
+if restored.unrestored:
+    log.warning("partial restore: %s", [(u.entity_type, u.reason) for u in restored.unrestored])
+```
+
 ## Which actions can be reversed
 
 | Action | Reversible | Why |
@@ -135,12 +178,19 @@ re-runs only the anonymization stage.
 
 ## Keep the payload uniform
 
-A guard usually mixes actions — and `with_llm()` in particular switches on its own
-entity policy, so a scan can come back with `[EMAIL_1]` next to
-`[PERSON:5687e6a708553da8]`. Both restore, but a sixteen-hex-digit token is far
-easier for a model to mangle than `[PERSON_1]`, and one mangled token is one value
-that does not come back. Before sending, derive a uniformly tokenized payload —
-detection is not repeated, only the cheap anonymization stage:
+A guard usually mixes actions, and `with_llm()` in particular switches on its own
+entity policy — one whose defaults include `warn`. **`warn` reports a value without
+replacing it**, so a scan you believe is masked can hand the model a phone number
+in the clear:
+
+```text
+[PERSON:5687e6a708553da8], [EMAIL_1_9f3a…], tel +90 532 123 45 67
+  PERSON  hash        EMAIL  tokenize        PHONE  warn  ← still in the text
+```
+
+Deriving a uniformly tokenized payload closes that, and makes every token short and
+alike while it is at it. Detection is not repeated, only the cheap anonymization
+stage:
 
 ```python
 result  = guard.scan(text)
@@ -151,8 +201,8 @@ print(payload.restore(answer))              # restore through the same object
 ```
 
 ```text
-mixed     : [PERSON:5687e6a708553da8] mailed [EMAIL_1]
-uniform   : [PERSON_1] mailed [EMAIL_1]
+mixed   : [PERSON:5687e6a708553da8], [EMAIL_1_9f3a…], tel +90 532 123 45 67
+uniform : [PERSON_1_0c29…], [EMAIL_1_0c29…], tel [PHONE_1_0c29…]
 ```
 
 Restore through the object you sent — `payload`, not `result`: the placeholders in
