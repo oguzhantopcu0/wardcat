@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   ```python
   guard = Wardcat(salt="s").add_entities([Entity.EMAIL], action=Action.TOKENIZE)
-  result = guard.scan("Mail ali@example.com")   # → 'Mail [EMAIL_1]'
+  result = guard.scan("Mail ali@example.com")   # → 'Mail [EMAIL_1_9f3a2c8b71d4]'
   answer = call_llm(result.sanitized_text)      # the model never sees the value
   print(result.restore(answer))
   ```
