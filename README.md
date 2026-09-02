@@ -478,15 +478,21 @@ placeholders:
 turn2.restore(answer, also=[turn1], strict=True)
 ```
 
-Mixing actions is normal — `with_llm()` switches on its own entity policy, so a
-scan can return `[EMAIL_1]` next to `[PERSON:5687e6a708553da8]`. Both restore, but
-a long hex token is far easier for a model to mangle, so derive a uniformly
-tokenized payload before sending; detection is not repeated:
+Mixing actions is normal, and `with_llm()` switches on its own entity policy —
+one whose defaults include `warn`. **`warn` reports a value without replacing
+it**, so a scan you believe is masked can hand the model a phone number in the
+clear. Derive a uniformly tokenized payload before sending; detection is not
+repeated, only the cheap anonymization stage:
 
 ```python
-payload = result.reapply(Action.TOKENIZE)   # [PERSON_1] mailed [EMAIL_1]
+payload = result.reapply(Action.TOKENIZE)
 answer  = call_llm(payload.sanitized_text)
 print(payload.restore(answer))              # restore through the object you sent
+```
+
+```text
+mixed   : [PERSON:5687e6a708553da8], [EMAIL_1_9f3a…], tel +90 532 123 45 67
+uniform : [PERSON_1_0c29…], [EMAIL_1_0c29…], tel [PHONE_1_0c29…]
 ```
 
 Tell the model to keep the placeholders, in those words — it matters more than the

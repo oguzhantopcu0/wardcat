@@ -53,8 +53,8 @@ print(result.restore(answer))
 I have emailed ali@example.com about the charge on 4532 0151 1283 0366.
 
 --- Sources ---
-[1] [EMAIL_1] → ali@example.com (EMAIL · tokenize · confidence 0.97)
-[2] [CREDIT_CARD_1] → 4532 0151 1283 0366 (CREDIT_CARD · tokenize · confidence 1.00)
+[1] [EMAIL_1_9f3a2c8b71d4] → ali@example.com (EMAIL · tokenize · confidence 0.97)
+[2] [CREDIT_CARD_1_9f3a2c8b71d4] → 4532 0151 1283 0366 (CREDIT_CARD · tokenize · confidence 1.00)
 ```
 
 Printing a `RestoredText` appends that source list: each placeholder that was put
@@ -214,7 +214,8 @@ the answer are the ones `reapply` produced.
 a queue worker, another request — carry the map yourself:
 
 ```python
-vault = result.token_map     # {'[EMAIL_1]': 'ali@example.com'}
+vault = result.token_map     # {'[EMAIL_1_9f3a2c8b71d4]': 'ali@example.com'}
+context = result.context_id  # carry it too, to spot a token from another scan
 ```
 
 !!! danger "The reverse map is raw PII"
