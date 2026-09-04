@@ -34,6 +34,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # Fold Unicode confusables (Cyrillic/Greek lookalikes, fullwidth/Arabic digits)
     # before regex matching, so homoglyph-obfuscated PII is not missed. On by default.
     "normalize_confusables": True,
+    # CLDR regions whose national phone formats libphonenumber should look for
+    # (e.g. ["US", "GB", "TR"]). Empty means the built-in pattern handles PHONE —
+    # see Wardcat.with_phone_regions.
+    "phone_regions": [],
     # ── LLM detector configuration ────────────────────────────────────────
     "llm_detector": {
         "enabled": False,
