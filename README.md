@@ -398,7 +398,7 @@ libphonenumber for those numbering plans:
 ```python
 guard = (
     Wardcat(salt="s")
-    .add_entity(Entity.PHONE, Action.TOKENIZE)
+    .add_entity(Entity.PHONE, Action.MASK)
     .with_phone_regions("GB", "ES", "US")   # CLDR two-letter codes
 )
 
