@@ -46,6 +46,27 @@ class TestPhone:
         assert any(s.entity_type == "PHONE" for s in spans)
 
 
+class TestIpAddress:
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("sunucu 192.168.14.77 uzerinden", ["192.168.14.77"]),
+            ("IP 10.0.0.7.", ["10.0.0.7"]),  # sentence period, still an address
+            ("8.8.8.8 dns", ["8.8.8.8"]),
+            ("255.255.255.0 maske", ["255.255.255.0"]),
+            # A dotted quad read out of a longer dotted run is not an address:
+            # this one is a French phone number written 03.93.92.16.85.
+            ("Mobile: 03.93.92.16.85", []),
+            ("1.2.3.4.5", []),
+            ("v1.2.3.4.5 surum", []),
+        ],
+    )
+    def test_dotted_quads_are_not_taken_from_longer_runs(self, detector, text, expected):
+        found = [s.text for s in detector.detect(text) if s.entity_type == "IP_ADDRESS"]
+
+        assert found == expected
+
+
 class TestIBAN:
     def test_tr_iban(self, detector):
         spans = detector.detect("IBAN: TR330006100519786457841326")
@@ -635,6 +656,39 @@ class TestMultilingualPhone:
     def test_fr_de_phone(self, detector, text, number):
         spans = detector.detect(text)
         assert any(s.entity_type == "PHONE" and s.text == number for s in spans), text
+
+    @pytest.mark.parametrize(
+        "text,number",
+        [
+            # Single-digit country code + separator: the country code is 1-4
+            # digits, so "+1 " must not be excluded by requiring a second digit.
+            ("call me on +1 415 555 0142 today", "+1 415 555 0142"),
+            ("call me on +1-415-555-0142 today", "+1-415-555-0142"),
+            ("Moscow +7 495 123 4567", "+7 495 123 4567"),
+            # Longer country codes must keep working.
+            ("London +44 20 7946 0958", "+44 20 7946 0958"),
+            ("Berlin +49 151 23456789", "+49 151 23456789"),
+            ("compact +1415 555 0142", "+1415 555 0142"),
+            # US national — only with a parenthesised area code.
+            ("ring (415) 555-0142 now", "(415) 555-0142"),
+            ("ring (415)555-0142 now", "(415)555-0142"),
+        ],
+    )
+    def test_international_and_us_phone(self, detector, text, number):
+        spans = detector.detect(text)
+        assert any(s.entity_type == "PHONE" and s.text == number for s in spans), text
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "+1 23",  # too few digits for an international number
+            "spec +1 2345 rev",
+            "call +5 ok",
+            "415 555 0142",  # bare national run — deliberately not a phone
+        ],
+    )
+    def test_short_or_bare_number_runs_are_not_phones(self, detector, text):
+        assert not [s for s in detector.detect(text) if s.entity_type == "PHONE"], text
 
 
 # ── VAT_NUMBER ─────────────────────────────────────────────────────────────
