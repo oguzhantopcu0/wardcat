@@ -522,6 +522,31 @@ class Wardcat(EntityPolicyMixin):
             models.append(info.name)
         return list(dict.fromkeys(models))  # dedupe, preserve order
 
+    def with_phone_regions(self, *regions: str) -> Wardcat:
+        """Detect national phone formats for *regions* via libphonenumber.
+
+        The built-in ``PHONE`` pattern is precision-first and covers Turkish,
+        French and German national formats plus E.164 — a number written the way
+        it is written in Manchester or Madrid falls through it. Naming the regions
+        you actually serve swaps in libphonenumber for those formats::
+
+            guard = Wardcat(salt=s).add_entity(Entity.PHONE).with_phone_regions("GB", "ES")
+
+        Regions are CLDR two-letter codes. Needs the extra: ``pip install
+        'wardcat[phone]'`` — without it the built-in pattern is used and a warning
+        is logged. Call with no arguments to go back to the pattern.
+
+        Matches are reported at 0.90 confidence, not the 0.97 of the built-in
+        pattern: libphonenumber validates against each region's numbering plan,
+        which is far stronger than a bare digit run but weaker than a checksum, and
+        every extra region widens what counts as a number. Add the regions you
+        serve, not every region there is.
+        """
+        codes = [r.strip().upper() for r in regions if r and r.strip()]
+        self._config["phone_regions"] = codes
+        self._rebuild()
+        return self
+
     def set_salt(self, salt: str) -> Wardcat:
         """Update the hash salt."""
         self._config["salt"] = salt
@@ -678,6 +703,7 @@ class Wardcat(EntityPolicyMixin):
                     enabled_regex,
                     custom_patterns=custom_patterns,
                     fold_confusables_enabled=self._config.get("normalize_confusables", True),
+                    phone_regions=self._config.get("phone_regions") or None,
                 )
             )
 
