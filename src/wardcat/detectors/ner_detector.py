@@ -23,12 +23,17 @@ _SPACY_LABEL_MAP: dict[str, str] = {
     "FAC": "ADDRESS",  # Building, bridge, etc.
 }
 
-# ── PERSON false-positive filters ─────────────────────────────────────────────
-# Turkish NER models often mis-label addresses and short tokens as PERSON.
-# These patterns identify spans that are clearly NOT person names.
+# ── Span-level false-positive filters ─────────────────────────────────────────
+# NER models mis-label addresses, codes and short tokens as PERSON or ORG.
+# These patterns identify spans that are clearly neither.
 
 # Span contains digits or characters typical of addresses/codes (No:, /, :)
 _NON_PERSON_CHARS = re.compile(r"[0-9/:]")
+
+# Punctuation a model sometimes swallows at a span's edge — a quote it opened,
+# the colon after a speaker's name. Trimming beats rejecting: `tracy:"i'm` is a
+# real name wearing punctuation, and dropping the whole span loses the name.
+_EDGE_PUNCT = "\"'`:;,.()[]{}<>!?\\ \n\t\r"
 
 # Span contains address-type keywords (Turkish + English + German + French)
 _ADDRESS_KW = re.compile(
@@ -145,6 +150,30 @@ _NER_STOPWORDS: frozenset[str] = frozenset(
 )
 
 
+def _trim_span(text: str, start: int, end: int) -> tuple[str, int, int]:
+    """Strip punctuation and whitespace from a span's edges, adjusting offsets."""
+    trimmed = text.strip(_EDGE_PUNCT)
+    if not trimmed:
+        return text, start, end
+    offset = text.index(trimmed)
+    return trimmed, start + offset, start + offset + len(trimmed)
+
+
+def _has_case(text: str) -> bool:
+    """Does this text use capitalization at all?
+
+    Capitalization is only evidence about a span when the surrounding document
+    actually uses it. Chat logs, ASR output and lower-cased pipelines carry none,
+    and judging "no capital letter, so not a name" there rejects real names for a
+    property the text never had. One uppercase letter in every two hundred is a
+    stray acronym, not a document that capitalizes.
+    """
+    letters = sum(1 for c in text if c.isalpha())
+    if not letters:
+        return False
+    return sum(1 for c in text if c.isupper()) / letters > 0.005
+
+
 def _is_all_stopwords(text: str) -> bool:
     """Return True if every token in the span is a known non-PII stopword.
 
@@ -158,7 +187,7 @@ def _is_all_stopwords(text: str) -> bool:
     return all(t in _NER_STOPWORDS for t in tokens)
 
 
-def _is_valid_person(text: str) -> bool:
+def _is_valid_person(text: str, *, document_has_case: bool = True) -> bool:
     """Return False if the span is unlikely to be a real person name.
 
     Filters out:
@@ -166,6 +195,11 @@ def _is_valid_person(text: str) -> bool:
     - Spans containing digits or address punctuation — "No:42", "Blok/3"
     - Spans containing street/address keywords — "Moda Caddesi No:42"
     - Spans with no uppercase-initial word — "adresine veya", "veya", common words
+
+    The last rule holds only where capitalization means something. Pass
+    ``document_has_case=False`` for a text that does not capitalize at all (see
+    :func:`_has_case`); there the rule rejects real names for a property the
+    document never had.
     """
     stripped = text.strip()
     if len(stripped) <= 2:
@@ -177,9 +211,9 @@ def _is_valid_person(text: str) -> bool:
     if _ADDRESS_KW.search(stripped):
         logger.debug("NER PERSON filtered (address keyword): %r", text)
         return False
-    # At least one word must start with an uppercase letter.
-    # Person names are always capitalized; common word sequences ("adresine veya") are not.
-    if not any(word[:1].isupper() for word in stripped.split()):
+    # At least one word must start with an uppercase letter — but only where the
+    # document capitalizes at all.
+    if document_has_case and not any(word[:1].isupper() for word in stripped.split()):
         logger.debug("NER PERSON filtered (no uppercase word): %r", text)
         return False
     return True
@@ -216,25 +250,35 @@ class NERDetector(BaseDetector):
     def detect(self, text: str, candidates: list[DetectedSpan] | None = None) -> list[DetectedSpan]:
         """Return person, organization, and location spans detected by SpaCy NER."""
         doc = self.nlp(text)
+        document_has_case = _has_case(text)
         spans: list[DetectedSpan] = []
         for ent in doc.ents:
             mapped = _SPACY_LABEL_MAP.get(ent.label_)
             if not mapped or mapped not in self.enabled_entities:
                 continue
+            value, start, end = _trim_span(ent.text, ent.start_char, ent.end_char)
             # Multilingual gazetteer filter: drop spans that are entirely
             # job titles, HR terms, or abbreviations (never PII on their own).
-            if _is_all_stopwords(ent.text):
-                logger.debug("NER %s filtered (all stopwords): %r", mapped, ent.text)
+            if _is_all_stopwords(value):
+                logger.debug("NER %s filtered (all stopwords): %r", mapped, value)
                 continue
-            # Apply false-positive filter for PERSON entities.
-            if mapped == "PERSON" and not _is_valid_person(ent.text):
+            if mapped == "PERSON" and not _is_valid_person(
+                value, document_has_case=document_has_case
+            ):
+                continue
+            # An ORG carrying digits or address punctuation is an address fragment
+            # or a code, not a company: models label "CO Uruguay 64677" ORG readily.
+            # The street-keyword list is deliberately *not* applied here — it would
+            # take "Wall Street Journal" with it.
+            if mapped == "ORG" and _NON_PERSON_CHARS.search(value):
+                logger.debug("NER ORG filtered (digits/address punctuation): %r", value)
                 continue
             spans.append(
                 DetectedSpan(
                     entity_type=mapped,
-                    text=ent.text,
-                    start=ent.start_char,
-                    end=ent.end_char,
+                    text=value,
+                    start=start,
+                    end=end,
                     confidence=0.85,
                 )
             )

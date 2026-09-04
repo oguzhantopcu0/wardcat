@@ -58,52 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   New exports: `RestoredText`, `Substitution`, `UnrestoredValue`, `TokenAllocator`,
   `ContextMismatch`.
 
-### Changed
-
-- **`tokenize` is now a built-in action name.** It was the running example of a
-  *custom* action in the README and docs; those now use `vault` instead.
-  `register_action("tokenize", ...)` still wins over the built-in — overriding a
-  registered name is unchanged behaviour — but a project that did so is now
-  shadowing a built-in rather than adding a new action.
-- `ActionContext` gained a `tokens` field (a per-scan `TokenAllocator`) for actions
-  that need stable, reversible placeholders. It is excluded from the dataclass's
-  `repr` and equality, so existing comparisons are unaffected. The
-  `Anonymizer` now builds one context per `apply()` call instead of one per
-  instance, which is what keeps placeholder numbering per scan and safe under
-  `scan_batch`.
-- **`with_llm()` now says what it switches on.** Unlike `with_ner()`, which enables
-  no entity by itself, the LLM layer carries its own default entity policy (~15
-  types with their own actions), so `.with_llm(...).add_entity(EMAIL, ...)` has
-  always detected and anonymized far more than the one type named — under the
-  policy's actions, not the caller's. The behaviour is unchanged; the first scan
-  now logs a **one-time warning** naming the entities that came along and how to
-  take control of them (`add_entity(name, action, layers=["llm"])` /
-  `remove_entity(name)`). Callers who supply a YAML `config_path` chose their own
-  policy and are not warned. The `with_llm` docstring no longer claims to mirror
-  `with_ner`, and the asymmetry is documented in the README and the configuration
-  guide.
-
-### Fixed
-
-- Test suite: registering an action in one test no longer leaks into the rest of
-  the session (the registry is process-global; a `conftest` fixture now restores
-  it after each test).
-### Fixed
-
-- **Credit card ranges the issuer prefixes were missing.** Measured against
-  presidio-research's 1500-sample corpus, `CREDIT_CARD` recall was 54% — 62 of 136
-  cards undetected, and *none* of them failed Luhn. The checksum gate was working;
-  the prefixes simply had no branch for JCB (`35xx` and the legacy 15-digit `1800`
-  / `2131`), Maestro, 19-digit Visa, or the **MasterCard 2-series (2221–2720)**,
-  which has been issued since 2017. All added, all Luhn-validated like the
-  existing branches; the 19-digit Visa branch is ordered ahead of the 16-digit one
-  so the shorter branch cannot consume the first sixteen digits and then be
-  rejected by the trailing boundary check.
-
-  Widening the prefixes costs no precision — Luhn remains the gate — which is why
-  the false-positive suite gained four near-miss numbers that sit inside the new
-  ranges and fail the checksum. `CREDIT_CARD` F1 on that corpus: 0.705 → 0.958
-  (recall 54% → 92%, precision unchanged at 100%).
 - **`with_phone_regions()` — libphonenumber-backed PHONE detection.** The built-in
   pattern is precision-first and covers Turkish, French and German national forms
   plus E.164; a number written the way it is written in Manchester or Madrid falls
@@ -124,7 +78,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   weaker than a checksum, and each added region widens what counts as a number.
   PHONE F1 on that corpus: 0.342 → 0.770 (recall 21% → 67%).
 
+### Changed
+
+- **`tokenize` is now a built-in action name.** It was the running example of a
+  *custom* action in the README and docs; those now use `vault` instead.
+  `register_action("tokenize", ...)` still wins over the built-in — overriding a
+  registered name is unchanged behaviour — but a project that did so is now
+  shadowing a built-in rather than adding a new action.
+
+- **`with_llm()` now says what it switches on.** Unlike `with_ner()`, which enables
+  no entity by itself, the LLM layer carries its own default entity policy (~15
+  types with their own actions), so `.with_llm(...).add_entity(EMAIL, ...)` has
+  always detected and anonymized far more than the one type named — under the
+  policy's actions, not the caller's. The behaviour is unchanged; the first scan
+  now logs a **one-time warning** naming the entities that came along and how to
+  take control of them (`add_entity(name, action, layers=["llm"])` /
+  `remove_entity(name)`). Callers who supply a YAML `config_path` chose their own
+  policy and are not warned. The `with_llm` docstring no longer claims to mirror
+  `with_ner`, and the asymmetry is documented in the README and the configuration
+  guide.
+
 ### Fixed
+
+- **Credit card ranges the issuer prefixes were missing.** Measured against
+  presidio-research's 1500-sample corpus, `CREDIT_CARD` recall was 54% — 62 of 136
+  cards undetected, and *none* of them failed Luhn. The checksum gate was working;
+  the prefixes simply had no branch for JCB (`35xx` and the legacy 15-digit `1800`
+  / `2131`), Maestro, 19-digit Visa, or the **MasterCard 2-series (2221–2720)**,
+  which has been issued since 2017. All added, all Luhn-validated like the
+  existing branches; the 19-digit Visa branch is ordered ahead of the 16-digit one
+  so the shorter branch cannot consume the first sixteen digits and then be
+  rejected by the trailing boundary check.
+
+  Widening the prefixes costs no precision — Luhn remains the gate — which is why
+  the false-positive suite gained four near-miss numbers that sit inside the new
+  ranges and fail the checksum. `CREDIT_CARD` F1 on that corpus: 0.705 → 0.958
+  (recall 54% → 92%, precision unchanged at 100%).
+
+- **The NER span filters were rejecting real names.** Three faults, each measured
+  against presidio-research's corpus with `en_core_web_sm` — the point being to
+  get more out of the model already in use rather than reach for a bigger one.
+
+  The capital-letter rule fired where capitals mean nothing. A span whose words
+  are all lower-case was rejected on the reasoning that names are capitalized and
+  common-word sequences are not — but that reasoning only holds in a document that
+  capitalizes, and every span it wrongly rejected sat in a document with **zero**
+  uppercase letters (chat logs, ASR output, lower-cased pipelines). Counted over
+  the corpus it removed 15 real names to remove 7 false ones. It now applies only
+  where the surrounding text uses capitals at all.
+
+  **This is a deliberate trade:** in a lower-cased document a common-word sequence
+  can now come through as a `PERSON`. Over-flagging is the safer direction for a
+  redaction tool, and the measurement says it is also the more accurate one.
+
+  Edge punctuation is now trimmed rather than rejected — a model that swallows the
+  colon after a speaker's name produced `tracy:"i'm`, and the digit rule threw the
+  name away with the punctuation. And `ORG` gained the digit/address-punctuation
+  filter `PERSON` already had, removing 42 address fragments labelled as companies
+  at the cost of 4 real ones; the street-keyword list is deliberately *not* applied
+  to `ORG`, since it would take "Wall Street Journal" with it.
+
+  `PERSON` F1 0.670 → 0.680, `ORGANIZATION` 0.299 → 0.305. Modest, and that is
+  itself the finding: raw `en_core_web_sm` recall for `PERSON` is 64% and the
+  filters now pass 64%, so what remains is the model's ceiling, not ours.
 
 - **An IP address is no longer read out of a longer dotted run.**
   `03.93.92.16.85` is a French phone number whose first four groups are a
@@ -132,6 +148,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   because the built-in PHONE pattern scored the same confidence and won the
   overlap. Anchors either side now require the quad to stand alone: `IP 10.0.0.7.`
   is still an address, `1.2.3.4.5` is not.
+
+- Test suite: registering an action in one test no longer leaks into the rest of
+  the session (the registry is process-global; a `conftest` fixture now restores
+  it after each test).
 
 ## [1.1.2] — 2026-07-29
 
