@@ -104,6 +104,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the false-positive suite gained four near-miss numbers that sit inside the new
   ranges and fail the checksum. `CREDIT_CARD` F1 on that corpus: 0.705 → 0.958
   (recall 54% → 92%, precision unchanged at 100%).
+- **`with_phone_regions()` — libphonenumber-backed PHONE detection.** The built-in
+  pattern is precision-first and covers Turkish, French and German national forms
+  plus E.164; a number written the way it is written in Manchester or Madrid falls
+  through it. On presidio-research's corpus that meant 21% recall — 73 of 92
+  numbers missed. More regex will not close this: every numbering plan is its own
+  set of shapes, and telling a valid Madrid mobile from three arbitrary digit
+  groups requires knowing the plan.
+
+  ```python
+  guard.with_phone_regions("GB", "ES")   # libphonenumber for these regions
+  guard.with_phone_regions()             # back to the built-in pattern
+  ```
+
+  Opt-in and optional: `pip install "wardcat[phone]"`, and a missing package logs
+  a warning and falls back to the pattern. Callers who never call it get
+  byte-identical behaviour. Matches report `0.90` confidence rather than the
+  pattern's `0.97` — a numbering-plan check is stronger than a digit run but
+  weaker than a checksum, and each added region widens what counts as a number.
+  PHONE F1 on that corpus: 0.342 → 0.770 (recall 21% → 67%).
+
+### Fixed
+
+- **An IP address is no longer read out of a longer dotted run.**
+  `03.93.92.16.85` is a French phone number whose first four groups are a
+  syntactically valid dotted quad. The bug predates this release — it never showed
+  because the built-in PHONE pattern scored the same confidence and won the
+  overlap. Anchors either side now require the quad to stand alone: `IP 10.0.0.7.`
+  is still an address, `1.2.3.4.5` is not.
 
 ## [1.1.2] — 2026-07-29
 

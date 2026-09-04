@@ -81,6 +81,27 @@ class TestPhone:
         assert any(s.entity_type == "PHONE" for s in spans)
 
 
+class TestIpAddress:
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("sunucu 192.168.14.77 uzerinden", ["192.168.14.77"]),
+            ("IP 10.0.0.7.", ["10.0.0.7"]),  # sentence period, still an address
+            ("8.8.8.8 dns", ["8.8.8.8"]),
+            ("255.255.255.0 maske", ["255.255.255.0"]),
+            # A dotted quad read out of a longer dotted run is not an address:
+            # this one is a French phone number written 03.93.92.16.85.
+            ("Mobile: 03.93.92.16.85", []),
+            ("1.2.3.4.5", []),
+            ("v1.2.3.4.5 surum", []),
+        ],
+    )
+    def test_dotted_quads_are_not_taken_from_longer_runs(self, detector, text, expected):
+        found = [s.text for s in detector.detect(text) if s.entity_type == "IP_ADDRESS"]
+
+        assert found == expected
+
+
 class TestIBAN:
     def test_tr_iban(self, detector):
         spans = detector.detect("IBAN: TR330006100519786457841326")
