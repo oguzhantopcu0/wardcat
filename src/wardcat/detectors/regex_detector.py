@@ -84,9 +84,14 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         re.IGNORECASE,
     ),
     # ── IP address ────────────────────────────────────────────────────
+    # The guards either side keep a dotted quad from being read out of a longer
+    # dotted run: "03.93.92.16.85" is a French phone number, and its first four
+    # groups are a syntactically valid address.
     "IP_ADDRESS": (
-        r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}"
-        r"(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b",
+        r"(?<!\d\.)(?<!\d)"
+        r"(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}"
+        r"(?:25[0-5]|2[0-4]\d|[01]?\d\d?)"
+        r"(?!\.?\d)",
         0,
     ),
     # ── Turkish National ID (TC Kimlik No) ────────────────────────────
