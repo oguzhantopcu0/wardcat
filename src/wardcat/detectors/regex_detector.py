@@ -15,16 +15,29 @@ _SEP = r"[ \-\.]{0,2}"  # optional space/dash/dot in card numbers (up to 2 chars
 
 _PATTERNS: dict[str, tuple[str, int]] = {
     # ── Credit card ──────────────────────────────────────────────────
-    # Supports spaced and compact formats: 4111111111111111 or 4111 1111 1111 1111
+    # Supports spaced and compact formats: 4111111111111111 or 4111 1111 1111 1111.
+    # Every match is Luhn-validated (_VALIDATORS), so the issuer prefixes below are
+    # about *precision* — they keep an arbitrary digit run from being offered to the
+    # checksum at all, where roughly one in ten would pass by chance.
+    # Longer variants come first: a 19-digit Visa must not be truncated to its
+    # 16-digit prefix and then rejected by the trailing (?!\d).
     "CREDIT_CARD": (
         r"(?<!\d)"
         r"(?:"
-        rf"4[0-9]{{3}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # Visa 16
+        rf"4[0-9]{{3}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{3}}"  # Visa 19
+        rf"|4[0-9]{{3}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # Visa 16
         rf"|4[0-9]{{12}}"  # Visa 13
-        rf"|5[1-5][0-9]{{2}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # MasterCard
+        rf"|5[1-5][0-9]{{2}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # MasterCard 51-55
+        # MasterCard 2-series (2221-2720) — issued since 2017
+        rf"|2(?:22[1-9]|2[3-9][0-9]|[3-6][0-9]{{2}}|7[01][0-9]|720)"
+        rf"{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"
         rf"|3[47][0-9]{{2}}{_SEP}[0-9]{{6}}{_SEP}[0-9]{{5}}"  # Amex (4-6-5)
         rf"|3(?:0[0-5]|[68][0-9])[0-9]{{11}}"  # Diners
+        rf"|35(?:2[89]|[3-8][0-9]){_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # JCB 3528-3589
+        rf"|(?:1800|2131)[0-9]{{11}}"  # JCB legacy, 15 digits
         rf"|6(?:011|5[0-9]{{2}}){_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # Discover
+        # Maestro — 12 to 19 digits, so the length is carried by the quantifier
+        rf"|(?:5018|5020|5038|5893|6304|6759|676[1-3])[0-9]{{8,15}}"
         r")"
         r"(?!\d)",
         0,
