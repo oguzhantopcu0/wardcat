@@ -8,6 +8,7 @@ layers are pulled in as extras.
     ```bash
     pip install wardcat            # base: regex + Ollama/OpenAI-compatible LLM backend
     pip install "wardcat[ner]"     # + SpaCy NER (PERSON, ORG, ADDRESS)
+    pip install "wardcat[phone]"   # + national phone formats (libphonenumber)
     pip install "wardcat[all]"     # everything: SpaCy + Transformers
     ```
 

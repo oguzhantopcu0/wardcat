@@ -23,6 +23,12 @@ salt: ""
 # spacy_models: ["en_core_web_sm", "de_core_news_sm"]   # çoklu (multilingual)
 use_ner: false
 
+# PHONE tespitini libphonenumber'a devret (pip install 'wardcat[phone]').
+# Boş bırakılırsa yerleşik desen kullanılır (TR/FR/DE + E.164).
+# Hizmet verdiğiniz ülkeleri yazın; her ek bölge yanlış pozitif riskini artırır.
+# phone_regions: ["TR", "GB", "DE"]
+phone_regions: []
+
 entities:
   # ── Regex tabanlı ──────────────────────────────────────────
   CREDIT_CARD:
