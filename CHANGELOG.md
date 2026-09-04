@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The NER span filters were rejecting real names.** Three faults, each measured
+  against presidio-research's corpus with `en_core_web_sm` — the point being to
+  get more out of the model already in use rather than reach for a bigger one.
+
+  The capital-letter rule fired where capitals mean nothing. A span whose words
+  are all lower-case was rejected on the reasoning that names are capitalized and
+  common-word sequences are not — but that reasoning only holds in a document that
+  capitalizes, and every span it wrongly rejected sat in a document with **zero**
+  uppercase letters (chat logs, ASR output, lower-cased pipelines). Counted over
+  the corpus it removed 15 real names to remove 7 false ones. It now applies only
+  where the surrounding text uses capitals at all.
+
+  **This is a deliberate trade:** in a lower-cased document a common-word sequence
+  can now come through as a `PERSON`. Over-flagging is the safer direction for a
+  redaction tool, and the measurement says it is also the more accurate one.
+
+  Edge punctuation is now trimmed rather than rejected — a model that swallows the
+  colon after a speaker's name produced `tracy:"i'm`, and the digit rule threw the
+  name away with the punctuation. And `ORG` gained the digit/address-punctuation
+  filter `PERSON` already had, removing 42 address fragments labelled as companies
+  at the cost of 4 real ones; the street-keyword list is deliberately *not* applied
+  to `ORG`, since it would take "Wall Street Journal" with it.
+
+  `PERSON` F1 0.670 → 0.680, `ORGANIZATION` 0.299 → 0.305. Modest, and that is
+  itself the finding: raw `en_core_web_sm` recall for `PERSON` is 64% and the
+  filters now pass 64%, so what remains is the model's ceiling, not ours.
+
 ## [1.1.2] — 2026-07-29
 
 ### Fixed
