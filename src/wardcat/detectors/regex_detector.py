@@ -593,8 +593,30 @@ class RegexDetector(BaseDetector):
         custom_patterns: dict | None = None,
         *,
         fold_confusables_enabled: bool = True,
+        phone_regions: list[str] | None = None,
     ) -> None:
         self.enabled_entities = enabled_entities
+        # When set, PHONE detection is delegated to libphonenumber for these CLDR
+        # regions instead of the built-in pattern. The pattern covers TR/FR/DE plus
+        # E.164 and is precision-first; a per-country library is the only way to
+        # reach the national formats of everywhere else without guessing. Opt-in,
+        # so a base install behaves exactly as before.
+        #
+        # Availability is settled here rather than on first use: detect() skips the
+        # built-in pattern whenever regions are configured, so discovering the
+        # missing package mid-scan would leave that scan with no PHONE detection at
+        # all — worse than the fallback it is meant to be.
+        self._phone_regions = list(phone_regions or [])
+        if self._phone_regions:
+            try:
+                import phonenumbers  # noqa: F401
+            except ImportError:
+                logger.warning(
+                    "phone_regions is set but the 'phonenumbers' package is missing, so "
+                    "PHONE detection falls back to the built-in pattern. "
+                    "Install with: pip install 'wardcat[phone]'"
+                )
+                self._phone_regions = []
         # When True, matching runs on a confusable-folded copy of the input so
         # homoglyph-obfuscated PII (Cyrillic/Greek lookalikes, fullwidth/Arabic
         # digits) is still detected. Folding is length-preserving, so spans are
@@ -610,6 +632,35 @@ class RegexDetector(BaseDetector):
                 self._custom_compiled[name] = (re.compile(pattern_str), action)
             except re.error as exc:
                 logger.warning("Custom pattern %r could not be compiled: %s — skipped.", name, exc)
+
+    def _phone_spans(self, text: str) -> list[DetectedSpan]:
+        """PHONE spans from libphonenumber across the configured regions.
+
+        Only called when ``_phone_regions`` is non-empty, which ``__init__``
+        already gated on the package being importable.
+
+        Each region is matched separately and the results merged on offset, since a
+        number written in national form only parses under its own region. Reported
+        at :data:`CONF_FUZZY`: libphonenumber validates the number plan, which is
+        far stronger than a bare digit run, but weaker than a checksum — measured
+        precision on a mixed-locale corpus is well below the structural tier.
+        """
+        import phonenumbers
+
+        seen: dict[tuple[int, int], DetectedSpan] = {}
+        for region in self._phone_regions:
+            for match in phonenumbers.PhoneNumberMatcher(text, region):
+                seen.setdefault(
+                    (match.start, match.end),
+                    DetectedSpan(
+                        entity_type="PHONE",
+                        text=text[match.start : match.end],
+                        start=match.start,
+                        end=match.end,
+                        confidence=CONF_FUZZY,
+                    ),
+                )
+        return list(seen.values())
 
     def detect(self, text: str, candidates: list[DetectedSpan] | None = None) -> list[DetectedSpan]:
         """Return all regex matches for enabled entity types."""
@@ -643,6 +694,10 @@ class RegexDetector(BaseDetector):
                 )
 
         for entity_type, pattern in _COMPILED.items():
+            # The library already produced this type's spans; running the pattern
+            # too would only add lower-coverage duplicates for the resolver to drop.
+            if entity_type == "PHONE" and self._phone_regions:
+                continue
             if entity_type not in self.enabled_entities:
                 continue
             for match in _finditer_builtin(entity_type, pattern, scan_text):
@@ -705,4 +760,9 @@ class RegexDetector(BaseDetector):
         # one (a checksum span is never overridable; a fuzzy ADDRESS is).
         for s in spans:
             s.confidence = _regex_confidence(s.entity_type)
+
+        # Appended after tiering: these carry their own confidence, which is lower
+        # than the structural tier this loop would stamp on a PHONE span.
+        if self._phone_regions and "PHONE" in self.enabled_entities:
+            spans.extend(self._phone_spans(text))
         return spans
