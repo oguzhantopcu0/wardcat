@@ -88,6 +88,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test suite: registering an action in one test no longer leaks into the rest of
   the session (the registry is process-global; a `conftest` fixture now restores
   it after each test).
+### Fixed
+
+- **Credit card ranges the issuer prefixes were missing.** Measured against
+  presidio-research's 1500-sample corpus, `CREDIT_CARD` recall was 54% — 62 of 136
+  cards undetected, and *none* of them failed Luhn. The checksum gate was working;
+  the prefixes simply had no branch for JCB (`35xx` and the legacy 15-digit `1800`
+  / `2131`), Maestro, 19-digit Visa, or the **MasterCard 2-series (2221–2720)**,
+  which has been issued since 2017. All added, all Luhn-validated like the
+  existing branches; the 19-digit Visa branch is ordered ahead of the 16-digit one
+  so the shorter branch cannot consume the first sixteen digits and then be
+  rejected by the trailing boundary check.
+
+  Widening the prefixes costs no precision — Luhn remains the gate — which is why
+  the false-positive suite gained four near-miss numbers that sit inside the new
+  ranges and fail the checksum. `CREDIT_CARD` F1 on that corpus: 0.705 → 0.958
+  (recall 54% → 92%, precision unchanged at 100%).
 
 ## [1.1.2] — 2026-07-29
 

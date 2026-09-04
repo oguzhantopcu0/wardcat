@@ -33,6 +33,41 @@ class TestCreditCard:
         spans = detector.detect("sipariş no: 123456")
         assert not any(s.entity_type == "CREDIT_CARD" for s in spans)
 
+    @pytest.mark.parametrize(
+        "number,brand",
+        [
+            ("4111111111111111", "Visa 16"),
+            ("4222222222222", "Visa 13"),
+            ("4131034282458809939", "Visa 19"),
+            ("5555555555554444", "MasterCard 51-55"),
+            ("2623322164608847", "MasterCard 2-series"),
+            ("378282246310005", "Amex"),
+            ("30569309025904", "Diners"),
+            ("6011111111111117", "Discover"),
+            ("3558331500082481", "JCB 3528-3589"),
+            ("180016070420458", "JCB legacy 1800"),
+            ("213176828496175", "JCB legacy 2131"),
+            ("630427373398", "Maestro 12-digit"),
+            ("6759649826438453", "Maestro 16-digit"),
+        ],
+    )
+    def test_issuer_ranges(self, detector, number, brand):
+        """Each range is Luhn-valid, so a miss is the pattern's, not the checksum's."""
+        spans = detector.detect(f"payment with {number} today")
+
+        assert any(s.entity_type == "CREDIT_CARD" and s.text == number for s in spans), brand
+
+    def test_a_luhn_invalid_number_in_a_known_range_is_still_rejected(self, detector):
+        """Widening the pattern must not weaken the checksum gate."""
+        spans = detector.detect("card 3558331500082482 here")  # last digit changed
+
+        assert not any(s.entity_type == "CREDIT_CARD" for s in spans)
+
+    def test_a_nineteen_digit_visa_is_not_truncated_to_sixteen(self, detector):
+        spans = detector.detect("card 4131034282458809939 here")
+
+        assert [s.text for s in spans if s.entity_type == "CREDIT_CARD"] == ["4131034282458809939"]
+
 
 class TestEmail:
     def test_standard(self, detector):
