@@ -100,6 +100,7 @@ if guard.is_sensitive(text):
 pip install wardcat
 
 # + SpaCy NER (PERSON, ORG, ADDRESS detection)
+pip install "wardcat[phone]"   # national phone formats worldwide (libphonenumber)
 pip install "wardcat[ner]"
 
 # Everything at once (SpaCy + Transformers)
@@ -383,6 +384,37 @@ async def scan(text: str):
     result = await guard.scan_async(text)      # await — does not block the loop
     return {"sanitized": result.sanitized_text, "clean": result.is_clean}
 ```
+
+### Phone numbers outside TR / FR / DE
+
+The built-in `PHONE` pattern is precision-first: it covers Turkish, French and
+German national formats plus E.164, and deliberately refuses a bare `123 456 7890`
+because a 3-3-4 digit run is indistinguishable from an ordinary number sequence.
+A number written the way it is written in Manchester or Madrid falls through it.
+
+Name the regions you actually serve and detection is delegated to Google's
+libphonenumber for those numbering plans:
+
+```python
+guard = (
+    Wardcat(salt="s")
+    .add_entity(Entity.PHONE, Action.TOKENIZE)
+    .with_phone_regions("GB", "ES", "US")   # CLDR two-letter codes
+)
+
+guard.scan("call 07700 063 966 or 699 956 915")
+# both detected; the built-in pattern reaches neither
+```
+
+Needs `pip install "wardcat[phone]"`. Without it the built-in pattern is used and
+a warning is logged — nothing breaks. Call `with_phone_regions()` with no
+arguments to go back to the pattern.
+
+Matches are reported at `0.90` confidence rather than the pattern's `0.97`:
+libphonenumber validates against each region's numbering plan, which is far
+stronger than a bare digit run but weaker than a checksum, and **every extra
+region widens what counts as a number**. Add the regions you serve, not every
+region there is.
 
 ### Catching every occurrence (value propagation)
 

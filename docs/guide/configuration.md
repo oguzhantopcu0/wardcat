@@ -23,6 +23,22 @@ and the static `Wardcat.supported_entities(layer=None)`.
 omitted it defaults to `hash` (with a one-time warning). Actions are
 [pluggable](extending.md#custom-actions).
 
+## Phone regions
+
+`PHONE` is matched by a precision-first pattern covering TR/FR/DE national formats
+plus E.164. For national formats elsewhere, name the regions you serve and
+detection moves to libphonenumber:
+
+```python
+guard.with_phone_regions("GB", "ES", "US")   # CLDR codes
+guard.with_phone_regions()                   # back to the built-in pattern
+```
+
+Needs `pip install "wardcat[phone]"`; without it the pattern is used and a warning
+is logged. Matches report `0.90` confidence rather than `0.97` — a numbering-plan
+check is weaker than a checksum, and each extra region widens what counts as a
+number, so add the regions you serve rather than all of them.
+
 ## Value propagation
 
 Model-based layers sometimes report a repeated value only once. `with_propagation()`
