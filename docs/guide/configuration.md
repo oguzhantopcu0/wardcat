@@ -27,13 +27,14 @@ to `hash` (with a one-time warning). Actions are
 ## The LLM layer's own entity policy
 
 `with_ner()` enables no entity by itself — you opt in with `add_entity`. **`with_llm()`
-does not work that way**: the LLM layer carries its own default policy of ~15 entity
-types with their own actions, so
+does not work that way**: the LLM layer carries its own default policy of **24 entity
+types, 22 of them switched on** (`ORG` and `SPECIAL_CATEGORY` ship off), each with its
+own action, so
 
 ```python
 guard = Wardcat(salt="s").with_llm(...).add_entity(Entity.EMAIL, Action.TOKENIZE)
-guard.enabled_entities()      # 20+ types, not 1
-guard.get_entity_action("PERSON")   # 'hash' — nobody asked for this
+guard.enabled_entities()                 # 22 types, not 1
+guard.get_entity_action(Entity.PERSON)   # 'hash' — nobody asked for this
 ```
 
 detects and anonymizes much more than the one type named, under the policy's actions
@@ -41,11 +42,12 @@ rather than the one just configured. The first scan logs a one-time warning list
 what came along. To take control:
 
 ```python
-guard.add_entity("PERSON", Action.REDACT, layers=["llm"])  # override one
-guard.remove_entity("PERSON")                              # drop one
-guard.remove_entity(Entity.ALL)                            # start from nothing
-Wardcat(config_path="policy.yaml")                         # replace it wholesale
+guard.add_entity(Entity.PERSON, Action.REDACT, layers=["llm"])  # override one
+guard.remove_entity(Entity.PERSON)                              # drop one
+guard.remove_entity(Entity.ALL)                                 # start from nothing
+Wardcat(config_path="policy.yaml")                              # replace it wholesale
 ```
+
 ## Phone regions
 
 `PHONE` is matched by a precision-first pattern covering TR/FR/DE national formats

@@ -344,7 +344,9 @@ instead of blocking each other:
 ```python
 import asyncio
 
-guard = Wardcat(salt="s").with_llm(model="llama3.1:8b").add_entity("EMAIL")
+from wardcat import Wardcat, Entity, Action
+
+guard = Wardcat(salt="s").with_llm(model="llama3.1:8b").add_entity(Entity.EMAIL, Action.WARN)
 
 texts = ["mail me at a@example.com", "card 4111 1111 1111 1111", "clean text"]
 
@@ -637,15 +639,16 @@ guard = Wardcat(salt="s").with_llm(
 ```
 
 > **`with_llm()` brings its own entity policy.** Unlike `with_ner()`, which enables
-> nothing on its own, the LLM layer ships a default list of ~15 entity types with
-> their own actions (`PERSON` → `hash`, `EMAIL` → `warn`, …). So
-> `.with_llm(...).add_entity(Entity.EMAIL, Action.TOKENIZE)` detects and anonymizes
-> far more than the one type you named, under those actions rather than yours —
-> `enabled_entities()` shows the full set, and the first scan logs a one-time
-> warning listing what came along. Take control of one with
-> `add_entity(name, action, layers=["llm"])`, switch it off with
-> `remove_entity(name)`, start from nothing with `remove_entity(Entity.ALL)`, or
-> replace the policy wholesale with a YAML `config_path`.
+> nothing on its own, the LLM layer ships a default policy of **24 entity types,
+> 22 of them switched on**, each with its own action (`PERSON` → `hash`,
+> `EMAIL` → `warn`, …). The two that ship off are `ORG` and `SPECIAL_CATEGORY`.
+> So `.with_llm(...).add_entity(Entity.EMAIL, Action.TOKENIZE)` detects and
+> anonymizes far more than the one type you named, under those actions rather
+> than yours — `enabled_entities()` shows the full set, and the first scan logs a
+> one-time warning listing what came along. Take control of one with
+> `add_entity(Entity.EMAIL, Action.TOKENIZE, layers=["llm"])`, switch it off with
+> `remove_entity(Entity.ORG)`, start from nothing with `remove_entity(Entity.ALL)`,
+> or replace the policy wholesale with a YAML `config_path`.
 
 > **Note:** Loopback HTTP (`localhost` / `127.0.0.1` / `::1`) is allowed with no warning — it never leaves the machine, so the common local-Ollama setup needs no `allow_http`. HTTP to a **remote** host is blocked (pass `allow_http=True` to override); use HTTPS in production via a reverse proxy (nginx, Caddy).
 
@@ -723,6 +726,8 @@ Runnable scripts in [`examples/`](examples/):
 | `demo.py` | Programmatic + YAML APIs |
 | `batch_and_async.py` | `scan_batch` and the async API (regex-only, no services) |
 | `llm_hybrid.py` | regex + NER + LLM with ensemble adjudication (needs Ollama) |
+| `all_layers.py` | all three layers on one guard, with adjudication (needs Ollama + a SpaCy model) |
+| `reversible_roundtrip.py` | `Action.TOKENIZE` out, `restore()` back — regex-only, stubbed model, runs offline |
 | `asgi_middleware.py` | Copy-paste ASGI middleware (FastAPI/Starlette) that scans request bodies — wardcat ships no web-framework code; this is a self-contained example |
 
 ---
@@ -735,7 +740,7 @@ Runnable scripts in [`examples/`](examples/):
 
 | Entity | Default Action | Description |
 |---|---|---|
-| `CREDIT_CARD` | `hash` | Visa, MC, Amex, Discover — with or without separators; Luhn (mod-10) validated |
+| `CREDIT_CARD` | `hash` | Visa (13/16/19-digit), MasterCard (`51`–`55` and the 2-series `2221`–`2720`), Amex, Discover, Diners, JCB (`3528`–`3589` and the legacy 15-digit `1800`/`2131`), Maestro — with or without separators; Luhn (mod-10) validated |
 | `IBAN` | `hash` | International IBAN — mod-97 checksum validated |
 | `SSN` | `hash` | US Social Security Number (123-45-6789) |
 | `NIN` | `hash` | UK National Insurance Number (AB123456C) |
@@ -763,7 +768,7 @@ Runnable scripts in [`examples/`](examples/):
 
 | Entity | Default Action | Description |
 |---|---|---|
-| `IP_ADDRESS` | `warn` | IPv4 addresses |
+| `IP_ADDRESS` | `warn` | IPv4 addresses — the quad must stand alone, so a longer dotted run (`03.93.92.16.85`, a French phone number) is not read as an address |
 | `IPv6` | `warn` | IPv6 addresses (full and compressed forms) |
 | `MAC_ADDRESS` | `warn` | Network hardware address (00:1A:2B:3C:4D:5E) |
 | `UUID` | `warn` | RFC 4122 UUID / GUID |
@@ -796,6 +801,21 @@ guard = Wardcat().with_ner(spacy_model=["en_core_web_sm", "de_core_news_sm"])
 ```
 
 Supported languages: `Language.EN`, `DE`, `FR`, `ES`, `IT`, `NL`, `PT`, `TR` (plain ISO codes like `"de"` are also accepted). If the requested size is unavailable for a language, the recommended model is used.
+
+#### Lower-cased text (chat logs, ASR output)
+
+A `PERSON` span is normally required to have at least one capitalized word —
+names are capitalized, ordinary word sequences are not. That reasoning holds only
+in a document that capitalizes at all. In a chat log, an ASR transcript or a
+lower-cased pipeline it rejects real names for a property the text never had, so
+the rule is skipped where the surrounding text carries no capitals (fewer than
+one uppercase letter in two hundred).
+
+**This is a deliberate trade.** In a lower-cased document a common-word sequence
+can now come through as a `PERSON`. Over-flagging is the safer direction for a
+redaction tool, and on presidio-research's corpus it is also the more accurate
+one: the old rule removed 15 real names to remove 7 false ones. If you prefer the
+stricter behaviour, feed the layer text that preserves its original casing.
 
 #### Multi-language text
 
@@ -934,26 +954,41 @@ To allow plaintext HTTP to a **remote** LLM (blocked by default), pass
 ```
 wardcat/
 ├── src/wardcat/
-│   ├── guard.py              # Wardcat — main interface
+│   ├── guard.py              # Wardcat — main interface, layer builders
+│   ├── _entity_policy.py     # add/remove/change entity + introspection (mixin)
+│   ├── entity_groups.py      # core_entities(), turkish_entities(), … helpers
+│   ├── exceptions.py         # WardcatError and friends (ConfigError, ContextMismatch…)
 │   ├── core/
-│   │   ├── engine.py         # DetectionEngine — overlap resolution, action application
-│   │   └── models.py         # Action, Violation, ScanResult
+│   │   ├── engine.py         # DetectionEngine — overlap resolution, layer merge
+│   │   ├── anonymizer.py     # applies the action to each resolved span
+│   │   ├── actions.py        # action registry — hash/redact/mask/warn/tokenize
+│   │   ├── restore.py        # TokenAllocator + restore() — the reversible path
+│   │   ├── registry.py       # which entity types each layer can produce
+│   │   └── models.py         # Entity, Action, Violation, ScanResult
 │   ├── detectors/
 │   │   ├── base.py           # BaseDetector ABC
-│   │   ├── regex_detector.py # 25+ regex patterns with checksum/Luhn validation
+│   │   ├── regex_detector.py # 24 regex patterns with checksum/Luhn validation
 │   │   ├── ner_detector.py   # SpaCy NER (multilingual) + gazetteer FP filter
 │   │   └── llm_detector.py   # LLM-based detection with hallucination filter
 │   ├── llm/
-│   │   ├── backends/         # ollama, openai_compat, transformers
+│   │   ├── backends/         # ollama, openai_compat, transformers, vllm
 │   │   ├── model_catalog.py  # Supported model list
-│   │   └── prompt.py         # PII detection prompt builder
+│   │   ├── model_manager.py  # download / cache lifecycle
+│   │   └── prompt.py         # PII detection + sensitivity prompt builders
+│   ├── ner/
+│   │   ├── spacy_catalog.py  # language + size tier → SpaCy package name
+│   │   └── downloader.py     # auto-download of missing models
 │   ├── config/
 │   │   └── loader.py         # YAML loader, env var overrides
 │   └── utils/
-│       └── hashing.py        # SHA-256 + salt
+│       ├── hashing.py        # SHA-256 + salt
+│       ├── normalize.py      # confusable / homoglyph folding
+│       └── text.py           # chunking and offset helpers
 ├── tests/
 │   ├── unit/                 # Component-level tests
-│   └── integration/          # Scenario and adversarial tests
+│   ├── integration/          # Scenario and adversarial tests
+│   └── benchmark/            # Eval harness and the false-positive suite
+├── examples/                 # Runnable scripts (see Examples above)
 ├── config/
 │   └── default.yaml          # Example policy file
 └── pyproject.toml
@@ -998,6 +1033,7 @@ uv run pytest --cov=src/wardcat --cov-report=term-missing
 | Multilingual NER | One SpaCy model loads per language; wardcat bundles no language *detection* by design (keeps the core dependency-light) | Detect the language yourself (check `supported_languages()`) and pass several models via `language=[...]`, or use the language-agnostic LLM layer |
 | European addresses | Regex needs a street-type keyword (Straße, Rue, Calle…); unnumbered informal addresses may be missed | Use the NER `ADDRESS` / LLM layer, or add a `custom_patterns` rule for your address format |
 | Turkish NER (`tr_core_news_trf`) | The transformer model is incompatible with SpaCy 3.5+ | Use `tr_core_news_md` or `tr_core_news_lg` |
+| Lower-cased text | Where the document carries no capitals, the "a name has a capital" rule is switched off, so a common-word sequence can surface as a `PERSON` | Preserve the original casing if you want the stricter rule, or drop the phrase with `add_allowlist([...])` / `with_llm(adjudicate=True)` |
 | Turkish NER quality | `tr_core_news_md/lg` are news-trained and may miss names in non-standard contexts | Combine with `.with_llm(...)` — the LLM catches names NER misses |
 
 ---
