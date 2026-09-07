@@ -38,6 +38,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # (e.g. ["US", "GB", "TR"]). Empty means the built-in pattern handles PHONE —
     # see Wardcat.with_phone_regions.
     "phone_regions": [],
+    # Spans scoring below this are dropped before any action is applied. The
+    # default keeps every proven tier and drops the regex layer's "uncued" one
+    # (a checksum match with no supporting keyword — see CONF_UNCUED).
+    "min_confidence": 0.8,
     # ── LLM detector configuration ────────────────────────────────────────
     "llm_detector": {
         "enabled": False,
@@ -72,7 +76,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "US_ZIP_CODE": {"enabled": True, "action": "warn"},
             "CODICE_FISCALE": {"enabled": True, "action": "hash"},
             "VAT_NUMBER": {"enabled": True, "action": "warn"},
-            # GDPR Art.9 special-category data — LLM-only, off by default
+            "CRYPTO_WALLET": {"enabled": True, "action": "hash"},
+            "IMEI": {"enabled": True, "action": "hash"},
+            "BANK_ROUTING": {"enabled": True, "action": "hash"},
+            "NHS_NUMBER": {"enabled": True, "action": "hash"},
+            # Place names are everywhere in ordinary prose — opt in when the
+            # deployment actually treats them as identifying.
+            "LOCATION": {"enabled": False, "action": "warn"},
+            # GDPR Art.9 special-category data — off by default
+            "NRP": {"enabled": False, "action": "redact"},
             "SPECIAL_CATEGORY": {"enabled": False, "action": "redact"},
         },
     },
@@ -101,6 +113,8 @@ _KNOWN_CONFIG_KEYS = frozenset(
         "propagate_matches",
         "propagate_min_length",
         "normalize_confusables",
+        "phone_regions",
+        "min_confidence",
     }
 )
 
@@ -177,6 +191,7 @@ def validate_config(config: dict[str, Any]) -> None:
     _warn_unknown_keys(config)
     _validate_entity_map(config.get("entities", {}), "entity")
     _validate_custom_patterns(config.get("custom_patterns", {}))
+    _validate_min_confidence(config.get("min_confidence", 0.8))
     _validate_allowlist(config.get("allowlist", []))
     _validate_denylist(config.get("denylist", []))
     _validate_llm_detector(config.get("llm_detector", {}))
@@ -232,6 +247,15 @@ def _validate_custom_patterns(custom_patterns: dict[str, Any]) -> None:
                 f"Custom pattern '{pattern_name}' may cause catastrophic backtracking "
                 "(ReDoS). Simplify the pattern or remove nested quantifiers."
             )
+
+
+def _validate_min_confidence(value: Any) -> None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ConfigError(
+            f"'min_confidence' must be a number between 0 and 1, got {type(value).__name__}."
+        )
+    if not 0.0 <= float(value) <= 1.0:
+        raise ConfigError(f"'min_confidence' must be between 0 and 1, got {value!r}.")
 
 
 def _validate_allowlist(allowlist: Any) -> None:

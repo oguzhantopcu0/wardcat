@@ -10,7 +10,7 @@ enumerate individual entity types:
 
 Available groups:
     core_entities()         — universal PII (email, phone, credit card, IBAN)
-    financial_entities()    — credit card, IBAN, SSN, bank/financial IDs
+    financial_entities()    — cards, IBAN, SSN, routing numbers, crypto wallets
     turkish_entities()      — TR-specific: TC_ID, POSTAL_CODE
     european_entities()     — EU: EU_NATIONAL_ID, CODICE_FISCALE, NIN, IBAN, PASSPORT
     uk_entities()           — UK: NIN, UK_POSTAL_CODE, PASSPORT
@@ -31,8 +31,8 @@ def core_entities() -> frozenset[str]:
 
 
 def financial_entities() -> frozenset[str]:
-    """Financial identifiers: credit card, IBAN, SSN, JWT."""
-    return frozenset({"CREDIT_CARD", "IBAN", "SSN", "JWT"})
+    """Financial identifiers: cards, IBAN, SSN, JWT, routing numbers, wallets."""
+    return frozenset({"CREDIT_CARD", "IBAN", "SSN", "JWT", "BANK_ROUTING", "CRYPTO_WALLET"})
 
 
 def turkish_entities() -> frozenset[str]:
@@ -49,23 +49,24 @@ def european_entities() -> frozenset[str]:
             "NIN",
             "PASSPORT",
             "UK_POSTAL_CODE",
+            "NHS_NUMBER",
         }
     )
 
 
 def uk_entities() -> frozenset[str]:
-    """UK-specific entities: NIN, UK_POSTAL_CODE, PASSPORT."""
-    return core_entities() | frozenset({"NIN", "UK_POSTAL_CODE", "PASSPORT"})
+    """UK-specific entities: NIN, UK_POSTAL_CODE, NHS_NUMBER, PASSPORT."""
+    return core_entities() | frozenset({"NIN", "UK_POSTAL_CODE", "NHS_NUMBER", "PASSPORT"})
 
 
 def us_entities() -> frozenset[str]:
-    """US-specific entities: SSN, US_ZIP_CODE, PASSPORT."""
-    return core_entities() | frozenset({"SSN", "US_ZIP_CODE", "PASSPORT"})
+    """US-specific entities: SSN, US_ZIP_CODE, BANK_ROUTING, PASSPORT."""
+    return core_entities() | frozenset({"SSN", "US_ZIP_CODE", "BANK_ROUTING", "PASSPORT"})
 
 
 def network_entities() -> frozenset[str]:
-    """Network / technical identifiers: IP, IPv6, MAC, UUID, JWT."""
-    return frozenset({"IP_ADDRESS", "IPv6", "MAC_ADDRESS", "UUID", "JWT"})
+    """Network / technical identifiers: IP, IPv6, MAC, UUID, JWT, IMEI."""
+    return frozenset({"IP_ADDRESS", "IPv6", "MAC_ADDRESS", "UUID", "JWT", "IMEI"})
 
 
 def identity_entities() -> frozenset[str]:
@@ -78,6 +79,7 @@ def identity_entities() -> frozenset[str]:
             "TC_ID",
             "EU_NATIONAL_ID",
             "CODICE_FISCALE",
+            "NHS_NUMBER",
         }
     )
 

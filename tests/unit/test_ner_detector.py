@@ -28,14 +28,14 @@ needs_tr = pytest.mark.skipif(
 @pytest.fixture(scope="module")
 def ner():
     """English NER detector — load once per module (SpaCy is heavy)."""
-    return NERDetector({"PERSON", "ORG", "ADDRESS"}, model="en_core_web_sm")
+    return NERDetector({"PERSON", "ORG", "ADDRESS", "LOCATION", "NRP"}, model="en_core_web_sm")
 
 
 @pytest.fixture(scope="module")
 def ner_tr():
     """Turkish NER detector — uses the first installed tr_* model."""
     tr_model = next(m for m in sorted(_INSTALLED) if m.startswith("tr_"))
-    return NERDetector({"PERSON", "ORG", "ADDRESS"}, model=tr_model)
+    return NERDetector({"PERSON", "ORG", "ADDRESS", "LOCATION", "NRP"}, model=tr_model)
 
 
 @pytest.fixture(scope="module")
@@ -87,17 +87,48 @@ class TestOrgDetection:
         assert "ORG" in types
 
 
-# ── ADDRESS detection (GPE / LOC → ADDRESS) ──────────────────────────────────
+# ── LOCATION detection (GPE / LOC → LOCATION) ────────────────────────────────
 
 
-class TestAddressDetection:
-    def test_city_detected_as_address(self, ner):
+class TestLocationDetection:
+    def test_city_detected_as_location(self, ner):
         spans = ner.detect("She lives in New York.")
-        assert any(s.entity_type == "ADDRESS" for s in spans)
+        assert any(s.entity_type == "LOCATION" for s in spans)
 
-    def test_country_detected_as_address(self, ner):
+    def test_country_detected_as_location(self, ner):
         spans = ner.detect("The office is located in Germany.")
-        assert any(s.entity_type == "ADDRESS" for s in spans)
+        assert any(s.entity_type == "LOCATION" for s in spans)
+
+    def test_place_name_is_not_reported_as_a_street_address(self, ner):
+        """A city is a LOCATION, not an ADDRESS — the two carry different risk."""
+        spans = ner.detect("The office is located in Germany.")
+        assert not any(s.entity_type == "ADDRESS" for s in spans)
+
+
+# ── NRP: nationality / religious / political group ───────────────────────────
+
+
+class TestNRPDetection:
+    def test_nationality_is_reported_as_nrp(self, ner):
+        spans = ner.detect("She is Kurdish and lives in Berlin.")
+        assert any(s.entity_type == "NRP" and s.text == "Kurdish" for s in spans)
+
+    def test_nrp_is_not_reported_as_an_organisation(self, ner):
+        """Regression: NORP used to map to ORG.
+
+        Nationality, religion and political affiliation are GDPR Article 9 data.
+        Labelling them ORG both mistyped them and, under ORG's `warn` action,
+        left them in the text.
+        """
+        spans = ner.detect("She is Kurdish and lives in Berlin.")
+        assert not any(s.entity_type == "ORG" for s in spans)
+
+    def test_nrp_is_off_in_the_default_llm_policy(self):
+        """These words are ordinary vocabulary — redacting them is opt-in."""
+        from wardcat.config.loader import DEFAULT_CONFIG
+
+        policy = DEFAULT_CONFIG["llm_detector"]["entities"]
+        assert policy["NRP"] == {"enabled": False, "action": "redact"}
 
 
 # ── Disabled entity ───────────────────────────────────────────────────────────

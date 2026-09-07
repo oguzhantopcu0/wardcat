@@ -570,6 +570,32 @@ class Wardcat(EntityPolicyMixin):
         self._rebuild()
         return self
 
+    def with_min_confidence(self, minimum: float) -> Wardcat:
+        """Set the confidence floor: spans scoring below *minimum* are dropped.
+
+        Every detection carries a confidence, tiered by how strong the evidence
+        is — a checksum-verified card is 1.0, a distinctive format such as an
+        email is 0.97, a model layer is 0.85, a keyword-heuristic address is
+        0.90, and a checksum whose own odds are weak (the ABA mod-10, the NHS
+        mod-11, the IMEI Luhn) with no supporting keyword nearby is 0.70.
+
+        The default floor is ``0.8``, which sits between that last tier and
+        everything else: those uncued matches are found but not acted on. Lower
+        it to trade precision for recall::
+
+            guard.with_min_confidence(0.6)   # act on uncued checksum matches too
+
+        Set it to ``0`` to act on everything a layer reports.
+
+        :raises ConfigError: if *minimum* is not a number between 0 and 1.
+        """
+        from wardcat.config.loader import _validate_min_confidence
+
+        _validate_min_confidence(minimum)
+        self._config["min_confidence"] = float(minimum)
+        self._rebuild()
+        return self
+
     def set_salt(self, salt: str) -> Wardcat:
         """Update the hash salt."""
         self._config["salt"] = salt
