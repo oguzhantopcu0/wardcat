@@ -11,19 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **The Transformers backend loaded every model as `bfloat16`.** That is right on
-  a recent NVIDIA card and wrong everywhere else. Apple Silicon has no bf16
-  arithmetic unit — Metal emulates it, so every matmul paid a conversion the
-  fp16 path does not. Plain CPU is worse: most CPU kernels have no
-  half-precision path at all and fall back through fp32 anyway, so asking for a
-  narrow dtype there bought nothing.
+- **A pre-Ampere CUDA card no longer gets a dtype it cannot run.** The
+  Transformers backend hardcoded `bfloat16`; those cards have no bf16 support at
+  all, and `torch.cuda.is_bf16_supported()` says so, so they get `float16` now.
 
-  The dtype is now chosen for the device — `bfloat16` on a CUDA card that
-  reports support for it, `float16` on Apple Silicon, `float32` on CPU — and
-  `with_llm(dtype="float32")` overrides the choice. Ampere and later keep
-  `bfloat16`: it runs natively there and its wider exponent range is the safer
-  of the two half formats.
+- **`with_llm(dtype=...)` chooses the weight dtype.** A torch dtype name
+  (`"float16"`, `"bfloat16"`, `"float32"`); an unknown name is refused rather
+  than silently ignored.
 
+  The default stays `bfloat16` everywhere else, including Apple Silicon, and
+  that is worth writing down because the obvious change does not work. Metal has
+  no bf16 arithmetic unit and emulates it, so fp16 ought to be faster there —
+  but loading a model as `float16` with `device_map="auto"` on MPS **segfaults
+  the interpreter** on the torch/transformers versions this package supports,
+  where the same model as `bfloat16` answers in 13 seconds (measured on an M1
+  with SmolLM2-135M-Instruct). A default that crashes is worse than one that is
+  merely slow. The argument is there for anyone whose stack does better.
 
 ## [1.2.0] — 2026-09-08
 

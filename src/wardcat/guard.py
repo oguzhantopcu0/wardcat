@@ -489,11 +489,15 @@ class Wardcat(EntityPolicyMixin):
             selecting ``vllm`` without a ``base_url`` must still reach vLLM,
             not Ollama).
         :param dtype: weight dtype for the ``transformers`` backend, as a torch
-            dtype name (``"float16"``, ``"bfloat16"``, ``"float32"``). Left
-            unset, one is chosen for the device: ``bfloat16`` on a CUDA card
-            that supports it, ``float16`` on Apple Silicon (which emulates
-            bf16 rather than running it), ``float32`` on plain CPU. Ignored by
-            the other backends, which do not load weights themselves.
+            dtype name (``"float16"``, ``"bfloat16"``, ``"float32"``); an
+            unknown name raises. Left unset the default is ``bfloat16``, except
+            on a pre-Ampere CUDA card, which has no bf16 support and gets
+            ``float16``. On Apple Silicon ``bfloat16`` is emulated and fp16
+            *ought* to be faster, but loading as ``float16`` with
+            ``device_map="auto"`` on MPS segfaults on the supported
+            torch/transformers versions — hence the argument rather than a
+            different default. Ignored by the other backends, which do not load
+            weights themselves.
         :param language: selects a localized system prompt for :meth:`is_sensitive`
             (``tr``/``de``/``fr``; anything else uses the English, multilingual-aware
             prompt). It does not change the entity-detection prompt used by
