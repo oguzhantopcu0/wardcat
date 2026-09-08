@@ -64,6 +64,31 @@ is logged. Matches report `0.90` confidence rather than `0.97` — a numbering-p
 check is weaker than a checksum, and each extra region widens what counts as a
 number, so add the regions you serve rather than all of them.
 
+## Confidence floor
+
+Every detection carries a confidence, tiered by how strong the evidence is:
+
+| Tier | Value | What earns it |
+|---|---|---|
+| checksum | `1.00` | a card passing Luhn, an IBAN passing mod-97, a Bitcoin address |
+| structural | `0.97` | a distinctive format — email, JWT, IPv4 |
+| fuzzy | `0.90` | a keyword heuristic — a street address, a cued password or handle |
+| model | `0.85` | a span from the NER or LLM layer |
+| uncued | `0.70` | a bare digit run passing a checksum whose own odds are weak |
+
+`min_confidence` is the floor below which a span is dropped before any action is
+applied. It defaults to `0.8`, which sits above that last tier and below every
+other one, so those uncued matches are found but left alone:
+
+```python
+guard.with_min_confidence(0.6)    # act on uncued matches too
+guard.with_min_confidence(0.95)   # checksummed and structural only
+```
+
+The floor is applied **after** overlap resolution, so a stronger span still wins
+its overlap first: a phone number that also satisfies the NHS checksum resolves
+as `PHONE`, rather than being dropped as a weak NHS match.
+
 ## Value propagation
 
 Model-based layers sometimes report a repeated value only once. `with_propagation()`
@@ -100,6 +125,8 @@ if res.warnings:
 ```yaml
 salt: ""
 use_ner: false
+min_confidence: 0.8      # drop spans scoring below this
+phone_regions: []        # CLDR codes for libphonenumber-backed PHONE
 propagate_matches: false
 propagate_min_length: 3
 
