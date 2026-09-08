@@ -51,12 +51,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `hesap adı`, `username`, `user id`, `login`, `nick` — with the Turkish
   suffixes allowed for.
 
-  The shape rule that gates the credential does not work here: a username is
-  often a plain lower-case run, and so is "bulunamadı". A stoplist of the words
-  that actually follow these keywords in prose is what separates them, and it is
-  tested against fourteen such sentences. Handles are ASCII, so the match also
-  refuses to stop in the middle of a Turkish word — otherwise "yanlış" arrives
-  as the handle "yanlı". Reported at `0.90`, value only, keyword left in place.
+  How much the keyword proves depends on whether it is assigning anything. With
+  a connector — `username: jsmith`, `hesap adı = jsmith` — somebody is plainly
+  naming a handle, so any handle-shaped token counts. Without one the keyword
+  sits in ordinary prose as often as not ("the login page", "kullanıcı adı
+  alanı"), and no stoplist can enumerate what follows it, so the token has to
+  carry a mark an ordinary word does not: a dot, underscore, hyphen or digit.
+  Measured over 32 sentences, that rule gives no misses and no false positives;
+  a stoplist alone gave eight false positives out of twelve.
+
+  Two details worth knowing. The value is matched case-sensitively, because
+  `re.IGNORECASE` folds the Turkish dotless "ı" into `[A-Za-z]` and let "alanı"
+  through as a handle. And a trailing full stop is taken with the value rather
+  than trimmed: it reads like the sentence's, but a password or handle may
+  genuinely end in one, and trimming the wrong one leaves a character of the
+  real value in the text. Reported at `0.90`, value only, keyword left in place.
 
 - **A credential written out in prose is now caught.** The secret patterns keyed
   on a provider prefix — `sk-`, `ghp_`, `AKIA` — and a password typed into a

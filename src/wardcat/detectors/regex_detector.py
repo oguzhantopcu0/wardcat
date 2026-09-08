@@ -498,16 +498,37 @@ _KEYWORD_CREDENTIAL: re.Pattern = re.compile(
 # its own either: "ahmet.yilmaz" is a handle here and a filename somewhere else.
 # As with a password, the word introducing it is the evidence. Turkish takes its
 # suffixes on the second noun ("kullanıcı adınız"), hence the suffix allowance.
-_KEYWORD_USERNAME: re.Pattern = re.compile(
-    r"(?:kullan[ıi]c[ıi]\s+(?:ad|kod)[a-zçğıöşü]{0,6}"
+# Two forms, because the evidence differs. With a connector — "username: jsmith",
+# "hesap adı = jsmith" — somebody is plainly assigning a handle, so any
+# handle-shaped token counts. Without one, the keyword sits in ordinary prose as
+# often as not ("the login page", "kullanıcı adı alanı"), and no stoplist can
+# enumerate the words that follow it; so the token must carry a mark an ordinary
+# word does not: a dot, underscore, hyphen or digit.
+#
+# The keyword alone is case-folded. The value must not be: re.IGNORECASE folds
+# the Turkish dotless "ı" into [A-Za-z], which let "alanı" through as a handle.
+_HANDLE = r"[A-Za-z0-9][A-Za-z0-9._\-]{2,63}"
+_HANDLE_WITH_MARK = r"[A-Za-z0-9][A-Za-z0-9._\-]*[._\-0-9][A-Za-z0-9._\-]*"
+_USERNAME_KEYWORD = (
+    r"(?i:kullan[ıi]c[ıi]\s+(?:ad|kod)[a-zçğıöşü]{0,6}"
     r"|hesap\s+ad[a-zçğıöşü]{0,6}"
     r"|user\s?name|username|user\s+id|userid|login|nick(?:name)?)"
-    r"\s*(?:ise|is|=|:)?\s*"
-    r"[\"']?(?P<user>[A-Za-z0-9][A-Za-z0-9._\-]{2,63})"
-    # Handles are ASCII, so a Turkish letter here means the match cut a word in
-    # half — "yanlış" would otherwise arrive as the handle "yanlı".
-    r"(?![A-Za-zçğıöşüÇĞİÖŞÜ])[\"']?",
-    re.IGNORECASE,
+)
+# A handle never continues into a letter: without this, "yanlış" arrives as "yanlı".
+_HANDLE_END = r"(?![A-Za-z0-9._\-çğıöşüÇĞİÖŞÜ])"
+
+_KEYWORD_USERNAME: re.Pattern = re.compile(
+    _USERNAME_KEYWORD
+    + r"\s*(?:ise|is|=|:)\s*[\"']?(?P<user>"
+    + _HANDLE
+    + r")"
+    + _HANDLE_END
+    + r"|"
+    + _USERNAME_KEYWORD
+    + r"\s+[\"']?(?P<bare>"
+    + _HANDLE_WITH_MARK
+    + r")"
+    + _HANDLE_END
 )
 
 # The words that actually follow those keywords when no handle is being given.
@@ -1058,16 +1079,23 @@ class RegexDetector(BaseDetector):
                     )
                 )
 
-        # A credential introduced by the word for it ("parolası ise …",
-        # "password: …"). Only the value is reported, not the keyword.
-        cued_secret_spans: set[tuple[int, int]] = set()
+        # Values named by the word beside them — a credential ("parolası ise …")
+        # or a handle ("kullanıcı adı …"). Only the value is reported, never the
+        # keyword, and these offsets mark which spans are the cued kind.
+        cued_spans: set[tuple[int, int]] = set()
         if "CUSTOM_SECRET" in self.enabled_entities:
             for match in _KEYWORD_CREDENTIAL.finditer(scan_text):
                 value = match.group("secret")
                 if not _looks_like_a_secret(value):
                     continue
+                # A trailing "." is kept. It reads like the sentence's, but
+                # nothing here can tell that from a password that ends in one,
+                # and trimming the wrong one leaves a character of the real
+                # secret in the text. Over-taking costs a full stop; under-taking
+                # leaks. The cost is that the same password hashes differently
+                # at a sentence end than mid-sentence.
                 start, end = match.start("secret"), match.end("secret")
-                cued_secret_spans.add((start, end))
+                cued_spans.add((start, end))
                 spans.append(
                     DetectedSpan(
                         entity_type="CUSTOM_SECRET",
@@ -1081,11 +1109,13 @@ class RegexDetector(BaseDetector):
         # password above: the cue carries the meaning, the value carries none.
         if "USERNAME" in self.enabled_entities:
             for match in _KEYWORD_USERNAME.finditer(scan_text):
-                value = match.group("user")
+                group = "user" if match.group("user") is not None else "bare"
+                value = match.group(group)
                 if not _looks_like_a_username(value):
                     continue
-                start, end = match.start("user"), match.end("user")
-                cued_secret_spans.add((start, end))
+                # Trailing punctuation is kept, for the reason above.
+                start, end = match.start(group), match.end(group)
+                cued_spans.add((start, end))
                 spans.append(
                     DetectedSpan(
                         entity_type="USERNAME",
@@ -1164,7 +1194,7 @@ class RegexDetector(BaseDetector):
             # A keyword-cued credential or username is a heuristic — the word
             # beside it is the only evidence — so it does not get the tier a
             # self-identifying pattern earns.
-            if (s.start, s.end) in cued_secret_spans:
+            if (s.start, s.end) in cued_spans:
                 s.confidence = CONF_FUZZY
             else:
                 s.confidence = _regex_confidence(s.entity_type, s.text)
