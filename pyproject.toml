@@ -1,6 +1,6 @@
 [project]
 name = "wardcat"
-version = "1.1.2"
+version = "1.2.0"
 description = "On-prem detection & anonymization of PII and sensitive data for LLM inputs — hybrid regex + NER + local LLM"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,6 +38,10 @@ dependencies = [
 ner = [
     "spacy>=3.8.14,<4",
 ]
+# libphonenumber-backed PHONE detection for national formats worldwide
+phone = [
+    "phonenumbers>=8.13,<10",
+]
 # HuggingFace Transformers backend (GPU/CPU inference)
 transformers = [
     "transformers>=5.13.0,<6",
@@ -50,6 +54,7 @@ transformers = [
 # Full install — all optional backends
 all = [
     "spacy>=3.8.14,<4",
+    "phonenumbers>=8.13,<10",
     "transformers>=5.13.0,<6",
     "torch>=2.12.1",
     "accelerate>=1.14.0",

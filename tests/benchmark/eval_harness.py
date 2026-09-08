@@ -59,6 +59,13 @@ CORPUS: list[Sample] = [
         ],
     ),
     (
+        "Our US desk is on +1 415 555 0142, or (415) 555-0198 after hours.",
+        [
+            ("PHONE", "+1 415 555 0142"),
+            ("PHONE", "(415) 555-0198"),
+        ],
+    ),
+    (
         "SSN 123-45-6789 and card 5555555555554444 on file.",
         [
             ("SSN", "123-45-6789"),

@@ -8,11 +8,12 @@ policy so those tests keep their original intent without re-listing entities.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 import pytest
 
 from wardcat import Wardcat
+from wardcat.core.actions import _ACTIONS
 
 # entity → action policy wardcat enabled by default before 0.4.0 made detection
 # opt-in. (ORG, FINANCIAL_AMOUNT, SPECIAL_CATEGORY were off back then.)
@@ -65,6 +66,20 @@ def make_legacy_guard(**kwargs) -> Wardcat:
         guard = guard.with_ner(**ner_kwargs)
     guard.add_entities(LEGACY_POLICY)
     return guard
+
+
+@pytest.fixture(autouse=True)
+def _isolate_action_registry() -> Iterator[None]:
+    """Undo any ``register_action`` a test performs.
+
+    The registry is process-global and overriding a name is a supported feature,
+    so without this a test that registers ``"hash"`` (or a built-in-shadowing
+    name) silently changes every test that runs after it.
+    """
+    saved = dict(_ACTIONS)
+    yield
+    _ACTIONS.clear()
+    _ACTIONS.update(saved)
 
 
 @pytest.fixture

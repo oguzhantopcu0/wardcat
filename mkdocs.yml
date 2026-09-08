@@ -79,6 +79,7 @@ nav:
   - Guide:
       - Detection layers: guide/layers.md
       - Configuration & policy: guide/configuration.md
+      - Reversible masking: guide/reversible.md
       - Extending: guide/extending.md
       - MCP server: guide/mcp-server.md
       - Security: guide/security.md

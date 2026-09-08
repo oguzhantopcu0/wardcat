@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import hashlib
 import logging
 import re
 from collections.abc import Callable
@@ -15,19 +16,67 @@ _SEP = r"[ \-\.]{0,2}"  # optional space/dash/dot in card numbers (up to 2 chars
 
 _PATTERNS: dict[str, tuple[str, int]] = {
     # ── Credit card ──────────────────────────────────────────────────
-    # Supports spaced and compact formats: 4111111111111111 or 4111 1111 1111 1111
+    # Supports spaced and compact formats: 4111111111111111 or 4111 1111 1111 1111.
+    # Every match is Luhn-validated (_VALIDATORS), so the issuer prefixes below are
+    # about *precision* — they keep an arbitrary digit run from being offered to the
+    # checksum at all, where roughly one in ten would pass by chance.
+    # Longer variants come first: a 19-digit Visa must not be truncated to its
+    # 16-digit prefix and then rejected by the trailing (?!\d).
     "CREDIT_CARD": (
         r"(?<!\d)"
         r"(?:"
-        rf"4[0-9]{{3}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # Visa 16
+        rf"4[0-9]{{3}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{3}}"  # Visa 19
+        rf"|4[0-9]{{3}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # Visa 16
         rf"|4[0-9]{{12}}"  # Visa 13
-        rf"|5[1-5][0-9]{{2}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # MasterCard
+        rf"|5[1-5][0-9]{{2}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # MasterCard 51-55
+        # MasterCard 2-series (2221-2720) — issued since 2017
+        rf"|2(?:22[1-9]|2[3-9][0-9]|[3-6][0-9]{{2}}|7[01][0-9]|720)"
+        rf"{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"
         rf"|3[47][0-9]{{2}}{_SEP}[0-9]{{6}}{_SEP}[0-9]{{5}}"  # Amex (4-6-5)
         rf"|3(?:0[0-5]|[68][0-9])[0-9]{{11}}"  # Diners
+        rf"|35(?:2[89]|[3-8][0-9]){_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # JCB 3528-3589
+        rf"|(?:1800|2131)[0-9]{{11}}"  # JCB legacy, 15 digits
         rf"|6(?:011|5[0-9]{{2}}){_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # Discover
+        # Maestro — 12 to 19 digits, so the length is carried by the quantifier
+        rf"|(?:5018|5020|5038|5893|6304|6759|676[1-3])[0-9]{{8,15}}"
         r")"
         r"(?!\d)",
         0,
+    ),
+    # ── Crypto wallets ─────────────────────────────────────────────────
+    # Bitcoin base58 (P2PKH/P2SH) and bech32/bech32m segwit are checksum-gated
+    # by _validate_crypto_wallet; the Ethereum form is checked on its shape.
+    "CRYPTO_WALLET": (
+        r"\b(?:"
+        r"[13][a-km-zA-HJ-NP-Z1-9]{25,34}"  # base58: P2PKH (1…) / P2SH (3…)
+        r"|(?:bc|tb)1[ac-hj-np-z02-9]{11,71}"  # bech32 / bech32m segwit
+        r"|0x[0-9a-fA-F]{40}"  # Ethereum-style account address
+        r")\b",
+        0,
+    ),
+    # ── IMEI ───────────────────────────────────────────────────────────
+    # Both forms match. A keyworded match is proven; a bare 15-digit run that
+    # happens to pass Luhn is a candidate, and _regex_confidence scores it as
+    # one — see the CONF_UNCUED tier.
+    "IMEI": (
+        r"\bimei\s*(?:no\.?|nr\.?|number|numaras[iı])?\s*:?\s*\d{15}\b"
+        r"|\b\d{15}\b",
+        re.IGNORECASE,
+    ),
+    # ── US bank routing number (ABA / RTN) ─────────────────────────────
+    "BANK_ROUTING": (
+        r"\b(?:aba|rtn|routing)\s*(?:transit\s*)?(?:no\.?|number|#)?\s*:?\s*\d{9}\b"
+        r"|\b\d{9}\b",
+        re.IGNORECASE,
+    ),
+    # ── UK NHS number ──────────────────────────────────────────────────
+    # The NHS 3-3-4 grouping is also the US phone grouping, and mod-11 lets 9%
+    # of US-format numbers through (measured over 20k generated numbers). So the
+    # bare form is matched but scored as a candidate, not a finding.
+    "NHS_NUMBER": (
+        r"\bnhs\s*(?:no\.?|number)?\s*:?\s*\d{3}[ \-]?\d{3}[ \-]?\d{4}\b"
+        r"|\b\d{3}[ \-]?\d{3}[ \-]?\d{4}\b",
+        re.IGNORECASE,
     ),
     # ── Email ──────────────────────────────────────────────────────────
     "EMAIL": (
@@ -40,6 +89,9 @@ _PATTERNS: dict[str, tuple[str, int]] = {
     # ── Phone ──────────────────────────────────────────────────────────
     # Turkish phone requires 0 or +90 prefix; bare 10 digits will not match.
     # International E.164 format is also supported (+1, +44, +49, etc.).
+    # A bare national 3-3-4 run ("123 456 7890") is deliberately NOT matched —
+    # it is indistinguishable from an ordinary number sequence, so the US form
+    # is accepted only with its area code in parentheses.
     "PHONE": (
         r"(?<!\d)"
         r"(?:"
@@ -52,8 +104,18 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         # German mobile: 015x/016x/017x + 6-8 digits, e.g. 0151 23456789
         r"01[5-7]\d[\s/\-]?\d{6,8}"
         r"|"
+        # US/NANP national, area code parenthesised: (415) 555-0142 / (415)555-0142
+        r"\(\d{3}\)[\s\-.]?\d{3}[\s\-.]?\d{4}"
+        r"|"
         # International E.164 (non-Turkish): +1..., +44..., +49..., etc.
-        r"\+(?!90)[1-9]\d{1,3}[\s\-]?\d{2,4}[\s\-]?\d{2,4}[\s\-]?\d{0,4}"
+        # The country code is 1–4 digits: `\d{0,3}` (not `{1,3}`) so a
+        # single-digit code followed by a separator — "+1 415 555 0142" — is not
+        # excluded. The lookahead requires 7–15 digits in total, which is what
+        # keeps the shorter country codes from turning this into a loose match
+        # on any "+" followed by a couple of numbers. Both quantifiers are
+        # bounded, so the pattern stays linear (see _REDOS_GATE).
+        r"\+(?!90)(?=(?:[\s\-]?\d){7,15}(?!\d))[1-9]\d{0,3}"
+        r"[\s\-]?\d{2,4}[\s\-]?\d{2,4}[\s\-]?\d{0,4}"
         r")"
         r"(?!\d)",
         0,
@@ -71,9 +133,14 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         re.IGNORECASE,
     ),
     # ── IP address ────────────────────────────────────────────────────
+    # The guards either side keep a dotted quad from being read out of a longer
+    # dotted run: "03.93.92.16.85" is a French phone number, and its first four
+    # groups are a syntactically valid address.
     "IP_ADDRESS": (
-        r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}"
-        r"(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b",
+        r"(?<!\d\.)(?<!\d)"
+        r"(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}"
+        r"(?:25[0-5]|2[0-4]\d|[01]?\d\d?)"
+        r"(?!\.?\d)",
         0,
     ),
     # ── Turkish National ID (TC Kimlik No) ────────────────────────────
@@ -165,7 +232,13 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         r"|"
         r"\b[XYZ]\d{7}[TRWAGMYFPDXBNJZSQVHLCKE]\b"
         r"|"
-        r"\b[12]\d{2}(?:0[1-9]|1[0-2])\d{10}\b",
+        r"\b[12]\d{2}(?:0[1-9]|1[0-2])\d{10}\b"
+        # A bare nine- or eleven-digit run is far too common to flag, so the
+        # Dutch and Polish numbers are matched with their keyword.
+        r"|"
+        r"(?i:\bbsn\s*(?:nr\.?|nummer)?\s*:?\s*\d{9}\b)"
+        r"|"
+        r"(?i:\bpesel\s*(?:nr\.?|numer)?\s*:?\s*\d{11}\b)",
         0,
     ),
     # ── Passport Number ───────────────────────────────────────────────────
@@ -261,7 +334,8 @@ _PATTERNS: dict[str, tuple[str, int]] = {
     ),
     # ── Custom Secret ─────────────────────────────────────────────────
     # Known token/credential prefix patterns — services with well-defined formats.
-    # Contextual detection (password=VALUE) is delegated to the LLM detector.
+    # A credential with no shape of its own, introduced by the word for it
+    # ("parolası ise …"), is handled separately by _KEYWORD_CREDENTIAL.
     # Supported:
     #   sk-... / sk-ant-...   — OpenAI / Anthropic API key
     #   sk_live_/sk_test_/rk_live_ — Stripe secret/restricted key
@@ -297,7 +371,25 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         r"|SK[0-9a-fA-F]{32}"
         r"|AC[0-9a-fA-F]{32}"
         r"|npm_[A-Za-z0-9]{36}"
-        r")",
+        r"|github_pat_[A-Za-z0-9_]{40,}"
+        r"|hf_[A-Za-z0-9]{30,}"
+        r"|shpat_[a-fA-F0-9]{32}"
+        r"|dop_v1_[a-f0-9]{64}"
+        r"|xapp-[0-9]-[A-Za-z0-9\-]{20,}"
+        r"|xoxa-[A-Za-z0-9\-]{20,}"
+        r"|xoxr-[A-Za-z0-9\-]{20,}"
+        r")"
+        # Azure storage connection string — the account key is the secret half.
+        r"|AccountKey=[A-Za-z0-9+/=]{60,}"
+        # Sentry DSN: the public key sits in the userinfo position, which the
+        # EMAIL pattern would otherwise read as an address.
+        r"|https://[0-9a-f]{32}@[A-Za-z0-9.\-]{1,255}/\d{1,20}"
+        # The AWS secret access key has no distinctive prefix — only its 40-char
+        # shape — so it is matched with the name it is written under.
+        r"|(?i:aws_secret_access_key)[\"\' ]*[=:][\"\' ]*[A-Za-z0-9/+=]{40}"
+        # Google service-account JSON: the private key block is already caught by
+        # the PEM branch; this is the key id beside it.
+        r"|(?i:\"private_key_id\")\s*:\s*\"[0-9a-f]{40}\"",
         0,
     ),
     # ── UUID ─────────────────────────────────────────────────────────
@@ -379,6 +471,145 @@ _COMPILED: dict[str, re.Pattern] = {
 # matches "password@host" as an email and, being the longer span, wins overlap
 # resolution — leaving the real secret undetected. We capture the password and
 # suppress the spurious EMAIL match that starts at the same offset.
+# ── Keyword-cued credentials ─────────────────────────────────────────────────
+# A password written out in prose has no shape of its own to key on, so the word
+# introducing it is the evidence. Turkish takes possessive and case suffixes on
+# the noun ("parolası", "şifreniz"), which is why the roots carry a suffix
+# allowance, and joins with "ise" where English uses "is".
+#
+# Only the value is reported — the keyword stays in the text, which is what makes
+# the redacted line still readable.
+_KEYWORD_CREDENTIAL: re.Pattern = re.compile(
+    r"(?:password|passwd|passphrase|pwd"
+    r"|api[_\- ]?key|apikey"
+    r"|access[_\- ]?(?:token|code)|auth[_\- ]?token"
+    r"|(?:şifre|sifre|parola)[a-zçğıöşü]{0,8}"
+    r"|eri[şs]im\s+kodu)"
+    # The connector is optional: "erişim kodu ALPHA-BRAVO-42" has none, and
+    # _looks_like_a_secret is what stops an ordinary following word matching.
+    r"\s*(?:ise|is|=|:)?\s*"
+    r"[\"']?(?P<secret>[^\s\"']{6,128})[\"']?",
+    re.IGNORECASE,
+)
+
+
+# ── Keyword-cued usernames ───────────────────────────────────────────────────
+# A username is an online identifier tied to a person, and it has no shape of
+# its own either: "ahmet.yilmaz" is a handle here and a filename somewhere else.
+# As with a password, the word introducing it is the evidence. Turkish takes its
+# suffixes on the second noun ("kullanıcı adınız"), hence the suffix allowance.
+# Two forms, because the evidence differs. With a connector — "username: jsmith",
+# "hesap adı = jsmith" — somebody is plainly assigning a handle, so any
+# handle-shaped token counts. Without one, the keyword sits in ordinary prose as
+# often as not ("the login page", "kullanıcı adı alanı"), and no stoplist can
+# enumerate the words that follow it; so the token must carry a mark an ordinary
+# word does not: a dot, underscore, hyphen or digit.
+#
+# The keyword alone is case-folded. The value must not be: re.IGNORECASE folds
+# the Turkish dotless "ı" into [A-Za-z], which let "alanı" through as a handle.
+_HANDLE = r"[A-Za-z0-9][A-Za-z0-9._\-]{2,63}"
+_HANDLE_WITH_MARK = r"[A-Za-z0-9][A-Za-z0-9._\-]*[._\-0-9][A-Za-z0-9._\-]*"
+_USERNAME_KEYWORD = (
+    r"(?i:kullan[ıi]c[ıi]\s+(?:ad|kod)[a-zçğıöşü]{0,6}"
+    r"|hesap\s+ad[a-zçğıöşü]{0,6}"
+    r"|user\s?name|username|user\s+id|userid|login|nick(?:name)?)"
+)
+# A handle never continues into a letter: without this, "yanlış" arrives as "yanlı".
+_HANDLE_END = r"(?![A-Za-z0-9._\-çğıöşüÇĞİÖŞÜ])"
+
+_KEYWORD_USERNAME: re.Pattern = re.compile(
+    _USERNAME_KEYWORD
+    + r"\s*(?:ise|is|=|:)\s*[\"']?(?P<user>"
+    + _HANDLE
+    + r")"
+    + _HANDLE_END
+    + r"|"
+    + _USERNAME_KEYWORD
+    + r"\s+[\"']?(?P<bare>"
+    + _HANDLE_WITH_MARK
+    + r")"
+    + _HANDLE_END
+)
+
+# The words that actually follow those keywords when no handle is being given.
+# Nothing else separates "ahmetyilmaz" from "bulunamadi" — both are letter runs
+# — so this list, not a shape rule, is what keeps the filter honest.
+_NOT_A_USERNAME: frozenset[str] = frozenset(
+    {
+        "bos",
+        "boş",
+        "yok",
+        "gerekli",
+        "zorunlu",
+        "hatali",
+        "hatalı",
+        "yanlis",
+        "yanlış",
+        "gecersiz",
+        "geçersiz",
+        "bilinmiyor",
+        "bulunamadi",
+        "bulunamadı",
+        "girilmedi",
+        "tanimsiz",
+        "tanımsız",
+        "degisti",
+        "değişti",
+        "guncellendi",
+        "güncellendi",
+        "silindi",
+        "olarak",
+        "ile",
+        "veya",
+        "empty",
+        "blank",
+        "none",
+        "null",
+        "unknown",
+        "invalid",
+        "required",
+        "missing",
+        "not",
+        "found",
+        "failed",
+        "unset",
+        "changed",
+        "updated",
+        "deleted",
+        "field",
+        "value",
+        "here",
+        "above",
+        "below",
+        "and",
+        "the",
+    }
+)
+
+
+def _looks_like_a_username(value: str) -> bool:
+    """Reject the outcome words that follow a username keyword in prose."""
+    return value.lower() not in _NOT_A_USERNAME
+
+
+def _looks_like_a_secret(value: str) -> bool:
+    """Reject the ordinary words that follow these keywords in prose.
+
+    "şifre yanlış", "password is unknown" and "parola değiştirildi" all put a
+    plain word where a secret would go. A credential almost always mixes
+    character classes; a lower-case word never does.
+    """
+    if len(value) < 6:
+        return False
+    classes = (
+        any(c.islower() for c in value)
+        + any(c.isupper() for c in value)
+        + any(c.isdigit() for c in value)
+        + any(not c.isalnum() for c in value)
+    )
+    return classes >= 2
+
+
 _URI_CREDENTIAL: re.Pattern = re.compile(
     # Bounded quantifiers keep this linear; an unbounded run before the required
     # "://" backtracks quadratically on adversarial input. See _REDOS_GATE.
@@ -542,6 +773,158 @@ def _validate_tc_id(value: str) -> bool:
     return True
 
 
+_B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+_BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+# Spanish DNI/NIE check letters, indexed by the number modulo 23.
+_DNI_LETTERS = "TRWAGMYFPDXBNJZSQVHLCKE"
+
+
+def _b58check_ok(value: str) -> bool:
+    """Base58Check: the last four bytes are the double-SHA-256 of the payload."""
+    num = 0
+    for ch in value:
+        idx = _B58_ALPHABET.find(ch)
+        if idx < 0:
+            return False
+        num = num * 58 + idx
+    raw = num.to_bytes((num.bit_length() + 7) // 8, "big")
+    # A leading '1' encodes a leading zero byte, which the integer form drops.
+    raw = b"\x00" * (len(value) - len(value.lstrip("1"))) + raw
+    if len(raw) < 5:
+        return False
+    payload, checksum = raw[:-4], raw[-4:]
+    return hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4] == checksum
+
+
+def _bech32_polymod(values: list[int]) -> int:
+    """BIP-173 checksum accumulator."""
+    generator = (0x3B6A57B2, 0x26508E6D, 0x1EA119FA, 0x3D4233DD, 0x2A1462B3)
+    chk = 1
+    for value in values:
+        top = chk >> 25
+        chk = ((chk & 0x1FFFFFF) << 5) ^ value
+        for i in range(5):
+            if (top >> i) & 1:
+                chk ^= generator[i]
+    return chk
+
+
+def _bech32_ok(value: str) -> bool:
+    """Segwit address checksum — bech32 (v0) or bech32m (v1+).
+
+    A bech32 string is case-insensitive but must not mix cases; the constant
+    the checksum lands on is what separates the two encodings.
+    """
+    if value != value.lower() and value != value.upper():
+        return False
+    lowered = value.lower()
+    pos = lowered.rfind("1")
+    if pos < 1 or pos + 7 > len(lowered):
+        return False
+    hrp, data = lowered[:pos], lowered[pos + 1 :]
+    values: list[int] = []
+    for ch in data:
+        idx = _BECH32_CHARSET.find(ch)
+        if idx < 0:
+            return False
+        values.append(idx)
+    expanded = [ord(c) >> 5 for c in hrp] + [0] + [ord(c) & 31 for c in hrp] + values
+    return _bech32_polymod(expanded) in (1, 0x2BC830A3)
+
+
+def _validate_crypto_wallet(value: str) -> bool:
+    """Bitcoin addresses are checksum-verified; Ethereum ones are shape-verified.
+
+    EIP-55 mixed-case checksumming needs keccak-256, which the standard library
+    does not carry, so an Ethereum address is accepted on its ``0x`` + 40 hex
+    form alone. Bitcoin is fully gated: Base58Check for the legacy forms and the
+    bech32/bech32m polymod for segwit.
+    """
+    v = value.strip()
+    if v[:2].lower() == "0x":
+        return len(v) == 42
+    if v[:3].lower() in ("bc1", "tb1"):
+        return _bech32_ok(v)
+    return _b58check_ok(v)
+
+
+def _validate_imei(value: str) -> bool:
+    """IMEI — exactly 15 digits, Luhn-checked (the keyword carries no digits)."""
+    digits = "".join(c for c in value if c.isdigit())
+    if len(digits) != 15:
+        return False
+    return _validate_luhn(digits)
+
+
+def _validate_aba_routing(value: str) -> bool:
+    """ABA routing transit number — weighted mod-10 over a Federal Reserve prefix.
+
+    The checksum alone accepts one nine-digit run in ten. Requiring the leading
+    pair to be a routing symbol actually in issue removes most of the rest.
+    """
+    d = [int(c) for c in value if c.isdigit()]
+    if len(d) != 9:
+        return False
+    prefix = d[0] * 10 + d[1]
+    if not (prefix <= 12 or 21 <= prefix <= 32 or 61 <= prefix <= 72 or prefix == 80):
+        return False
+    total = 3 * (d[0] + d[3] + d[6]) + 7 * (d[1] + d[4] + d[7]) + (d[2] + d[5] + d[8])
+    return total % 10 == 0
+
+
+def _validate_nhs_number(value: str) -> bool:
+    """UK NHS number — ten digits, mod-11 check digit over weights 10…2."""
+    d = [int(c) for c in value if c.isdigit()]
+    if len(d) != 10:
+        return False
+    total = sum(digit * weight for digit, weight in zip(d[:9], range(10, 1, -1), strict=True))
+    check = 11 - (total % 11)
+    if check == 11:
+        check = 0
+    if check == 10:  # no valid number carries this remainder
+        return False
+    return check == d[9]
+
+
+def _validate_eu_national_id(value: str) -> bool:
+    """Dispatch on shape: Spanish DNI/NIE, French INSEE, Dutch BSN, Polish PESEL.
+
+    Each scheme carries its own check, so the format match alone is no longer
+    the gate: a DNI whose letter does not follow from its digits is rejected.
+    """
+    v = value.strip().upper()
+
+    if v.startswith("BSN"):
+        d = [int(c) for c in v if c.isdigit()]
+        if len(d) != 9:
+            return False
+        # "Elfproef": weights 9…2 over the first eight digits, minus the ninth.
+        total = sum(x * w for x, w in zip(d[:8], range(9, 1, -1), strict=True)) - d[8]
+        return total % 11 == 0
+
+    if v.startswith("PESEL"):
+        d = [int(c) for c in v if c.isdigit()]
+        if len(d) != 11:
+            return False
+        weights = (1, 3, 7, 9, 1, 3, 7, 9, 1, 3)
+        total = sum(x * w for x, w in zip(d[:10], weights, strict=True))
+        return (10 - total % 10) % 10 == d[10]
+
+    # Spanish DNI — eight digits and the letter they determine.
+    if len(v) == 9 and v[:8].isdigit():
+        return v[8] == _DNI_LETTERS[int(v[:8]) % 23]
+
+    # Spanish NIE — X/Y/Z stands for a leading 0/1/2, then the same letter rule.
+    if len(v) == 9 and v[0] in "XYZ" and v[1:8].isdigit():
+        return v[8] == _DNI_LETTERS[int(f"{'XYZ'.index(v[0])}{v[1:8]}") % 23]
+
+    # French INSEE — thirteen significant digits and a two-digit key.
+    if len(v) == 15 and v.isdigit():
+        return int(v[13:]) == 97 - (int(v[:13]) % 97)
+
+    return False
+
+
 # Entity-type → checksum/structural validator. A regex match is only accepted
 # as a violation when its validator (if any) returns True. Adding a new
 # validated entity is a one-line registry entry — no changes to detect().
@@ -549,6 +932,11 @@ _VALIDATORS: dict[str, Callable[[str], bool]] = {
     "TC_ID": _validate_tc_id,
     "IBAN": _validate_iban,
     "CREDIT_CARD": _validate_luhn,
+    "CRYPTO_WALLET": _validate_crypto_wallet,
+    "IMEI": _validate_imei,
+    "BANK_ROUTING": _validate_aba_routing,
+    "NHS_NUMBER": _validate_nhs_number,
+    "EU_NATIONAL_ID": _validate_eu_national_id,
 }
 
 # ── Confidence tiers ──────────────────────────────────────────────────────────
@@ -558,12 +946,23 @@ _VALIDATORS: dict[str, Callable[[str], bool]] = {
 CONF_CHECKSUM = 1.0  # mathematically verified — TC_ID / IBAN / CREDIT_CARD
 CONF_STRUCTURAL = 0.97  # distinctive, high-precision format — email, JWT, IP, secrets…
 CONF_FUZZY = 0.90  # distinctive-but-ambiguous — can over/under-match
+CONF_UNCUED = 0.70  # checksum passed, but the checksum alone is weak evidence
 
 # Entities whose regex is inherently fuzzy (keyword/heuristic, not a rigid format).
 _FUZZY_ENTITIES: frozenset[str] = frozenset({"ADDRESS", "VEHICLE_PLATE"})
 
+# Entities whose checksum is too weak to stand on its own: a bare digit run
+# passes the ABA mod-10, the NHS mod-11 or the IMEI Luhn roughly one time in
+# ten. Refusing to match the bare form would cost real coverage; treating it as
+# proven would flag ordinary reference numbers. Both forms are matched and the
+# supporting keyword — which is part of the match when present, so a span
+# carrying a letter is the cued one — decides which tier the span lands in.
+_CUED_ENTITIES: frozenset[str] = frozenset({"IMEI", "BANK_ROUTING", "NHS_NUMBER"})
 
-def _regex_confidence(entity_type: str) -> float:
+
+def _regex_confidence(entity_type: str, matched: str = "") -> float:
+    if entity_type in _CUED_ENTITIES:
+        return CONF_CHECKSUM if any(c.isalpha() for c in matched) else CONF_UNCUED
     if entity_type in _VALIDATORS:
         return CONF_CHECKSUM
     if entity_type in _FUZZY_ENTITIES:
@@ -580,8 +979,30 @@ class RegexDetector(BaseDetector):
         custom_patterns: dict | None = None,
         *,
         fold_confusables_enabled: bool = True,
+        phone_regions: list[str] | None = None,
     ) -> None:
         self.enabled_entities = enabled_entities
+        # When set, PHONE detection is delegated to libphonenumber for these CLDR
+        # regions instead of the built-in pattern. The pattern covers TR/FR/DE plus
+        # E.164 and is precision-first; a per-country library is the only way to
+        # reach the national formats of everywhere else without guessing. Opt-in,
+        # so a base install behaves exactly as before.
+        #
+        # Availability is settled here rather than on first use: detect() skips the
+        # built-in pattern whenever regions are configured, so discovering the
+        # missing package mid-scan would leave that scan with no PHONE detection at
+        # all — worse than the fallback it is meant to be.
+        self._phone_regions = list(phone_regions or [])
+        if self._phone_regions:
+            try:
+                import phonenumbers  # noqa: F401
+            except ImportError:
+                logger.warning(
+                    "phone_regions is set but the 'phonenumbers' package is missing, so "
+                    "PHONE detection falls back to the built-in pattern. "
+                    "Install with: pip install 'wardcat[phone]'"
+                )
+                self._phone_regions = []
         # When True, matching runs on a confusable-folded copy of the input so
         # homoglyph-obfuscated PII (Cyrillic/Greek lookalikes, fullwidth/Arabic
         # digits) is still detected. Folding is length-preserving, so spans are
@@ -597,6 +1018,35 @@ class RegexDetector(BaseDetector):
                 self._custom_compiled[name] = (re.compile(pattern_str), action)
             except re.error as exc:
                 logger.warning("Custom pattern %r could not be compiled: %s — skipped.", name, exc)
+
+    def _phone_spans(self, text: str) -> list[DetectedSpan]:
+        """PHONE spans from libphonenumber across the configured regions.
+
+        Only called when ``_phone_regions`` is non-empty, which ``__init__``
+        already gated on the package being importable.
+
+        Each region is matched separately and the results merged on offset, since a
+        number written in national form only parses under its own region. Reported
+        at :data:`CONF_FUZZY`: libphonenumber validates the number plan, which is
+        far stronger than a bare digit run, but weaker than a checksum — measured
+        precision on a mixed-locale corpus is well below the structural tier.
+        """
+        import phonenumbers
+
+        seen: dict[tuple[int, int], DetectedSpan] = {}
+        for region in self._phone_regions:
+            for match in phonenumbers.PhoneNumberMatcher(text, region):
+                seen.setdefault(
+                    (match.start, match.end),
+                    DetectedSpan(
+                        entity_type="PHONE",
+                        text=text[match.start : match.end],
+                        start=match.start,
+                        end=match.end,
+                        confidence=CONF_FUZZY,
+                    ),
+                )
+        return list(seen.values())
 
     def detect(self, text: str, candidates: list[DetectedSpan] | None = None) -> list[DetectedSpan]:
         """Return all regex matches for enabled entity types."""
@@ -629,7 +1079,57 @@ class RegexDetector(BaseDetector):
                     )
                 )
 
+        # Values named by the word beside them — a credential ("parolası ise …")
+        # or a handle ("kullanıcı adı …"). Only the value is reported, never the
+        # keyword, and these offsets mark which spans are the cued kind.
+        cued_spans: set[tuple[int, int]] = set()
+        if "CUSTOM_SECRET" in self.enabled_entities:
+            for match in _KEYWORD_CREDENTIAL.finditer(scan_text):
+                value = match.group("secret")
+                if not _looks_like_a_secret(value):
+                    continue
+                # A trailing "." is kept. It reads like the sentence's, but
+                # nothing here can tell that from a password that ends in one,
+                # and trimming the wrong one leaves a character of the real
+                # secret in the text. Over-taking costs a full stop; under-taking
+                # leaks. The cost is that the same password hashes differently
+                # at a sentence end than mid-sentence.
+                start, end = match.start("secret"), match.end("secret")
+                cued_spans.add((start, end))
+                spans.append(
+                    DetectedSpan(
+                        entity_type="CUSTOM_SECRET",
+                        text=text[start:end],
+                        start=start,
+                        end=end,
+                    )
+                )
+
+        # A username introduced by the word for it. Same shape of problem as the
+        # password above: the cue carries the meaning, the value carries none.
+        if "USERNAME" in self.enabled_entities:
+            for match in _KEYWORD_USERNAME.finditer(scan_text):
+                group = "user" if match.group("user") is not None else "bare"
+                value = match.group(group)
+                if not _looks_like_a_username(value):
+                    continue
+                # Trailing punctuation is kept, for the reason above.
+                start, end = match.start(group), match.end(group)
+                cued_spans.add((start, end))
+                spans.append(
+                    DetectedSpan(
+                        entity_type="USERNAME",
+                        text=text[start:end],
+                        start=start,
+                        end=end,
+                    )
+                )
+
         for entity_type, pattern in _COMPILED.items():
+            # The library already produced this type's spans; running the pattern
+            # too would only add lower-coverage duplicates for the resolver to drop.
+            if entity_type == "PHONE" and self._phone_regions:
+                continue
             if entity_type not in self.enabled_entities:
                 continue
             for match in _finditer_builtin(entity_type, pattern, scan_text):
@@ -691,5 +1191,16 @@ class RegexDetector(BaseDetector):
         # and LLM adjudication can treat a fuzzy match differently from a proven
         # one (a checksum span is never overridable; a fuzzy ADDRESS is).
         for s in spans:
-            s.confidence = _regex_confidence(s.entity_type)
+            # A keyword-cued credential or username is a heuristic — the word
+            # beside it is the only evidence — so it does not get the tier a
+            # self-identifying pattern earns.
+            if (s.start, s.end) in cued_spans:
+                s.confidence = CONF_FUZZY
+            else:
+                s.confidence = _regex_confidence(s.entity_type, s.text)
+
+        # Appended after tiering: these carry their own confidence, which is lower
+        # than the structural tier this loop would stamp on a PHONE span.
+        if self._phone_regions and "PHONE" in self.enabled_entities:
+            spans.extend(self._phone_spans(text))
         return spans

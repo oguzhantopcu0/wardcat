@@ -24,12 +24,14 @@ class EntityPolicyMixin:
     """Entity configuration + introspection for ``Wardcat``.
 
     The composing class must provide ``_config`` (the config dict),
-    ``_default_action_warned`` (a bool flag), and a ``_rebuild()`` method.
+    ``_default_action_warned`` (a bool flag), ``_explicit_entities`` (the set this
+    mixin records the caller's choices in), and a ``_rebuild()`` method.
     """
 
     # Provided by the composing class (Wardcat) — declared for type checkers.
     _config: dict[str, Any]
     _default_action_warned: bool
+    _explicit_entities: set[str]
 
     def _rebuild(self) -> None:  # pragma: no cover - overridden by Wardcat
         raise NotImplementedError
@@ -325,6 +327,7 @@ class EntityPolicyMixin:
 
     def _apply_action(self, entity_type: str, action: str) -> None:
         """Update an entity's action on every layer where it exists (no rebuild)."""
+        self._explicit_entities.add(entity_type)
         entities = self._config.get("entities", {})
         if entity_type in entities:
             entities[entity_type]["action"] = action
@@ -366,6 +369,9 @@ class EntityPolicyMixin:
         entity_type = self._normalize_entity(entity_type)
         action = self._normalize_action(action)
         self._warn_if_unknown(entity_type)
+        # Record the caller's intent: the LLM layer enables entities on its own, so
+        # this set is what separates "asked for" from "came with with_llm()".
+        self._explicit_entities.add(entity_type)
 
         if layers is None:
             target = [lyr for lyr, ents in LAYER_ENTITIES.items() if entity_type in ents]

@@ -87,12 +87,14 @@ class TransformersBackend(BaseLLMBackend):
         load_in_8bit: bool = False,
         load_in_4bit: bool = False,
         max_new_tokens: int = 512,
+        dtype: str | None = None,
     ) -> None:
         self._model_name = model
         self._device_map = device_map
         self._load_in_8bit = load_in_8bit
         self._load_in_4bit = load_in_4bit
         self._max_new_tokens = max_new_tokens
+        self._dtype = dtype
         self._pipeline: Any = None
         self._lock = threading.Lock()
 
@@ -215,6 +217,39 @@ class TransformersBackend(BaseLLMBackend):
                     )
         return self._pipeline
 
+    def _resolve_dtype(self, torch: Any) -> Any:
+        """Pick the weight dtype, unless the caller named one.
+
+        The default is ``bfloat16`` everywhere, which is what this backend has
+        always used. That is not because it is optimal on every device — on
+        Apple Silicon there is no bf16 arithmetic unit and Metal emulates it —
+        but because the obvious alternative does not work. Loading a model as
+        ``float16`` with ``device_map="auto"`` on MPS segfaults the interpreter
+        on the torch/transformers versions this package supports; the same model
+        as ``bfloat16`` answers in 13 seconds. A default that crashes is worse
+        than a default that is merely slow, so the choice stands and the
+        ``dtype`` argument is there for anyone whose stack does better.
+
+        The one case that is changed: a pre-Ampere CUDA card has no bf16 support
+        at all, and ``torch.cuda.is_bf16_supported()`` says so, so those get
+        ``float16`` rather than a dtype the card cannot run.
+        """
+        if self._dtype is not None:
+            named = getattr(torch, self._dtype, None)
+            if not isinstance(named, torch.dtype):
+                raise ValueError(
+                    f"Unknown dtype {self._dtype!r}. Use a torch dtype name such as "
+                    "'float16', 'bfloat16' or 'float32'."
+                )
+            return named
+
+        if torch.cuda.is_available():
+            supports_bf16 = getattr(torch.cuda, "is_bf16_supported", None)
+            if supports_bf16 is not None and not supports_bf16():
+                return torch.float16
+
+        return torch.bfloat16
+
     def _load_pipeline(self) -> Any:
         """Create and return the transformers pipeline."""
         try:
@@ -234,11 +269,13 @@ class TransformersBackend(BaseLLMBackend):
         # still works but is deprecated and slated for removal. Pick the name the
         # installed version actually wants so we're correct across 4.40–5.x.
         dtype_kw = "dtype" if _transformers_supports_dtype_kwarg() else "torch_dtype"
+        dtype = self._resolve_dtype(torch)
+        logger.info("Loading %s as %s", self._model_name, dtype)
         kwargs: dict[str, Any] = {
             "task": "text-generation",
             "model": self._model_name,
             "device_map": self._device_map,
-            dtype_kw: torch.bfloat16,
+            dtype_kw: dtype,
         }
 
         if self._load_in_8bit:

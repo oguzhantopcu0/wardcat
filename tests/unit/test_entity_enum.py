@@ -435,8 +435,9 @@ def test_supported_entities_all():
 
 def test_supported_entities_per_layer():
     ner = Wardcat.supported_entities("ner")
-    assert ner == frozenset({"PERSON", "ORG", "ADDRESS"})
+    assert ner == frozenset({"PERSON", "ORG", "ADDRESS", "LOCATION", "NRP"})
     assert "EMAIL" in Wardcat.supported_entities("regex")
+    assert "CRYPTO_WALLET" in Wardcat.supported_entities("regex")
     assert "SPECIAL_CATEGORY" in Wardcat.supported_entities("llm")
 
 

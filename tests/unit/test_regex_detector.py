@@ -33,6 +33,41 @@ class TestCreditCard:
         spans = detector.detect("sipariş no: 123456")
         assert not any(s.entity_type == "CREDIT_CARD" for s in spans)
 
+    @pytest.mark.parametrize(
+        "number,brand",
+        [
+            ("4111111111111111", "Visa 16"),
+            ("4222222222222", "Visa 13"),
+            ("4131034282458809939", "Visa 19"),
+            ("5555555555554444", "MasterCard 51-55"),
+            ("2623322164608847", "MasterCard 2-series"),
+            ("378282246310005", "Amex"),
+            ("30569309025904", "Diners"),
+            ("6011111111111117", "Discover"),
+            ("3558331500082481", "JCB 3528-3589"),
+            ("180016070420458", "JCB legacy 1800"),
+            ("213176828496175", "JCB legacy 2131"),
+            ("630427373398", "Maestro 12-digit"),
+            ("6759649826438453", "Maestro 16-digit"),
+        ],
+    )
+    def test_issuer_ranges(self, detector, number, brand):
+        """Each range is Luhn-valid, so a miss is the pattern's, not the checksum's."""
+        spans = detector.detect(f"payment with {number} today")
+
+        assert any(s.entity_type == "CREDIT_CARD" and s.text == number for s in spans), brand
+
+    def test_a_luhn_invalid_number_in_a_known_range_is_still_rejected(self, detector):
+        """Widening the pattern must not weaken the checksum gate."""
+        spans = detector.detect("card 3558331500082482 here")  # last digit changed
+
+        assert not any(s.entity_type == "CREDIT_CARD" for s in spans)
+
+    def test_a_nineteen_digit_visa_is_not_truncated_to_sixteen(self, detector):
+        spans = detector.detect("card 4131034282458809939 here")
+
+        assert [s.text for s in spans if s.entity_type == "CREDIT_CARD"] == ["4131034282458809939"]
+
 
 class TestEmail:
     def test_standard(self, detector):
@@ -44,6 +79,27 @@ class TestPhone:
     def test_turkish_format(self, detector):
         spans = detector.detect("telefon: 0532 123 45 67")
         assert any(s.entity_type == "PHONE" for s in spans)
+
+
+class TestIpAddress:
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("sunucu 192.168.14.77 uzerinden", ["192.168.14.77"]),
+            ("IP 10.0.0.7.", ["10.0.0.7"]),  # sentence period, still an address
+            ("8.8.8.8 dns", ["8.8.8.8"]),
+            ("255.255.255.0 maske", ["255.255.255.0"]),
+            # A dotted quad read out of a longer dotted run is not an address:
+            # this one is a French phone number written 03.93.92.16.85.
+            ("Mobile: 03.93.92.16.85", []),
+            ("1.2.3.4.5", []),
+            ("v1.2.3.4.5 surum", []),
+        ],
+    )
+    def test_dotted_quads_are_not_taken_from_longer_runs(self, detector, text, expected):
+        found = [s.text for s in detector.detect(text) if s.entity_type == "IP_ADDRESS"]
+
+        assert found == expected
 
 
 class TestIBAN:
@@ -635,6 +691,39 @@ class TestMultilingualPhone:
     def test_fr_de_phone(self, detector, text, number):
         spans = detector.detect(text)
         assert any(s.entity_type == "PHONE" and s.text == number for s in spans), text
+
+    @pytest.mark.parametrize(
+        "text,number",
+        [
+            # Single-digit country code + separator: the country code is 1-4
+            # digits, so "+1 " must not be excluded by requiring a second digit.
+            ("call me on +1 415 555 0142 today", "+1 415 555 0142"),
+            ("call me on +1-415-555-0142 today", "+1-415-555-0142"),
+            ("Moscow +7 495 123 4567", "+7 495 123 4567"),
+            # Longer country codes must keep working.
+            ("London +44 20 7946 0958", "+44 20 7946 0958"),
+            ("Berlin +49 151 23456789", "+49 151 23456789"),
+            ("compact +1415 555 0142", "+1415 555 0142"),
+            # US national — only with a parenthesised area code.
+            ("ring (415) 555-0142 now", "(415) 555-0142"),
+            ("ring (415)555-0142 now", "(415)555-0142"),
+        ],
+    )
+    def test_international_and_us_phone(self, detector, text, number):
+        spans = detector.detect(text)
+        assert any(s.entity_type == "PHONE" and s.text == number for s in spans), text
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "+1 23",  # too few digits for an international number
+            "spec +1 2345 rev",
+            "call +5 ok",
+            "415 555 0142",  # bare national run — deliberately not a phone
+        ],
+    )
+    def test_short_or_bare_number_runs_are_not_phones(self, detector, text):
+        assert not [s for s in detector.detect(text) if s.entity_type == "PHONE"], text
 
 
 # ── VAT_NUMBER ─────────────────────────────────────────────────────────────

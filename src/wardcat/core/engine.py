@@ -6,6 +6,7 @@ import re
 import time
 from typing import Any
 
+from wardcat.core.actions import new_context_id
 from wardcat.core.anonymizer import Anonymizer
 from wardcat.core.models import ScanResult
 from wardcat.detectors.base import BaseDetector, DetectedSpan
@@ -53,6 +54,12 @@ class DetectionEngine:
         self.entity_config: dict[str, Any] = config.get("entities", {})
         self._max_text_bytes: int = config.get("max_text_bytes", _MAX_TEXT_BYTES)
         self._allowlist: set[str] = set(config.get("allowlist", []))
+        # Confidence floor. A span scoring below it is dropped before any action
+        # is applied. The default sits above the "uncued" tier the regex layer
+        # gives a checksum match with no supporting keyword, and below every
+        # other tier, so lowering it trades precision for recall and nothing
+        # else changes.
+        self._min_confidence: float = float(config.get("min_confidence", 0.8))
         self._denylist: list[dict[str, str]] = config.get("denylist", [])
         # Value propagation: once any layer detects a value, redact every other
         # whole-token occurrence of that exact value too. Closes the gap where a
@@ -99,7 +106,10 @@ class DetectionEngine:
 
         raw_spans.extend(self._collect_denylist_spans(text))
         spans = self._filter_spans(raw_spans, text)
-        sanitized, violations = self._anonymizer.apply(text, spans)
+        # One context id per scan — it is what keeps this scan's reversible
+        # placeholders distinct from every other scan's (see TokenAllocator).
+        context_id = new_context_id()
+        sanitized, violations = self._anonymizer.apply(text, spans, context_id=context_id)
 
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         logger.info(
@@ -113,6 +123,7 @@ class DetectionEngine:
             sanitized_text=sanitized,
             violations=violations,
             warnings=warnings,
+            context_id=context_id,
             _salt=self.salt,
         )
 
@@ -154,7 +165,10 @@ class DetectionEngine:
             warnings.extend(w for _, w in results if w)
         raw_spans.extend(self._collect_denylist_spans(text))
         spans = self._filter_spans(raw_spans, text)
-        sanitized, violations = self._anonymizer.apply(text, spans)
+        # One context id per scan — it is what keeps this scan's reversible
+        # placeholders distinct from every other scan's (see TokenAllocator).
+        context_id = new_context_id()
+        sanitized, violations = self._anonymizer.apply(text, spans, context_id=context_id)
 
         elapsed_ms = (time.perf_counter() - t_start) * 1000
         logger.info(
@@ -168,6 +182,7 @@ class DetectionEngine:
             sanitized_text=sanitized,
             violations=violations,
             warnings=warnings,
+            context_id=context_id,
             _salt=self.salt,
         )
 
@@ -224,9 +239,17 @@ class DetectionEngine:
             )
 
     def _filter_spans(self, raw_spans: list[DetectedSpan], text: str) -> list[DetectedSpan]:
-        """Resolve overlaps (returns start-sorted spans), apply the allowlist, and
-        optionally propagate each detected value to its other occurrences."""
+        """Resolve overlaps (start-sorted), drop what falls under the confidence
+        floor, apply the allowlist, and optionally propagate each detected value
+        to its other occurrences.
+
+        The floor is applied after overlap resolution so a stronger span still
+        wins its overlap first: a phone number that also satisfies the NHS
+        checksum is resolved as PHONE, not dropped as a weak NHS match.
+        """
         spans = self._resolve_overlaps(raw_spans)
+        if self._min_confidence > 0:
+            spans = [s for s in spans if s.confidence >= self._min_confidence]
         if self._allowlist:
             spans = [s for s in spans if s.text not in self._allowlist]
         if self._propagate:
