@@ -511,20 +511,49 @@ class TestUsername:
     @pytest.mark.parametrize(
         ("text", "handle"),
         [
-            ("Şirket sistemindeki kullanıcı adı ahmet.yilmaz, örnek", "ahmet.yilmaz"),
-            ("kullanıcı adınız: ahmet_y42", "ahmet_y42"),
-            ("kullanıcı kodu AY-1042", "AY-1042"),
-            ("hesap adı jsmith", "jsmith"),
+            # With a connector, any handle-shaped token counts.
+            ("hesap adı: jsmith", "jsmith"),
             ("username: jsmith42", "jsmith42"),
             ("user name = ahmet.yilmaz", "ahmet.yilmaz"),
-            ("login jdoe", "jdoe"),
             ("nickname: kedi_2026", "kedi_2026"),
             ("user id: 4471xyz", "4471xyz"),
+            ("kullanıcı adınız: ahmet_y42", "ahmet_y42"),
+            # Without one, it must carry a dot, underscore, hyphen or digit.
+            ("Şirket sistemindeki kullanıcı adı ahmet.yilmaz, örnek", "ahmet.yilmaz"),
+            ("kullanıcı kodu AY-1042", "AY-1042"),
+            ("login jdoe.42", "jdoe.42"),
+            ("kullanıcı adı a.veli", "a.veli"),
         ],
     )
     def test_the_handle_is_found(self, detector, text, handle):
         spans = [s for s in detector.detect(text) if s.entity_type == "USERNAME"]
         assert [s.text for s in spans] == [handle]
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "visit https://site.com/login page for details",
+            "the login page is broken",
+            "click the login button below",
+            "login screen redesign ticket",
+            "kullanıcı adı alanı zorunludur",
+            "username field validation",
+            "nick verdi ama gelmedi",
+            "user id column in the table",
+            "hesap adı alanını doldurun",
+            "login sayfası yenilendi",
+            "kullanıcı adı politikası değişti",
+        ],
+    )
+    def test_the_keyword_alone_is_not_enough(self, detector, text):
+        """These keywords sit in ordinary prose as often as they introduce a handle.
+
+        No stoplist can enumerate the words that follow them, so a bare keyword
+        needs the token to carry a mark an ordinary word does not: a dot,
+        underscore, hyphen or digit. With a connector present the assignment is
+        explicit and the mark is not required.
+        """
+        assert "USERNAME" not in types_in(detector, text)
 
     @pytest.mark.parametrize(
         "text",
@@ -576,3 +605,49 @@ class TestUsername:
 
         spans = [s for s in detector.detect("username: jsmith42") if s.entity_type == "USERNAME"]
         assert spans and all(s.confidence == CONF_FUZZY for s in spans)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trailing punctuation is deliberately kept
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestTrailingPunctuation:
+    @pytest.mark.parametrize(
+        ("text", "entity", "value"),
+        [
+            ("parolası ise TestPass!2026. Sonraki cümle.", "CUSTOM_SECRET", "TestPass!2026."),
+            ("kullanıcı adı ahmet.yilmaz. Sonraki cümle.", "USERNAME", "ahmet.yilmaz."),
+        ],
+    )
+    def test_a_trailing_stop_is_taken_with_the_value(self, detector, text, entity, value):
+        """It reads like the sentence's, but nothing here can tell.
+
+        A password may genuinely end in a full stop. Trimming the wrong one
+        leaves a character of the real secret in the text; keeping the wrong one
+        costs a full stop. Over-taking is the safe direction for a redaction
+        tool, so the punctuation stays with the value.
+        """
+        spans = [s for s in detector.detect(text) if s.entity_type == entity]
+        assert [s.text for s in spans] == [value]
+
+    def test_a_separator_that_cannot_be_part_of_the_value_is_left_alone(self, detector):
+        """A quote closes the value, so it is not swallowed the way a stop is."""
+        spans = [
+            s
+            for s in detector.detect('şifresi "Gizli!42x" olarak')
+            if s.entity_type == "CUSTOM_SECRET"
+        ]
+        assert [s.text for s in spans] == ["Gizli!42x"]
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "parolası ise TestPass!2026. Sonraki cümle.",
+            "şifresi: Gizli!42x, kullanıcı adı a.veli.",
+            "kullanıcı adı ahmet.yilmaz. Devamı var.",
+        ],
+    )
+    def test_offsets_address_the_original_text(self, detector, text):
+        for span in detector.detect(text):
+            assert text[span.start : span.end] == span.text
