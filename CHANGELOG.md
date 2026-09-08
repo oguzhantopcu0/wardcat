@@ -9,6 +9,274 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A pre-Ampere CUDA card no longer gets a dtype it cannot run.** The
+  Transformers backend hardcoded `bfloat16`; those cards have no bf16 support at
+  all, and `torch.cuda.is_bf16_supported()` says so, so they get `float16` now.
+
+- **`with_llm(dtype=...)` chooses the weight dtype.** A torch dtype name
+  (`"float16"`, `"bfloat16"`, `"float32"`); an unknown name is refused rather
+  than silently ignored.
+
+  The default stays `bfloat16` everywhere else, including Apple Silicon, and
+  that is worth writing down because the obvious change does not work. Metal has
+  no bf16 arithmetic unit and emulates it, so fp16 ought to be faster there —
+  but loading a model as `float16` with `device_map="auto"` on MPS **segfaults
+  the interpreter** on the torch/transformers versions this package supports,
+  where the same model as `bfloat16` answers in 13 seconds (measured on an M1
+  with SmolLM2-135M-Instruct). A default that crashes is worse than one that is
+  merely slow. The argument is there for anyone whose stack does better.
+
+## [1.2.0] — 2026-09-08
+
+### Added
+
+- **Eight more checksum-verified filters, and the tier that makes them usable.**
+  `CRYPTO_WALLET` (Bitcoin Base58Check plus bech32/bech32m segwit, both fully
+  verified; Ethereum `0x` addresses on their shape — EIP-55 needs keccak-256,
+  which the standard library does not carry), `NHS_NUMBER` (mod-11),
+  `BANK_ROUTING` (ABA mod-10 over a Federal Reserve prefix) and `IMEI` (Luhn).
+  `EU_NATIONAL_ID` gains Dutch BSN and Polish PESEL, and — the larger change —
+  every scheme it already claimed is now actually checked: a Spanish DNI whose
+  letter does not follow from its digits, or an INSEE number with the wrong
+  two-digit key, used to match on format alone.
+
+  Three of these checksums are weak: a bare digit run passes the ABA check, the
+  NHS mod-11 or the IMEI Luhn roughly once in ten. Refusing the bare form costs
+  real coverage; treating it as proven flags ordinary reference numbers. Both
+  forms are matched, and a match with no supporting keyword beside it lands in a
+  new **uncued** confidence tier at `0.70`.
+
+- **`min_confidence` — a floor on what gets acted on.** Spans below it are
+  dropped after overlap resolution. It defaults to `0.8`, which sits above the
+  uncued tier and below every other one, so nothing detected before this release
+  changes and the new bare-form matches are found but left alone.
+  `with_min_confidence(0.6)` acts on them; `with_min_confidence(0.95)` goes the
+  other way, keeping only checksummed and high-precision structural matches.
+
+  Applying the floor *after* overlap resolution is what makes the NHS filter
+  safe: the NHS 3-3-4 grouping is also the US phone grouping, and mod-11 lets
+  about one US-format number in eleven through. A number both layers claim is
+  resolved as `PHONE` at `0.97` rather than dropped as a weak NHS match.
+
+- **`USERNAME` — the account name beside the password.** An online identifier
+  tied to a person, and the other thing in a personnel record with no shape of
+  its own: `ahmet.yilmaz` is a handle in one sentence and a filename in the
+  next. Cued the same way as the credential — `kullanıcı adı`, `kullanıcı kodu`,
+  `hesap adı`, `username`, `user id`, `login`, `nick` — with the Turkish
+  suffixes allowed for.
+
+  How much the keyword proves depends on whether it is assigning anything. With
+  a connector — `username: jsmith`, `hesap adı = jsmith` — somebody is plainly
+  naming a handle, so any handle-shaped token counts. Without one the keyword
+  sits in ordinary prose as often as not ("the login page", "kullanıcı adı
+  alanı"), and no stoplist can enumerate what follows it, so the token has to
+  carry a mark an ordinary word does not: a dot, underscore, hyphen or digit.
+  Measured over 32 sentences, that rule gives no misses and no false positives;
+  a stoplist alone gave eight false positives out of twelve.
+
+  Two details worth knowing. The value is matched case-sensitively, because
+  `re.IGNORECASE` folds the Turkish dotless "ı" into `[A-Za-z]` and let "alanı"
+  through as a handle. And a trailing full stop is taken with the value rather
+  than trimmed: it reads like the sentence's, but a password or handle may
+  genuinely end in one, and trimming the wrong one leaves a character of the
+  real value in the text. Reported at `0.90`, value only, keyword left in place.
+
+- **A credential written out in prose is now caught.** The secret patterns keyed
+  on a provider prefix — `sk-`, `ghp_`, `AKIA` — and a password typed into a
+  sentence has no prefix, so `parolası ise TestPass!2026` went straight through.
+  The word introducing it is the evidence instead: `password`, `passphrase`,
+  `api key`, `access token`, `erişim kodu`, and the Turkish roots with their
+  possessive and case suffixes (`şifresi`, `parolanız`), joined by `=`, `:`,
+  `is`, `ise` or nothing at all.
+
+  Prose puts ordinary words in that position too — "şifre yanlış",
+  "password is unknown" — so the value must look like a credential: at least six
+  characters mixing two of {lower, upper, digit, symbol}. A lower-case word never
+  does. Reported at `0.90`, the heuristic tier, not the `0.97` a recognised
+  prefix earns, and **only the value is taken** so the sentence still reads:
+  `kullanıcı şifresi: [CUSTOM_SECRET]`.
+
+- **More provider secrets.** GitHub fine-grained PATs (`github_pat_`), Hugging
+  Face tokens, Shopify, DigitalOcean, Slack app-level tokens, Azure storage
+  account keys, Google service-account key ids, and the AWS secret access key —
+  which has no prefix, only a 40-character shape, so it is matched under the
+  name it is written with. Sentry DSNs too, which fixes a mislabel: the DSN's
+  public key sits where an email address's local part would, so it was reported
+  as an `EMAIL` under that type's `warn` action and left in the text.
+
+- **Reversible masking — `Action.TOKENIZE` and `ScanResult.restore()`.** The
+  existing actions are one-way; `tokenize` replaces each value with a numbered
+  placeholder and keeps the mapping on the result, so the values can be put back
+  afterwards. A placeholder is `[TYPE_index_contextid]` — `[EMAIL_1_9f3a2c8b71d4]`.
+  The index is per entity type in order of appearance and one token is reused for
+  one distinct value, so a repeated name stays a single referent for the model
+  reading the text.
+
+  The **context id** is drawn once per scan (`ScanResult.context_id`, 12 hex
+  characters) and stamped into that scan's tokens. Two requests arriving together
+  both hold an "EMAIL number 1"; without it their placeholders would be the same
+  string, and restoring one request's answer against the other's result would
+  silently substitute the wrong person's value. With it there is nothing to match:
+  the token is reported as `foreign`, left in the text, and `is_complete` is
+  `False`. `restore(answer, strict=True)` raises `ContextMismatch` instead — the
+  right default for a request handler — and `restore(answer, also=[earlier])`
+  accepts an earlier turn's placeholders in a multi-turn exchange. The same
+  mechanism covers a model that mangles a token: no match, so the value does not
+  come back, and it can never come back as somebody else's.
+
+  ```python
+  guard = Wardcat(salt="s").add_entities([Entity.EMAIL], action=Action.TOKENIZE)
+  result = guard.scan("Mail ali@example.com")   # → 'Mail [EMAIL_1_9f3a2c8b71d4]'
+  answer = call_llm(result.sanitized_text)      # the model never sees the value
+  print(result.restore(answer))
+  ```
+
+  `restore(text)` puts the originals back and returns a `RestoredText` whose
+  `str()` appends an ordered source list — per placeholder, the filter that caught
+  it, the action applied, the value it stood for, an occurrence count and the
+  detection confidence — with `.text`, `.sources_block()`, `.substitutions`,
+  `.unrestored` and `.is_complete` for programmatic use. It also reverses `hash`
+  output; `redact`/`mask` placeholders that stood for more than one value are
+  reported as `ambiguous` and left in the text rather than guessed, and
+  `reapply(Action.TOKENIZE)` derives a reversible view of an existing scan without
+  re-detecting. `ScanResult.token_map` exposes the placeholder → value mapping for
+  callers that must restore in another process.
+
+  Anonymization runs after detection, so this is layer-independent: a span found
+  by regex, SpaCy NER or the LLM layer tokenizes and restores identically (covered
+  by a test with a stubbed LLM backend).
+
+  **The reverse map is raw PII by design** — `token_map`, `restore()` and the
+  source list all carry original values, so they belong on the trusted side.
+  New exports: `RestoredText`, `Substitution`, `UnrestoredValue`, `TokenAllocator`,
+  `ContextMismatch`.
+
+- **`with_phone_regions()` — libphonenumber-backed PHONE detection.** The built-in
+  pattern is precision-first and covers Turkish, French and German national forms
+  plus E.164; a number written the way it is written in Manchester or Madrid falls
+  through it. On presidio-research's corpus that meant 21% recall — 73 of 92
+  numbers missed. More regex will not close this: every numbering plan is its own
+  set of shapes, and telling a valid Madrid mobile from three arbitrary digit
+  groups requires knowing the plan.
+
+  ```python
+  guard.with_phone_regions("GB", "ES")   # libphonenumber for these regions
+  guard.with_phone_regions()             # back to the built-in pattern
+  ```
+
+  Opt-in and optional: `pip install "wardcat[phone]"`, and a missing package logs
+  a warning and falls back to the pattern. Callers who never call it get
+  byte-identical behaviour. Matches report `0.90` confidence rather than the
+  pattern's `0.97` — a numbering-plan check is stronger than a digit run but
+  weaker than a checksum, and each added region widens what counts as a number.
+  PHONE F1 on that corpus: 0.342 → 0.770 (recall 21% → 67%).
+
+### Changed
+
+- **Two kinds of NER span moved into types of their own — enable them or lose
+  the coverage.** SpaCy's `GPE`/`LOC` labels were folded into `ADDRESS`, so
+  "Germany" and "Moda Caddesi No:42" arrived as the same kind of finding; and
+  `NORP` — nationality, religious and political group, GDPR Article 9 data —
+  was folded into `ORG`, which both mistyped it and, under `ORG`'s `warn`
+  action, left it in the text. Place names are `LOCATION` now and group names
+  are `NRP`.
+
+  **This narrows an existing configuration.** A guard with `ADDRESS` enabled on
+  the NER layer no longer redacts "Germany"; one with `ORG` enabled no longer
+  reports "Kurdish". Nothing errors and nothing is over-detected — the spans
+  simply stop being reported, which is the failure that does not announce
+  itself, so the first scan of an affected guard now logs a one-time warning
+  naming the type to add:
+
+  ```python
+  guard.add_entity(Entity.LOCATION, Action.REDACT, layers=["ner"])
+  guard.add_entity(Entity.NRP, Action.REDACT, layers=["ner"])
+  ```
+
+  `LOCATION` is on in the shipped example policy. `NRP` is off: "Turkish" and
+  "Catholic" are ordinary vocabulary, and redacting every occurrence would wreck
+  the text for anyone not doing Article 9 work.
+
+- **`tokenize` is now a built-in action name.** It was the running example of a
+  *custom* action in the README and docs; those now use `vault` instead.
+  `register_action("tokenize", ...)` still wins over the built-in — overriding a
+  registered name is unchanged behaviour — but a project that did so is now
+  shadowing a built-in rather than adding a new action.
+
+- **`with_llm()` now says what it switches on.** Unlike `with_ner()`, which enables
+  no entity by itself, the LLM layer carries its own default entity policy (31
+  types, 27 of them on, each with its own action), so
+  `.with_llm(...).add_entity(EMAIL, ...)` has
+  always detected and anonymized far more than the one type named — under the
+  policy's actions, not the caller's. The behaviour is unchanged; the first scan
+  now logs a **one-time warning** naming the entities that came along and how to
+  take control of them (`add_entity(name, action, layers=["llm"])` /
+  `remove_entity(name)`). Callers who supply a YAML `config_path` chose their own
+  policy and are not warned. The `with_llm` docstring no longer claims to mirror
+  `with_ner`, and the asymmetry is documented in the README and the configuration
+  guide.
+
+### Fixed
+
+- **`phone_regions` was rejected as an unknown YAML key.** It has been a valid
+  configuration key since the libphonenumber work, but was never added to the
+  known-key set, so a config file that used it logged a typo warning.
+
+- **Credit card ranges the issuer prefixes were missing.** Measured against
+  presidio-research's 1500-sample corpus, `CREDIT_CARD` recall was 54% — 62 of 136
+  cards undetected, and *none* of them failed Luhn. The checksum gate was working;
+  the prefixes simply had no branch for JCB (`35xx` and the legacy 15-digit `1800`
+  / `2131`), Maestro, 19-digit Visa, or the **MasterCard 2-series (2221–2720)**,
+  which has been issued since 2017. All added, all Luhn-validated like the
+  existing branches; the 19-digit Visa branch is ordered ahead of the 16-digit one
+  so the shorter branch cannot consume the first sixteen digits and then be
+  rejected by the trailing boundary check.
+
+  Widening the prefixes costs no precision — Luhn remains the gate — which is why
+  the false-positive suite gained four near-miss numbers that sit inside the new
+  ranges and fail the checksum. `CREDIT_CARD` F1 on that corpus: 0.705 → 0.958
+  (recall 54% → 92%, precision unchanged at 100%).
+
+- **The NER span filters were rejecting real names.** Three faults, each measured
+  against presidio-research's corpus with `en_core_web_sm` — the point being to
+  get more out of the model already in use rather than reach for a bigger one.
+
+  The capital-letter rule fired where capitals mean nothing. A span whose words
+  are all lower-case was rejected on the reasoning that names are capitalized and
+  common-word sequences are not — but that reasoning only holds in a document that
+  capitalizes, and every span it wrongly rejected sat in a document with **zero**
+  uppercase letters (chat logs, ASR output, lower-cased pipelines). Counted over
+  the corpus it removed 15 real names to remove 7 false ones. It now applies only
+  where the surrounding text uses capitals at all.
+
+  **This is a deliberate trade:** in a lower-cased document a common-word sequence
+  can now come through as a `PERSON`. Over-flagging is the safer direction for a
+  redaction tool, and the measurement says it is also the more accurate one.
+
+  Edge punctuation is now trimmed rather than rejected — a model that swallows the
+  colon after a speaker's name produced `tracy:"i'm`, and the digit rule threw the
+  name away with the punctuation. And `ORG` gained the digit/address-punctuation
+  filter `PERSON` already had, removing 42 address fragments labelled as companies
+  at the cost of 4 real ones; the street-keyword list is deliberately *not* applied
+  to `ORG`, since it would take "Wall Street Journal" with it.
+
+  `PERSON` F1 0.670 → 0.680, `ORGANIZATION` 0.299 → 0.305. Modest, and that is
+  itself the finding: raw `en_core_web_sm` recall for `PERSON` is 64% and the
+  filters now pass 64%, so what remains is the model's ceiling, not ours.
+
+- **An IP address is no longer read out of a longer dotted run.**
+  `03.93.92.16.85` is a French phone number whose first four groups are a
+  syntactically valid dotted quad. The bug predates this release — it never showed
+  because the built-in PHONE pattern scored the same confidence and won the
+  overlap. Anchors either side now require the quad to stand alone: `IP 10.0.0.7.`
+  is still an address, `1.2.3.4.5` is not.
+
+- Test suite: registering an action in one test no longer leaks into the rest of
+  the session (the registry is process-global; a `conftest` fixture now restores
+  it after each test).
+
 ## [1.1.2] — 2026-07-29
 
 ### Fixed

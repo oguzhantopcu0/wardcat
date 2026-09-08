@@ -170,6 +170,20 @@ class Wardcat(EntityPolicyMixin):
         # entities in any order, so an init/rebuild-time check would false-fire.
         self._orphan_warned: set[str] = set()
 
+        # Entity types this caller configured by hand (add_entity / add_entities /
+        # change_entity_action). The LLM layer ships its own default entity policy,
+        # so this is the only way to tell "the user asked for PERSON" apart from
+        # "with_llm() switched PERSON on" — see _warn_implicit_llm_entities.
+        self._explicit_entities: set[str] = set()
+        # A caller who passed a policy file chose every entity in it; nothing about
+        # that configuration is implicit, so the warning is skipped for them.
+        self._policy_from_file = config_path is not None
+        self._implicit_llm_warned = False
+        # Place names and group names moved out of ADDRESS/ORG into their own
+        # types. A configuration written before that silently stops covering
+        # them — see _warn_ner_type_split.
+        self._ner_split_warned = False
+
         # Warn at most once when a hash action is active without a salt. Checked
         # in _rebuild() too, since entities are opt-in and usually added after init.
         self._salt_warned = False
@@ -183,6 +197,8 @@ class Wardcat(EntityPolicyMixin):
     def scan(self, text: str) -> ScanResult:
         """Scan text and return a ScanResult."""
         self._warn_orphan_entities()
+        self._warn_implicit_llm_entities()
+        self._warn_ner_type_split()
         return self._engine.scan(text)
 
     async def scan_async(self, text: str) -> ScanResult:
@@ -193,6 +209,8 @@ class Wardcat(EntityPolicyMixin):
         so multiple concurrent calls do not block each other.
         """
         self._warn_orphan_entities()
+        self._warn_implicit_llm_entities()
+        self._warn_ner_type_split()
         return await self._engine.scan_async(text)
 
     # ------------------------------------------------------------------
@@ -434,10 +452,22 @@ class Wardcat(EntityPolicyMixin):
         device_map: str = "auto",
         load_in_8bit: bool = False,
         load_in_4bit: bool = False,
+        dtype: str | None = None,
         language: str | Language | None = None,
     ) -> Wardcat:
         """
-        Enable the on-prem LLM detector. Supports chaining; mirrors :meth:`with_ner`.
+        Enable the on-prem LLM detector. Supports chaining, like :meth:`with_ner`.
+
+        .. warning::
+            Unlike ``with_ner()``, this does **not** leave detection fully opt-in.
+            The LLM layer carries its own default entity policy, so ``with_llm()``
+            switches on around fifteen entity types with the actions that policy
+            names (``PERSON`` → ``hash``, ``EMAIL`` → ``warn``, …) — not the action
+            you pass to :meth:`add_entity` for something else. They are listed in a
+            one-time warning at the first scan. Override one with
+            ``add_entity(name, action, layers=["llm"])`` or drop it with
+            ``remove_entity(name)``; pass a YAML ``config_path`` to replace the
+            policy wholesale.
 
         The fluent way to configure the LLM layer (the constructor takes only
         ``config_path`` and ``salt``) — keeps the LLM configuration in one place::
@@ -458,6 +488,16 @@ class Wardcat(EntityPolicyMixin):
             it here would otherwise override the backend-specific default (so
             selecting ``vllm`` without a ``base_url`` must still reach vLLM,
             not Ollama).
+        :param dtype: weight dtype for the ``transformers`` backend, as a torch
+            dtype name (``"float16"``, ``"bfloat16"``, ``"float32"``); an
+            unknown name raises. Left unset the default is ``bfloat16``, except
+            on a pre-Ampere CUDA card, which has no bf16 support and gets
+            ``float16``. On Apple Silicon ``bfloat16`` is emulated and fp16
+            *ought* to be faster, but loading as ``float16`` with
+            ``device_map="auto"`` on MPS segfaults on the supported
+            torch/transformers versions — hence the argument rather than a
+            different default. Ignored by the other backends, which do not load
+            weights themselves.
         :param language: selects a localized system prompt for :meth:`is_sensitive`
             (``tr``/``de``/``fr``; anything else uses the English, multilingual-aware
             prompt). It does not change the entity-detection prompt used by
@@ -478,6 +518,7 @@ class Wardcat(EntityPolicyMixin):
                 "device_map": device_map,
                 "load_in_8bit": load_in_8bit,
                 "load_in_4bit": load_in_4bit,
+                "dtype": dtype,
                 "language": lang_code,
             }
         )
@@ -521,6 +562,57 @@ class Wardcat(EntityPolicyMixin):
                 )
             models.append(info.name)
         return list(dict.fromkeys(models))  # dedupe, preserve order
+
+    def with_phone_regions(self, *regions: str) -> Wardcat:
+        """Detect national phone formats for *regions* via libphonenumber.
+
+        The built-in ``PHONE`` pattern is precision-first and covers Turkish,
+        French and German national formats plus E.164 — a number written the way
+        it is written in Manchester or Madrid falls through it. Naming the regions
+        you actually serve swaps in libphonenumber for those formats::
+
+            guard = Wardcat(salt=s).add_entity(Entity.PHONE).with_phone_regions("GB", "ES")
+
+        Regions are CLDR two-letter codes. Needs the extra: ``pip install
+        'wardcat[phone]'`` — without it the built-in pattern is used and a warning
+        is logged. Call with no arguments to go back to the pattern.
+
+        Matches are reported at 0.90 confidence, not the 0.97 of the built-in
+        pattern: libphonenumber validates against each region's numbering plan,
+        which is far stronger than a bare digit run but weaker than a checksum, and
+        every extra region widens what counts as a number. Add the regions you
+        serve, not every region there is.
+        """
+        codes = [r.strip().upper() for r in regions if r and r.strip()]
+        self._config["phone_regions"] = codes
+        self._rebuild()
+        return self
+
+    def with_min_confidence(self, minimum: float) -> Wardcat:
+        """Set the confidence floor: spans scoring below *minimum* are dropped.
+
+        Every detection carries a confidence, tiered by how strong the evidence
+        is — a checksum-verified card is 1.0, a distinctive format such as an
+        email is 0.97, a model layer is 0.85, a keyword-heuristic address is
+        0.90, and a checksum whose own odds are weak (the ABA mod-10, the NHS
+        mod-11, the IMEI Luhn) with no supporting keyword nearby is 0.70.
+
+        The default floor is ``0.8``, which sits between that last tier and
+        everything else: those uncued matches are found but not acted on. Lower
+        it to trade precision for recall::
+
+            guard.with_min_confidence(0.6)   # act on uncued checksum matches too
+
+        Set it to ``0`` to act on everything a layer reports.
+
+        :raises ConfigError: if *minimum* is not a number between 0 and 1.
+        """
+        from wardcat.config.loader import _validate_min_confidence
+
+        _validate_min_confidence(minimum)
+        self._config["min_confidence"] = float(minimum)
+        self._rebuild()
+        return self
 
     def set_salt(self, salt: str) -> Wardcat:
         """Update the hash salt."""
@@ -655,6 +747,88 @@ class Wardcat(EntityPolicyMixin):
                 entity,
             )
 
+    def _warn_implicit_llm_entities(self) -> None:
+        """Warn once when the LLM layer detects entities the caller never configured.
+
+        ``with_ner()`` enables no entity on its own; ``with_llm()`` does, because
+        the LLM layer carries its own default entity policy (see
+        ``DEFAULT_CONFIG["llm_detector"]["entities"]``). So a chain like::
+
+            Wardcat(salt=s).with_llm(...).add_entity(Entity.EMAIL, Action.TOKENIZE)
+
+        detects and anonymizes a dozen more types than the one that was asked for,
+        under the LLM policy's own actions rather than the one just configured.
+        That is long-standing behaviour and stays — but it is surprising enough to
+        say out loud once, lazily at scan time so a builder chain can configure
+        entities and layers in any order.
+        """
+        if self._implicit_llm_warned or self._policy_from_file:
+            return
+        llm_cfg = self._config.get("llm_detector", {})
+        # The default entity map is present even with the layer off; nothing is
+        # detected then, so there is nothing to point out.
+        if not llm_cfg.get("enabled", False):
+            return
+        llm_entities = llm_cfg.get("entities", {})
+        implicit = {
+            name: cfg.get("action", "warn")
+            for name, cfg in llm_entities.items()
+            if cfg.get("enabled") and name not in self._explicit_entities
+        }
+        if not implicit:
+            return
+        self._implicit_llm_warned = True
+        logger.warning(
+            "with_llm() also switched on the LLM layer's own default entity policy: "
+            "%s — these are detected and anonymized under those actions even though "
+            "you did not configure them (unlike with_ner(), which enables nothing on "
+            "its own). Take control of one with add_entity(name, action, "
+            "layers=['llm']), or switch it off with remove_entity(name).",
+            ", ".join(f"{name} ({action})" for name, action in sorted(implicit.items())),
+        )
+
+    # Spans the NER layer used to report under another type, and the type each
+    # one moved to. Both moves are corrections — a city is not a street address,
+    # and a nationality is not a company — but a configuration written before
+    # them keeps working and quietly covers less.
+    _NER_TYPE_SPLIT: dict[str, tuple[str, str]] = {
+        "ADDRESS": ("LOCATION", "countries, cities and regions (SpaCy GPE/LOC)"),
+        "ORG": ("NRP", "nationality, religious and political groups (SpaCy NORP)"),
+    }
+
+    def _warn_ner_type_split(self) -> None:
+        """Warn once when a moved span type is enabled but its new home is not.
+
+        Nothing breaks and nothing is over-detected; the spans simply stop being
+        reported, which is the failure that does not announce itself. Said once,
+        lazily at scan time, like the other two warnings here.
+        """
+        if self._ner_split_warned or self._policy_from_file:
+            return
+        if not self._config.get("use_ner", False):
+            return
+        enabled = self._active_entities()
+        moved = [
+            (old, new, what)
+            for old, (new, what) in self._NER_TYPE_SPLIT.items()
+            if old in enabled and new not in enabled
+        ]
+        if not moved:
+            return
+        self._ner_split_warned = True
+        for old, new, what in moved:
+            logger.warning(
+                "%s no longer covers %s — those spans are reported as %s now, which "
+                "is not enabled. Add it with add_entity(Entity.%s, action, "
+                "layers=['ner']) to keep covering them, or ignore this if you only "
+                "wanted %s itself.",
+                old,
+                what,
+                new,
+                new,
+                old,
+            )
+
     def _rebuild(self) -> None:
         """Rebuild detectors and engine when configuration changes."""
         self._maybe_warn_unsalted()
@@ -678,6 +852,7 @@ class Wardcat(EntityPolicyMixin):
                     enabled_regex,
                     custom_patterns=custom_patterns,
                     fold_confusables_enabled=self._config.get("normalize_confusables", True),
+                    phone_regions=self._config.get("phone_regions") or None,
                 )
             )
 

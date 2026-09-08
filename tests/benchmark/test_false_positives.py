@@ -33,6 +33,12 @@ class TestCreditCardFalsePositives:
         "IP: 192.168.1.1",
         "2024-01-15",
         "Version 3.14159265358979",
+        # Widening the issuer ranges must not start swallowing ordinary numbers:
+        # these are the shapes the new JCB / Maestro / 2-series branches sit near.
+        "Ref 2131000000000",  # JCB-like prefix, fails Luhn
+        "SKU 3558331500082482",  # JCB-like prefix, fails Luhn
+        "Batch 5018000000000",  # Maestro-like prefix, fails Luhn
+        "Serial 2222000000000000",  # 2-series prefix, fails Luhn
     ]
 
     def test_no_false_positives(self):
@@ -59,6 +65,8 @@ class TestPhoneFalsePositives:
         "Year: 2024",
         "Ref: 5551234567",
         "v1.2.3",
+        "+1 23",  # a "+" and a couple of digits is not an E.164 number
+        "see RFC +1 2345 draft",
     ]
 
     def test_no_false_positives(self):

@@ -367,3 +367,110 @@ class TestLoadPipelineKwargs:
         _, kwargs = fake_transformers.pipeline.call_args
         assert kwargs.get("torch_dtype") == "bf16"
         assert "dtype" not in kwargs
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Weight dtype — bfloat16 was hardcoded, which is wrong off NVIDIA
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class _FakeDtype:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return self.name
+
+
+class _FakeTorch:
+    """Just enough torch to answer the questions _resolve_dtype asks."""
+
+    dtype = _FakeDtype
+
+    def __init__(self, *, cuda: bool, bf16: bool | None = True, mps: bool = False) -> None:
+        self.bfloat16 = _FakeDtype("bfloat16")
+        self.float16 = _FakeDtype("float16")
+        self.float32 = _FakeDtype("float32")
+        outer = self
+
+        class _Cuda:
+            @staticmethod
+            def is_available() -> bool:
+                return cuda
+
+            if bf16 is not None:
+
+                @staticmethod
+                def is_bf16_supported() -> bool:
+                    return bool(bf16)
+
+        class _Mps:
+            @staticmethod
+            def is_available() -> bool:
+                return mps
+
+        class _Backends:
+            pass
+
+        self.cuda = _Cuda
+        backends = _Backends()
+        backends.mps = _Mps
+        self.backends = backends
+        del outer
+
+
+def _backend(**kwargs):
+    from wardcat.llm.backends.transformers_backend import TransformersBackend
+
+    return TransformersBackend(model="stub/model", **kwargs)
+
+
+class TestDtypeSelection:
+    def test_cuda_with_bf16_uses_bfloat16(self):
+        assert _backend()._resolve_dtype(_FakeTorch(cuda=True, bf16=True)).name == "bfloat16"
+
+    def test_pre_ampere_cuda_falls_back_to_float16(self):
+        """Those cards have no bf16 support at all, and torch says so."""
+        assert _backend()._resolve_dtype(_FakeTorch(cuda=True, bf16=False)).name == "float16"
+
+    def test_cuda_without_the_probe_keeps_bfloat16(self):
+        """Older torch has no is_bf16_supported; assume the card is fine."""
+        assert _backend()._resolve_dtype(_FakeTorch(cuda=True, bf16=None)).name == "bfloat16"
+
+    def test_apple_silicon_keeps_bfloat16(self):
+        """Metal emulates bf16, so fp16 ought to be the faster choice here.
+
+        It is not usable: loading a model as float16 with device_map="auto" on
+        MPS segfaults the interpreter on the torch/transformers versions this
+        package supports, where the same model as bfloat16 answers in 13
+        seconds. Measured on an M1 with SmolLM2-135M-Instruct. A default that
+        crashes is worse than one that is merely slow.
+        """
+        assert _backend()._resolve_dtype(_FakeTorch(cuda=False, mps=True)).name == "bfloat16"
+
+    def test_cpu_keeps_bfloat16(self):
+        """Unchanged: nothing here shows a better CPU default, and float32
+        would double the memory a CPU deployment needs."""
+        assert _backend()._resolve_dtype(_FakeTorch(cuda=False, mps=False)).name == "bfloat16"
+
+    def test_an_explicit_dtype_wins_everywhere(self):
+        for torch_stub in (
+            _FakeTorch(cuda=True, bf16=True),
+            _FakeTorch(cuda=False, mps=True),
+            _FakeTorch(cuda=False, mps=False),
+        ):
+            assert _backend(dtype="float32")._resolve_dtype(torch_stub).name == "float32"
+
+    def test_an_unknown_dtype_name_is_refused(self):
+        with pytest.raises(ValueError, match="Unknown dtype"):
+            _backend(dtype="float8_maybe")._resolve_dtype(_FakeTorch(cuda=False))
+
+    def test_a_torch_attribute_that_is_not_a_dtype_is_refused(self):
+        with pytest.raises(ValueError, match="Unknown dtype"):
+            _backend(dtype="cuda")._resolve_dtype(_FakeTorch(cuda=False))
+
+    def test_with_llm_passes_it_down(self):
+        from wardcat import Wardcat
+
+        guard = Wardcat(salt="s").with_llm(backend="transformers", model="m", dtype="float32")
+        assert guard._config["llm_detector"]["dtype"] == "float32"

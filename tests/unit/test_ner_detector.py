@@ -28,14 +28,14 @@ needs_tr = pytest.mark.skipif(
 @pytest.fixture(scope="module")
 def ner():
     """English NER detector — load once per module (SpaCy is heavy)."""
-    return NERDetector({"PERSON", "ORG", "ADDRESS"}, model="en_core_web_sm")
+    return NERDetector({"PERSON", "ORG", "ADDRESS", "LOCATION", "NRP"}, model="en_core_web_sm")
 
 
 @pytest.fixture(scope="module")
 def ner_tr():
     """Turkish NER detector — uses the first installed tr_* model."""
     tr_model = next(m for m in sorted(_INSTALLED) if m.startswith("tr_"))
-    return NERDetector({"PERSON", "ORG", "ADDRESS"}, model=tr_model)
+    return NERDetector({"PERSON", "ORG", "ADDRESS", "LOCATION", "NRP"}, model=tr_model)
 
 
 @pytest.fixture(scope="module")
@@ -87,17 +87,48 @@ class TestOrgDetection:
         assert "ORG" in types
 
 
-# ── ADDRESS detection (GPE / LOC → ADDRESS) ──────────────────────────────────
+# ── LOCATION detection (GPE / LOC → LOCATION) ────────────────────────────────
 
 
-class TestAddressDetection:
-    def test_city_detected_as_address(self, ner):
+class TestLocationDetection:
+    def test_city_detected_as_location(self, ner):
         spans = ner.detect("She lives in New York.")
-        assert any(s.entity_type == "ADDRESS" for s in spans)
+        assert any(s.entity_type == "LOCATION" for s in spans)
 
-    def test_country_detected_as_address(self, ner):
+    def test_country_detected_as_location(self, ner):
         spans = ner.detect("The office is located in Germany.")
-        assert any(s.entity_type == "ADDRESS" for s in spans)
+        assert any(s.entity_type == "LOCATION" for s in spans)
+
+    def test_place_name_is_not_reported_as_a_street_address(self, ner):
+        """A city is a LOCATION, not an ADDRESS — the two carry different risk."""
+        spans = ner.detect("The office is located in Germany.")
+        assert not any(s.entity_type == "ADDRESS" for s in spans)
+
+
+# ── NRP: nationality / religious / political group ───────────────────────────
+
+
+class TestNRPDetection:
+    def test_nationality_is_reported_as_nrp(self, ner):
+        spans = ner.detect("She is Kurdish and lives in Berlin.")
+        assert any(s.entity_type == "NRP" and s.text == "Kurdish" for s in spans)
+
+    def test_nrp_is_not_reported_as_an_organisation(self, ner):
+        """Regression: NORP used to map to ORG.
+
+        Nationality, religion and political affiliation are GDPR Article 9 data.
+        Labelling them ORG both mistyped them and, under ORG's `warn` action,
+        left them in the text.
+        """
+        spans = ner.detect("She is Kurdish and lives in Berlin.")
+        assert not any(s.entity_type == "ORG" for s in spans)
+
+    def test_nrp_is_off_in_the_default_llm_policy(self):
+        """These words are ordinary vocabulary — redacting them is opt-in."""
+        from wardcat.config.loader import DEFAULT_CONFIG
+
+        policy = DEFAULT_CONFIG["llm_detector"]["entities"]
+        assert policy["NRP"] == {"enabled": False, "action": "redact"}
 
 
 # ── Disabled entity ───────────────────────────────────────────────────────────
@@ -197,19 +228,20 @@ class TestPersonFilter:
             mock_nlp = MagicMock()
             mock_load.return_value = mock_nlp
 
-            # Fake entity: labeled PERSON but all-lowercase (fails filter → line 107 continue)
+            # Fake entity: labeled PERSON but all-lowercase, in a document that
+            # *does* capitalize — there the missing capital is evidence.
             mock_ent = MagicMock()
             mock_ent.label_ = "PERSON"
             mock_ent.text = "adresine veya"
-            mock_ent.start_char = 0
-            mock_ent.end_char = 13
+            mock_ent.start_char = 6
+            mock_ent.end_char = 19
 
             mock_doc = MagicMock()
             mock_doc.ents = [mock_ent]
             mock_nlp.return_value = mock_doc
 
             det = NERDetector({"PERSON"}, model="mock_model")
-            spans = det.detect("adresine veya")
+            spans = det.detect("Merhaba adresine veya bize yaz")
 
         assert len(spans) == 0  # filtered by _is_valid_person
 
@@ -354,3 +386,86 @@ class TestNERErrorHandling:
         # Regex should still work
         result = guard.scan("kart: 4111111111111111")
         assert not result.is_clean
+
+
+# ── Span filters that changed with the sm-precision work ──────────────────────
+
+
+class TestCaseAwarePersonFilter:
+    """The capital-letter rule only holds where the document capitalizes."""
+
+    def test_a_lowercase_name_survives_in_a_lowercase_document(self):
+        from wardcat.detectors.ner_detector import _is_valid_person
+
+        assert _is_valid_person("lena andersson", document_has_case=False) is True
+
+    def test_the_same_span_is_rejected_where_capitals_are_used(self):
+        from wardcat.detectors.ner_detector import _is_valid_person
+
+        assert _is_valid_person("lena andersson", document_has_case=True) is False
+
+    def test_the_other_rules_still_apply_without_case(self):
+        """Dropping the capital rule must not drop the address or digit rules."""
+        from wardcat.detectors.ner_detector import _is_valid_person
+
+        assert _is_valid_person("no:42 blok", document_has_case=False) is False
+        assert _is_valid_person("moda caddesi", document_has_case=False) is False
+        assert _is_valid_person("ab", document_has_case=False) is False
+
+    def test_has_case_reads_the_document_not_the_span(self):
+        from wardcat.detectors.ner_detector import _has_case
+
+        assert _has_case("merhaba ben ali, telefonum 0532 123 45 67") is False
+        assert _has_case("Merhaba ben Ali") is True
+        assert _has_case("") is False
+        # A stray acronym in a long lower-cased document is not capitalization.
+        assert _has_case("ok " + "lorem ipsum dolor sit amet " * 20) is False
+
+
+class TestSpanTrimming:
+    def test_edge_punctuation_is_trimmed_not_rejected(self):
+        from wardcat.detectors.ner_detector import _trim_span
+
+        assert _trim_span('tracy:"', 10, 17) == ("tracy", 10, 15)
+        assert _trim_span('("Ali Veli")', 0, 12) == ("Ali Veli", 2, 10)
+
+    def test_a_clean_span_is_untouched(self):
+        from wardcat.detectors.ner_detector import _trim_span
+
+        assert _trim_span("Ali Veli", 4, 12) == ("Ali Veli", 4, 12)
+
+    def test_an_all_punctuation_span_is_left_alone(self):
+        from wardcat.detectors.ner_detector import _trim_span
+
+        assert _trim_span('"""', 0, 3) == ('"""', 0, 3)
+
+
+class TestOrgFilter:
+    """An ORG carrying digits or address punctuation is an address, not a company."""
+
+    def test_an_address_fragment_labelled_org_is_dropped(self):
+        from unittest.mock import MagicMock, patch
+
+        with patch("wardcat.detectors.ner_detector._load_model") as mock_load:
+            mock_nlp = MagicMock()
+            mock_load.return_value = mock_nlp
+            ent = MagicMock(label_="ORG", text="CO Uruguay 64677", start_char=0, end_char=16)
+            mock_nlp.return_value = MagicMock(ents=[ent])
+
+            spans = NERDetector({"ORG"}, model="mock").detect("CO Uruguay 64677")
+
+        assert spans == []
+
+    def test_a_company_name_with_a_street_word_is_kept(self):
+        """The street-keyword list is not applied to ORG — it would take this."""
+        from unittest.mock import MagicMock, patch
+
+        with patch("wardcat.detectors.ner_detector._load_model") as mock_load:
+            mock_nlp = MagicMock()
+            mock_load.return_value = mock_nlp
+            ent = MagicMock(label_="ORG", text="Wall Street Journal", start_char=0, end_char=19)
+            mock_nlp.return_value = MagicMock(ents=[ent])
+
+            spans = NERDetector({"ORG"}, model="mock").detect("Wall Street Journal wrote")
+
+        assert [s.text for s in spans] == ["Wall Street Journal"]

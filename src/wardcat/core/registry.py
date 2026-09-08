@@ -36,9 +36,14 @@ REGEX_ENTITIES: frozenset[str] = frozenset(
         "VEHICLE_PLATE",
         "FINANCIAL_AMOUNT",
         "VAT_NUMBER",
+        "CRYPTO_WALLET",
+        "IMEI",
+        "BANK_ROUTING",
+        "NHS_NUMBER",
+        "USERNAME",
     }
 )
-NER_ENTITIES: frozenset[str] = frozenset({"PERSON", "ORG", "ADDRESS"})
+NER_ENTITIES: frozenset[str] = frozenset({"PERSON", "ORG", "ADDRESS", "LOCATION", "NRP"})
 
 # Which detector layers a filter can be applied to, and which entities each supports.
 LAYER_ENTITIES: dict[str, frozenset[str]] = {

@@ -70,13 +70,13 @@ if guard.is_sensitive(text):
 - **Hybrid detection** — Regex + SpaCy NER + on-prem LLM (Ollama, vLLM, OpenAI-compatible, HuggingFace Transformers)
 - **Semantic sensitivity gate** — `is_sensitive(text) → bool`: a holistic yes/no on whether text is safe to send onward (LLM-only), catching confidential content the typed detectors miss (unreleased financials, deal terms, a confidential project); optional per-language prompt
 - **Ensemble adjudication** (optional) — the LLM verifies/relabels/drops regex & NER candidates and adds what they missed, in one call; deterministic regex results are always protected
-- **Four actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt; the default when `action` is omitted), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking)
-- **Checksum validation** — TC_ID (Nüfus İdaresi algorithm), IBAN (mod-97), and CREDIT_CARD (Luhn mod-10) validated before flagging — eliminates false positives
+- **Five actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt; the default when `action` is omitted), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking), `tokenize` (`[TYPE_1]` — **reversible**, see [reversible masking](#reversible-masking-mask-on-the-way-out-restore-on-the-way-back))
+- **Checksum validation** — TC_ID (Nüfus İdaresi), IBAN (mod-97), CREDIT_CARD (Luhn), Bitcoin (Base58Check / bech32), NHS (mod-11), ABA routing (mod-10), IMEI (Luhn) and every EU national-ID scheme are verified before flagging — eliminates false positives
 - **Rainbow table protection** — user-defined salt for all hashes
 - **Two APIs** — method chaining (programmatic) and YAML (declarative)
 - **Async & batch** — `scan_async` / `scan_batch` / `is_sensitive_async`; concurrent requests overlap (native async LLM I/O), one shared guard is safe to reuse across scans
 - **Multilingual support** — Turkish, English, German, and French for names, addresses, birth dates, and phone numbers; plus Spanish, Italian, Dutch address patterns; TC_ID, IBAN, SSN, NIN, DNI/NIE, UK postcodes, US ZIP+4, EU VAT numbers and more
-- **Secret detection** — API keys and tokens (OpenAI, Anthropic, Stripe, AWS, Google, GitHub, GitLab, Slack, Twilio, SendGrid, npm) and PEM private keys
+- **Secret detection** — API keys and tokens (OpenAI, Anthropic, Stripe, AWS, Google, GitHub incl. fine-grained PATs, GitLab, Slack, Twilio, SendGrid, npm, Hugging Face, Shopify, DigitalOcean), Azure storage keys, Sentry DSNs, connection-string passwords and PEM private keys
 - **Passport detection** — contextual passport number detection (regex keyword-based + LLM) for any country
 - **Evasion resistance** — confusable/homoglyph folding catches lookalike-character tricks (Cyrillic/fullwidth/Arabic-Indic) that fool ASCII-oriented regex
 - **Fault tolerance** — a layer that can't run (e.g. LLM backend down) degrades gracefully and is surfaced on `ScanResult.warnings` instead of crashing the scan
@@ -100,6 +100,7 @@ if guard.is_sensitive(text):
 pip install wardcat
 
 # + SpaCy NER (PERSON, ORG, ADDRESS detection)
+pip install "wardcat[phone]"   # national phone formats worldwide (libphonenumber)
 pip install "wardcat[ner]"
 
 # Everything at once (SpaCy + Transformers)
@@ -343,7 +344,9 @@ instead of blocking each other:
 ```python
 import asyncio
 
-guard = Wardcat(salt="s").with_llm(model="llama3.1:8b").add_entity("EMAIL")
+from wardcat import Wardcat, Entity, Action
+
+guard = Wardcat(salt="s").with_llm(model="llama3.1:8b").add_entity(Entity.EMAIL, Action.WARN)
 
 texts = ["mail me at a@example.com", "card 4111 1111 1111 1111", "clean text"]
 
@@ -384,6 +387,73 @@ async def scan(text: str):
     return {"sanitized": result.sanitized_text, "clean": result.is_clean}
 ```
 
+### Phone numbers outside TR / FR / DE
+
+The built-in `PHONE` pattern is precision-first: it covers Turkish, French and
+German national formats plus E.164, and deliberately refuses a bare `123 456 7890`
+because a 3-3-4 digit run is indistinguishable from an ordinary number sequence.
+A number written the way it is written in Manchester or Madrid falls through it.
+
+Name the regions you actually serve and detection is delegated to Google's
+libphonenumber for those numbering plans:
+
+```python
+guard = (
+    Wardcat(salt="s")
+    .add_entity(Entity.PHONE, Action.MASK)
+    .with_phone_regions("GB", "ES", "US")   # CLDR two-letter codes
+)
+
+guard.scan("call 07700 063 966 or 699 956 915")
+# both detected; the built-in pattern reaches neither
+```
+
+Needs `pip install "wardcat[phone]"`. Without it the built-in pattern is used and
+a warning is logged — nothing breaks. Call `with_phone_regions()` with no
+arguments to go back to the pattern.
+
+Matches are reported at `0.90` confidence rather than the pattern's `0.97`:
+libphonenumber validates against each region's numbering plan, which is far
+stronger than a bare digit run but weaker than a checksum, and **every extra
+region widens what counts as a number**. Add the regions you serve, not every
+region there is.
+
+### How sure is a match? (the confidence floor)
+
+Every detection carries a confidence, tiered by how strong the evidence actually
+is. A checksum-verified card is `1.0`; a distinctive format such as an email or a
+JWT is `0.97`; a keyword heuristic such as a street address is `0.90`; a model
+layer is `0.85`.
+
+Three checksums are too weak to stand on their own. A bare nine-digit run passes
+the ABA routing check roughly once in ten, and the same holds for the NHS mod-11
+and the IMEI Luhn. Refusing to match the bare form would cost real coverage;
+treating it as proven would flag ordinary reference numbers. So both forms are
+matched, and a match with no supporting keyword beside it lands in an **uncued**
+tier at `0.70` instead.
+
+The floor decides what is acted on. It defaults to `0.8`, which sits above that
+tier and below every other one, so uncued matches are found but left alone:
+
+```python
+guard = (
+    Wardcat(salt="s")
+    .add_entity(Entity.IMEI, Action.HASH)
+    .with_min_confidence(0.6)      # act on uncued checksum matches too
+)
+
+guard.scan("IMEI: 490154203237518")            # detected at any floor
+guard.scan("reference 490154203237518 logged")  # only below 0.8
+```
+
+The floor is applied **after** overlap resolution, so a stronger span still wins
+its overlap first. The NHS 3-3-4 grouping is also the US phone grouping, and
+mod-11 lets about one US-format number in eleven through; a number both layers
+claim is resolved as `PHONE` at `0.97`, never dropped as a weak NHS match.
+
+Raising the floor works too: `with_min_confidence(0.95)` keeps only checksummed
+and high-precision structural matches and drops the fuzzy address heuristics.
+
 ### Catching every occurrence (value propagation)
 
 Model-based layers (SpaCy NER, the LLM) sometimes report a value that
@@ -407,6 +477,125 @@ are propagated, and deterministic regex spans still win overlaps — a propagate
 match never displaces a checksum-validated one. Structural PII (email, phone,
 IBAN…) is already caught exhaustively by the regex layer, so propagation mainly
 helps names and other model-only entities.
+
+### Reversible masking (mask on the way out, restore on the way back)
+
+`hash`, `redact` and `mask` are one-way: the value is gone from the text for
+good. `Action.TOKENIZE` is the reversible one — each value is replaced by a
+numbered placeholder, and the mapping stays on the `ScanResult`, in memory, on
+your side of the wire:
+
+```python
+from wardcat import Wardcat, Entity, Action
+
+guard = (
+    Wardcat(salt="s")
+    .add_entities([Entity.EMAIL, Entity.CREDIT_CARD], action=Action.TOKENIZE)
+)
+
+result = guard.scan("Mail ali@example.com about card 4532 0151 1283 0366")
+print(result.sanitized_text)
+# Mail [EMAIL_1_9f3a2c8b71d4] about card [CREDIT_CARD_1_9f3a2c8b71d4]
+```
+
+A placeholder is `[TYPE_index_contextid]`. The index is per entity type in order
+of appearance and the *same value always gets the same token* — a name that
+repeats stays one referent, so the model can still reason about it. The context
+id is drawn once per scan and shared by that scan's tokens, which is what keeps
+two concurrent requests apart: both hold an "`EMAIL` number 1", and without it
+their placeholders would be the same string. Send that text to the LLM, then put the real
+values back into its answer:
+
+```python
+answer = call_llm(result.sanitized_text)     # the model never sees the real values
+print(result.restore(answer))
+```
+
+```text
+I have emailed ali@example.com about the charge on 4532 0151 1283 0366.
+
+--- Sources ---
+[1] [EMAIL_1_9f3a2c8b71d4] → ali@example.com (EMAIL · tokenize · confidence 0.97)
+[2] [CREDIT_CARD_1_9f3a2c8b71d4] → 4532 0151 1283 0366 (CREDIT_CARD · tokenize · confidence 1.00)
+```
+
+Printing a restored result appends that source list: every placeholder that was
+put back, **in the order it appears in the text**, with the filter that caught it,
+the action applied, the value it stood for, an `xN` count when it occurs more than
+once, and the detection confidence. Use `.text` for the bare text, `.sources_block()`
+for the list alone (`title=` renames it, `notes=False` drops the trailing summary),
+and `.substitutions` for the same information as data:
+
+```python
+restored = result.restore(answer)
+restored.text                 # answer with the real values back in place
+restored.substitutions        # [Substitution(index=1, entity_type="EMAIL", …)]
+restored.unrestored           # what was not put back, and why
+restored.is_complete          # False if a placeholder was left sitting in the text
+result.token_map              # {"[EMAIL_1_9f3a…]": "ali@…"} — hand it to another process
+result.context_id             # the id stamped into this scan's placeholders
+```
+
+**A placeholder from another scan is never matched.** Restoring one request's
+answer against another request's result — a result kept in a module global, a
+cache, a queue — would otherwise substitute the wrong person's values, silently.
+Instead nothing is substituted: the token is reported as `foreign`, left in the
+text, and `is_complete` is `False`. Pass `strict=True` to raise `ContextMismatch`
+instead, and `also=[...]` when an answer legitimately carries an earlier turn's
+placeholders:
+
+```python
+turn2.restore(answer, also=[turn1], strict=True)
+```
+
+Mixing actions is normal, and `with_llm()` switches on its own entity policy —
+one whose defaults include `warn`. **`warn` reports a value without replacing
+it**, so a scan you believe is masked can hand the model a phone number in the
+clear. Derive a uniformly tokenized payload before sending; detection is not
+repeated, only the cheap anonymization stage:
+
+```python
+payload = result.reapply(Action.TOKENIZE)
+answer  = call_llm(payload.sanitized_text)
+print(payload.restore(answer))              # restore through the object you sent
+```
+
+```text
+mixed   : [PERSON:5687e6a708553da8], [EMAIL_1_9f3a…], tel +90 532 123 45 67
+uniform : [PERSON_1_0c29…], [EMAIL_1_0c29…], tel [PHONE_1_0c29…]
+```
+
+Tell the model to keep the placeholders, in those words — it matters more than the
+token format does. On a local Qwen2.5-1.5B, *"Copy every placeholder in square
+brackets EXACTLY as written"* preserved 0 of 9; naming the shape and forbidding
+invention preserved 6 of 9:
+
+```python
+INSTRUCTION = (
+    "The text contains placeholders like [EMAIL_1_9f3a2c8b71d4]. "
+    "Copy every placeholder EXACTLY as written, character for character. "
+    "Never invent placeholders and never renumber them."
+)
+```
+
+A model too weak to manage that is not a safety problem — the value does not come
+back and is listed in `.unrestored`; nothing wrong is ever substituted. See the
+[reversible masking guide](https://docs.wardcat.com/guide/reversible/) for the
+measurement and the partial-restore check.
+
+`restore()` with no argument reverses `sanitized_text` itself, which round-trips
+back to the original input. It also works on `hash` output (a salted digest is
+unique per value); with `redact` or `mask` two different values can collapse onto
+the same placeholder — those are reported in `.unrestored` as `ambiguous` and
+left in the text rather than guessed. Already scanned with another action? Derive
+a reversible view without re-detecting: `result.reapply(Action.TOKENIZE)`.
+
+> **The reverse map is raw PII.** `token_map`, `restore()` and the source list all
+> carry the original values by design — that is what reversibility means. Keep
+> them on the trusted side, out of logs and telemetry, and prefer a one-way action
+> when you do not need to bring the values back. Placeholder numbering is per
+> scan, so a `ScanResult` (or its `token_map`) is the only thing that can reverse
+> its own text.
 
 ### On-prem LLM
 
@@ -485,21 +674,35 @@ guard = Wardcat(salt="s").with_llm(
 )
 ```
 
+> **`with_llm()` brings its own entity policy.** Unlike `with_ner()`, which enables
+> nothing on its own, the LLM layer ships a default policy of **31 entity types,
+> 27 of them switched on**, each with its own action (`PERSON` → `hash`,
+> `EMAIL` → `warn`, …). The four that ship off are `ORG`, `LOCATION`, `NRP` and
+> `SPECIAL_CATEGORY`.
+> So `.with_llm(...).add_entity(Entity.EMAIL, Action.TOKENIZE)` detects and
+> anonymizes far more than the one type you named, under those actions rather
+> than yours — `enabled_entities()` shows the full set, and the first scan logs a
+> one-time warning listing what came along. Take control of one with
+> `add_entity(Entity.EMAIL, Action.TOKENIZE, layers=["llm"])`, switch it off with
+> `remove_entity(Entity.ORG)`, start from nothing with `remove_entity(Entity.ALL)`,
+> or replace the policy wholesale with a YAML `config_path`.
+
 > **Note:** Loopback HTTP (`localhost` / `127.0.0.1` / `::1`) is allowed with no warning — it never leaves the machine, so the common local-Ollama setup needs no `allow_http`. HTTP to a **remote** host is blocked (pass `allow_http=True` to override); use HTTPS in production via a reverse proxy (nginx, Caddy).
 
 #### Custom actions (extensible)
 
-Actions (`hash`/`redact`/`mask`/`warn`) come from a registry, so you can add your
-own — `tokenize`, `encrypt`, format-preserving masking — **without changing
-wardcat**. An action maps a span to its replacement (or `None` to keep the text):
+Actions (`hash`/`redact`/`mask`/`warn`/`tokenize`) come from a registry, so you
+can add your own — an external vault, `encrypt`, format-preserving masking —
+**without changing wardcat**. An action maps a span to its replacement (or `None`
+to keep the text):
 
 ```python
 from wardcat import Wardcat, register_action
 
 # ctx carries the salt; the span has .entity_type, .text, .start, .end
-register_action("tokenize", lambda span, ctx: f"<{span.entity_type}:{vault.put(span.text)}>")
+register_action("vault", lambda span, ctx: f"<{span.entity_type}:{vault.put(span.text)}>")
 
-guard = Wardcat(salt="s").add_entity("EMAIL", "tokenize")   # use it like any built-in
+guard = Wardcat(salt="s").add_entity("EMAIL", "vault")   # use it like any built-in
 ```
 
 > Detection and anonymization are separate stages: `DetectionEngine` finds the
@@ -560,6 +763,8 @@ Runnable scripts in [`examples/`](examples/):
 | `demo.py` | Programmatic + YAML APIs |
 | `batch_and_async.py` | `scan_batch` and the async API (regex-only, no services) |
 | `llm_hybrid.py` | regex + NER + LLM with ensemble adjudication (needs Ollama) |
+| `all_layers.py` | all three layers on one guard, with adjudication (needs Ollama + a SpaCy model) |
+| `reversible_roundtrip.py` | `Action.TOKENIZE` out, `restore()` back — regex-only, stubbed model, runs offline |
 | `asgi_middleware.py` | Copy-paste ASGI middleware (FastAPI/Starlette) that scans request bodies — wardcat ships no web-framework code; this is a self-contained example |
 
 ---
@@ -572,12 +777,15 @@ Runnable scripts in [`examples/`](examples/):
 
 | Entity | Default Action | Description |
 |---|---|---|
-| `CREDIT_CARD` | `hash` | Visa, MC, Amex, Discover — with or without separators; Luhn (mod-10) validated |
+| `CREDIT_CARD` | `hash` | Visa (13/16/19-digit), MasterCard (`51`–`55` and the 2-series `2221`–`2720`), Amex, Discover, Diners, JCB (`3528`–`3589` and the legacy 15-digit `1800`/`2131`), Maestro — with or without separators; Luhn (mod-10) validated |
 | `IBAN` | `hash` | International IBAN — mod-97 checksum validated |
 | `SSN` | `hash` | US Social Security Number (123-45-6789) |
+| `BANK_ROUTING` | `hash` | US bank routing number (ABA / RTN) — mod-10 checksum over a Federal Reserve prefix |
+| `CRYPTO_WALLET` | `hash` | Bitcoin (Base58Check and bech32/bech32m segwit, both checksum-verified) and Ethereum-style `0x` addresses |
 | `NIN` | `hash` | UK National Insurance Number (AB123456C) |
+| `NHS_NUMBER` | `hash` | UK NHS number — 10 digits, mod-11 checksum |
 | `TC_ID` | `hash` | Turkish national ID — 11 digits, Nüfus İdaresi checksum validated |
-| `EU_NATIONAL_ID` | `hash` | Spanish DNI (12345678Z) / NIE (X1234567L), French INSEE (15 digits) |
+| `EU_NATIONAL_ID` | `hash` | Spanish DNI / NIE, French INSEE, Dutch BSN, Polish PESEL — each verified against its own check rule |
 | `CODICE_FISCALE` | `hash` | Italian tax code (RSSMRA85T10A562S) |
 | `VAT_NUMBER` | `warn` | EU VAT (DE/FR/GB/IT/ES/AT/NL prefixed) + Turkish Vergi No (keyword-based) |
 | `PASSPORT` | `hash` | Passport numbers — keyword-based (`passport no:`, `pasaport`, `Reisepass`, `passeport`) |
@@ -600,12 +808,14 @@ Runnable scripts in [`examples/`](examples/):
 
 | Entity | Default Action | Description |
 |---|---|---|
-| `IP_ADDRESS` | `warn` | IPv4 addresses |
+| `IP_ADDRESS` | `warn` | IPv4 addresses — the quad must stand alone, so a longer dotted run (`03.93.92.16.85`, a French phone number) is not read as an address |
 | `IPv6` | `warn` | IPv6 addresses (full and compressed forms) |
 | `MAC_ADDRESS` | `warn` | Network hardware address (00:1A:2B:3C:4D:5E) |
+| `IMEI` | `hash` | Mobile device IMEI — 15 digits, Luhn-checked |
 | `UUID` | `warn` | RFC 4122 UUID / GUID |
+| `USERNAME` | `hash` | Account name introduced by its keyword — `kullanıcı adı ahmet.yilmaz`, `username: jsmith42`, `login jdoe`. Only the handle is taken |
 | `JWT` | `hash` | JSON Web Token (starts with `eyJ`) |
-| `CUSTOM_SECRET` | `hash` | API keys & tokens: OpenAI/Anthropic (`sk-`, `sk-ant-`), Stripe (`sk_live_`), AWS (`AKIA`), Google (`AIza`, `ya29.`), GitHub (`ghp_`), GitLab (`glpat-`), Slack (`xoxb-`, webhook URLs), Twilio (`SK`/`AC`), SendGrid (`SG.`), npm (`npm_`), and PEM private-key blocks |
+| `CUSTOM_SECRET` | `hash` | API keys & tokens: OpenAI/Anthropic (`sk-`, `sk-ant-`), Stripe (`sk_live_`), AWS (`AKIA`), Google (`AIza`, `ya29.`), GitHub (`ghp_`), GitLab (`glpat-`), Slack (`xoxb-`, webhook URLs), Twilio (`SK`/`AC`), SendGrid (`SG.`), npm (`npm_`), and PEM private-key blocks. Also a credential written into a sentence — `parolası ise …`, `password is …`, `erişim kodu …` — where the word beside it is the only evidence; only the value is taken, not the keyword |
 
 ### SpaCy NER (requires `spacy` + language model)
 
@@ -613,7 +823,9 @@ Runnable scripts in [`examples/`](examples/):
 |---|---|---|
 | `PERSON` | `hash` | Person names (first + last) — cross-language |
 | `ORG` | `warn` | Organization / company names |
-| `ADDRESS` | `warn` | Location entities (complements regex) |
+| `ADDRESS` | `warn` | Street addresses and facilities (complements regex) |
+| `LOCATION` | `warn` | Countries, cities, regions and geographic features (spaCy `GPE` / `LOC`). **These used to arrive as `ADDRESS`** — enable this to keep covering them |
+| `NRP` | `redact` | Nationality, religious or political group — GDPR Art. 9 data. **These used to arrive as `ORG`.** Off by default: these are ordinary words |
 
 > **NER requires an explicit model — there is no default.** NER is **off by default**; calling `with_ner()` without a model (or language) raises `ConfigError`. Choose a model in a documented way via `language=` (recommended) or `spacy_model=`. Running, say, the Turkish model on German text produces noisy results, so pick the model per language (or rely on the LLM layer for cross-language names). A multilingual gazetteer filters out job titles, HR terms, and abbreviations (EN/DE/FR/TR) that NER models commonly mislabel.
 
@@ -633,6 +845,21 @@ guard = Wardcat().with_ner(spacy_model=["en_core_web_sm", "de_core_news_sm"])
 ```
 
 Supported languages: `Language.EN`, `DE`, `FR`, `ES`, `IT`, `NL`, `PT`, `TR` (plain ISO codes like `"de"` are also accepted). If the requested size is unavailable for a language, the recommended model is used.
+
+#### Lower-cased text (chat logs, ASR output)
+
+A `PERSON` span is normally required to have at least one capitalized word —
+names are capitalized, ordinary word sequences are not. That reasoning holds only
+in a document that capitalizes at all. In a chat log, an ASR transcript or a
+lower-cased pipeline it rejects real names for a property the text never had, so
+the rule is skipped where the surrounding text carries no capitals (fewer than
+one uppercase letter in two hundred).
+
+**This is a deliberate trade.** In a lower-cased document a common-word sequence
+can now come through as a `PERSON`. Over-flagging is the safer direction for a
+redaction tool, and on presidio-research's corpus it is also the more accurate
+one: the old rule removed 15 real names to remove 7 false ones. If you prefer the
+stricter behaviour, feed the layer text that preserves its original casing.
 
 #### Multi-language text
 
@@ -771,26 +998,41 @@ To allow plaintext HTTP to a **remote** LLM (blocked by default), pass
 ```
 wardcat/
 ├── src/wardcat/
-│   ├── guard.py              # Wardcat — main interface
+│   ├── guard.py              # Wardcat — main interface, layer builders
+│   ├── _entity_policy.py     # add/remove/change entity + introspection (mixin)
+│   ├── entity_groups.py      # core_entities(), turkish_entities(), … helpers
+│   ├── exceptions.py         # WardcatError and friends (ConfigError, ContextMismatch…)
 │   ├── core/
-│   │   ├── engine.py         # DetectionEngine — overlap resolution, action application
-│   │   └── models.py         # Action, Violation, ScanResult
+│   │   ├── engine.py         # DetectionEngine — overlap resolution, layer merge
+│   │   ├── anonymizer.py     # applies the action to each resolved span
+│   │   ├── actions.py        # action registry — hash/redact/mask/warn/tokenize
+│   │   ├── restore.py        # TokenAllocator + restore() — the reversible path
+│   │   ├── registry.py       # which entity types each layer can produce
+│   │   └── models.py         # Entity, Action, Violation, ScanResult
 │   ├── detectors/
 │   │   ├── base.py           # BaseDetector ABC
-│   │   ├── regex_detector.py # 25+ regex patterns with checksum/Luhn validation
+│   │   ├── regex_detector.py # 28 patterns + keyword-cued secrets/usernames
 │   │   ├── ner_detector.py   # SpaCy NER (multilingual) + gazetteer FP filter
 │   │   └── llm_detector.py   # LLM-based detection with hallucination filter
 │   ├── llm/
-│   │   ├── backends/         # ollama, openai_compat, transformers
+│   │   ├── backends/         # ollama, openai_compat, transformers, vllm
 │   │   ├── model_catalog.py  # Supported model list
-│   │   └── prompt.py         # PII detection prompt builder
+│   │   ├── model_manager.py  # download / cache lifecycle
+│   │   └── prompt.py         # PII detection + sensitivity prompt builders
+│   ├── ner/
+│   │   ├── spacy_catalog.py  # language + size tier → SpaCy package name
+│   │   └── downloader.py     # auto-download of missing models
 │   ├── config/
 │   │   └── loader.py         # YAML loader, env var overrides
 │   └── utils/
-│       └── hashing.py        # SHA-256 + salt
+│       ├── hashing.py        # SHA-256 + salt
+│       ├── normalize.py      # confusable / homoglyph folding
+│       └── text.py           # chunking and offset helpers
 ├── tests/
 │   ├── unit/                 # Component-level tests
-│   └── integration/          # Scenario and adversarial tests
+│   ├── integration/          # Scenario and adversarial tests
+│   └── benchmark/            # Eval harness and the false-positive suite
+├── examples/                 # Runnable scripts (see Examples above)
 ├── config/
 │   └── default.yaml          # Example policy file
 └── pyproject.toml
@@ -835,6 +1077,10 @@ uv run pytest --cov=src/wardcat --cov-report=term-missing
 | Multilingual NER | One SpaCy model loads per language; wardcat bundles no language *detection* by design (keeps the core dependency-light) | Detect the language yourself (check `supported_languages()`) and pass several models via `language=[...]`, or use the language-agnostic LLM layer |
 | European addresses | Regex needs a street-type keyword (Straße, Rue, Calle…); unnumbered informal addresses may be missed | Use the NER `ADDRESS` / LLM layer, or add a `custom_patterns` rule for your address format |
 | Turkish NER (`tr_core_news_trf`) | The transformer model is incompatible with SpaCy 3.5+ | Use `tr_core_news_md` or `tr_core_news_lg` |
+| Lower-cased text | Where the document carries no capitals, the "a name has a capital" rule is switched off, so a common-word sequence can surface as a `PERSON` | Preserve the original casing if you want the stricter rule, or drop the phrase with `add_allowlist([...])` / `with_llm(adjudicate=True)` |
+| Weak checksums | The ABA routing, NHS and IMEI checks each let roughly one bare digit run in ten through, so an uncued match is scored `0.70` and the default floor leaves it alone | Write the number with its keyword (`IMEI: …`, `routing number …`), or call `with_min_confidence(0.6)` to act on uncued matches |
+| Ethereum addresses | The `0x` + 40-hex form is checked on its shape; EIP-55 mixed-case checksumming needs keccak-256, which the standard library does not carry | Bitcoin addresses are fully checksum-verified; for Ethereum, pair the match with the LLM layer if a stricter check matters |
+| NER types that moved | `GPE`/`LOC` used to be reported as `ADDRESS`, and `NORP` as `ORG`. A configuration written before that keeps working but stops covering them | Add `LOCATION` and/or `NRP` on the NER layer. The first scan of an affected guard says so once |
 | Turkish NER quality | `tr_core_news_md/lg` are news-trained and may miss names in non-standard contexts | Combine with `.with_llm(...)` — the LLM catches names NER misses |
 
 ---

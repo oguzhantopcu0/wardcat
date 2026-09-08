@@ -2,24 +2,83 @@
 
 An action turns a detected span into its replacement (or ``None`` to keep the
 text and only report it). Built-in actions are ``warn`` / ``hash`` / ``redact`` /
-``mask``; register your own (``encrypt``, ``tokenize``, format-preserving, …)
+``mask`` / ``tokenize``; register your own (``encrypt``, format-preserving, …)
 without touching the core::
 
     from wardcat import register_action
 
-    register_action("tokenize", lambda span, ctx: f"<{span.entity_type}:{vault.put(span.text)}>")
-    guard.add_entity("EMAIL", "tokenize")
+    register_action("vault", lambda span, ctx: f"<{span.entity_type}:{vault.put(span.text)}>")
+    guard.add_entity("EMAIL", "vault")
 """
 
 from __future__ import annotations
 
 import re
+import secrets
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from wardcat.detectors.base import DetectedSpan
 from wardcat.exceptions import ConfigError
 from wardcat.utils.hashing import sha256_hash
+
+#: Hex characters in a context id. Twelve is 48 bits: with a hundred thousand
+#: results alive at once the chance that any two share an id is about 1.8e-5,
+#: and request-scoped use (a few hundred alive) puts it near 1e-9.
+_CONTEXT_ID_CHARS = 12
+
+
+def new_context_id() -> str:
+    """A fresh context id — the per-scan half of every reversible placeholder."""
+    return secrets.token_hex(_CONTEXT_ID_CHARS // 2)
+
+
+class TokenAllocator:
+    """Hands out stable, unique placeholders for one scan — the ``tokenize`` vault.
+
+    A placeholder is ``[TYPE_index_contextid]`` — ``[EMAIL_1_9f3a2c8b71d4]``. The
+    index is per entity type in order of first appearance and restarts at 1 for
+    every scan, so it stays short and readable; the context id is drawn once per
+    allocator and shared by every token it hands out, which is what makes one
+    scan's placeholders distinct from another's. An *identical* value always gets
+    the same token, so a name repeated three times stays one referent for whatever
+    reads the anonymized text.
+
+    That distinctness is the safety property behind
+    :meth:`~wardcat.ScanResult.restore`: two scans running side by side both hold
+    an "``EMAIL`` number 1", and without the context id their placeholders would be
+    the same string — restoring one request's answer against another's result
+    would silently substitute the wrong person's value. With it there is nothing to
+    match, so the mistake becomes a reported non-substitution instead.
+
+    Allocation state is per instance and the
+    :class:`Anonymizer <wardcat.core.anonymizer.Anonymizer>` builds a fresh one for
+    every ``apply()`` call, so concurrent scans never share a counter or an id.
+
+    :param context_id: the id to stamp into every token. Defaults to a fresh one;
+        pass ``""`` for bare ``[TYPE_index]`` placeholders (no cross-scan
+        protection), or a fixed value to make output reproducible in tests.
+
+    .. warning::
+        Holds the raw values it has seen for the lifetime of the instance.
+    """
+
+    def __init__(self, context_id: str | None = None) -> None:
+        self.context_id = new_context_id() if context_id is None else context_id
+        self._tokens: dict[tuple[str, str], str] = {}
+        self._counts: dict[str, int] = {}
+
+    def token_for(self, entity_type: str, text: str) -> str:
+        """Return the placeholder for *text*, allocating a new one on first sight."""
+        key = (entity_type, text)
+        token = self._tokens.get(key)
+        if token is None:
+            count = self._counts.get(entity_type, 0) + 1
+            self._counts[entity_type] = count
+            suffix = f"_{self.context_id}" if self.context_id else ""
+            token = f"[{entity_type}_{count}{suffix}]"
+            self._tokens[key] = token
+        return token
 
 
 @dataclass(frozen=True)
@@ -27,6 +86,10 @@ class ActionContext:
     """Extra context an action may need beyond the span (e.g. the hash salt)."""
 
     salt: str = ""
+    tokens: TokenAllocator = field(default_factory=TokenAllocator, repr=False, compare=False)
+    """Placeholder vault for reversible actions, scoped to a single scan — its
+    ``context_id`` is the one stamped into this scan's tokens. Excluded from
+    ``repr``/equality so two contexts with the same salt still compare equal."""
 
 
 #: An action maps ``(span, context)`` to a replacement string, or ``None`` to
@@ -77,10 +140,15 @@ def _act_mask(span: DetectedSpan, ctx: ActionContext) -> str | None:
     return _mask_value(span.entity_type, span.text)
 
 
+def _act_tokenize(span: DetectedSpan, ctx: ActionContext) -> str | None:
+    return ctx.tokens.token_for(span.entity_type, span.text)
+
+
 register_action("warn", _act_warn)
 register_action("hash", _act_hash)
 register_action("redact", _act_redact)
 register_action("mask", _act_mask)
+register_action("tokenize", _act_tokenize)
 
 
 def _mask_value(entity_type: str, text: str) -> str:

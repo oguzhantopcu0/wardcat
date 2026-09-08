@@ -58,8 +58,11 @@ if guard.is_sensitive(text):
   confidence-first overlap resolver (a deterministic regex span always wins).
 - **Checksum validation** — TC_ID, IBAN, and CREDIT_CARD are mathematically
   verified before flagging, eliminating false positives.
-- **Four actions** — `warn`, `hash` (salted SHA-256), `redact`, `mask` — all
-  pluggable via a registry.
+- **Five actions** — `warn`, `hash` (salted SHA-256), `redact`, `mask`, and the
+  reversible `tokenize` — all pluggable via a registry.
+- **Reversible masking** — mask on the way out, restore the LLM's answer on the
+  way back, with an ordered source list of what was put back
+  ([Reversible masking](guide/reversible.md)).
 - **Value propagation** — once any layer detects a value, every occurrence of it
   can be anonymized ([Configuration](guide/configuration.md)).
 - **Degraded-scan visibility** — if a layer can't run (e.g. LLM backend down),
@@ -71,4 +74,5 @@ if guard.is_sensitive(text):
 - [Installation](installation.md) — base install and optional extras.
 - [Quickstart](quickstart.md) — the programmatic and YAML APIs.
 - [Detection layers](guide/layers.md) — regex, NER, and the LLM layer.
+- [Reversible masking](guide/reversible.md) — the LLM round trip, and restoring the answer.
 - [API reference](reference/wardcat.md) — generated from the source docstrings.
