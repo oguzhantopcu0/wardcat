@@ -426,24 +426,32 @@ def _backend(**kwargs):
 
 
 class TestDtypeSelection:
-    def test_cuda_with_bf16_keeps_bfloat16(self):
-        """Ampere and later run bf16 natively, and its exponent range is safer."""
+    def test_cuda_with_bf16_uses_bfloat16(self):
         assert _backend()._resolve_dtype(_FakeTorch(cuda=True, bf16=True)).name == "bfloat16"
 
-    def test_older_cuda_falls_back_to_float16(self):
+    def test_pre_ampere_cuda_falls_back_to_float16(self):
+        """Those cards have no bf16 support at all, and torch says so."""
         assert _backend()._resolve_dtype(_FakeTorch(cuda=True, bf16=False)).name == "float16"
 
     def test_cuda_without_the_probe_keeps_bfloat16(self):
         """Older torch has no is_bf16_supported; assume the card is fine."""
         assert _backend()._resolve_dtype(_FakeTorch(cuda=True, bf16=None)).name == "bfloat16"
 
-    def test_apple_silicon_uses_float16(self):
-        """Metal emulates bf16, so every matmul paid a conversion fp16 does not."""
-        assert _backend()._resolve_dtype(_FakeTorch(cuda=False, mps=True)).name == "float16"
+    def test_apple_silicon_keeps_bfloat16(self):
+        """Metal emulates bf16, so fp16 ought to be the faster choice here.
 
-    def test_plain_cpu_stays_at_float32(self):
-        """Most CPU kernels have no half path and fall back through fp32 anyway."""
-        assert _backend()._resolve_dtype(_FakeTorch(cuda=False, mps=False)).name == "float32"
+        It is not usable: loading a model as float16 with device_map="auto" on
+        MPS segfaults the interpreter on the torch/transformers versions this
+        package supports, where the same model as bfloat16 answers in 13
+        seconds. Measured on an M1 with SmolLM2-135M-Instruct. A default that
+        crashes is worse than one that is merely slow.
+        """
+        assert _backend()._resolve_dtype(_FakeTorch(cuda=False, mps=True)).name == "bfloat16"
+
+    def test_cpu_keeps_bfloat16(self):
+        """Unchanged: nothing here shows a better CPU default, and float32
+        would double the memory a CPU deployment needs."""
+        assert _backend()._resolve_dtype(_FakeTorch(cuda=False, mps=False)).name == "bfloat16"
 
     def test_an_explicit_dtype_wins_everywhere(self):
         for torch_stub in (
