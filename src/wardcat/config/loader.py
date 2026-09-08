@@ -80,6 +80,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "IMEI": {"enabled": True, "action": "hash"},
             "BANK_ROUTING": {"enabled": True, "action": "hash"},
             "NHS_NUMBER": {"enabled": True, "action": "hash"},
+            "USERNAME": {"enabled": True, "action": "hash"},
             # Place names are everywhere in ordinary prose — opt in when the
             # deployment actually treats them as identifying.
             "LOCATION": {"enabled": False, "action": "warn"},

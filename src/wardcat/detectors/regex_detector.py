@@ -493,6 +493,84 @@ _KEYWORD_CREDENTIAL: re.Pattern = re.compile(
 )
 
 
+# ── Keyword-cued usernames ───────────────────────────────────────────────────
+# A username is an online identifier tied to a person, and it has no shape of
+# its own either: "ahmet.yilmaz" is a handle here and a filename somewhere else.
+# As with a password, the word introducing it is the evidence. Turkish takes its
+# suffixes on the second noun ("kullanıcı adınız"), hence the suffix allowance.
+_KEYWORD_USERNAME: re.Pattern = re.compile(
+    r"(?:kullan[ıi]c[ıi]\s+(?:ad|kod)[a-zçğıöşü]{0,6}"
+    r"|hesap\s+ad[a-zçğıöşü]{0,6}"
+    r"|user\s?name|username|user\s+id|userid|login|nick(?:name)?)"
+    r"\s*(?:ise|is|=|:)?\s*"
+    r"[\"']?(?P<user>[A-Za-z0-9][A-Za-z0-9._\-]{2,63})"
+    # Handles are ASCII, so a Turkish letter here means the match cut a word in
+    # half — "yanlış" would otherwise arrive as the handle "yanlı".
+    r"(?![A-Za-zçğıöşüÇĞİÖŞÜ])[\"']?",
+    re.IGNORECASE,
+)
+
+# The words that actually follow those keywords when no handle is being given.
+# Nothing else separates "ahmetyilmaz" from "bulunamadi" — both are letter runs
+# — so this list, not a shape rule, is what keeps the filter honest.
+_NOT_A_USERNAME: frozenset[str] = frozenset(
+    {
+        "bos",
+        "boş",
+        "yok",
+        "gerekli",
+        "zorunlu",
+        "hatali",
+        "hatalı",
+        "yanlis",
+        "yanlış",
+        "gecersiz",
+        "geçersiz",
+        "bilinmiyor",
+        "bulunamadi",
+        "bulunamadı",
+        "girilmedi",
+        "tanimsiz",
+        "tanımsız",
+        "degisti",
+        "değişti",
+        "guncellendi",
+        "güncellendi",
+        "silindi",
+        "olarak",
+        "ile",
+        "veya",
+        "empty",
+        "blank",
+        "none",
+        "null",
+        "unknown",
+        "invalid",
+        "required",
+        "missing",
+        "not",
+        "found",
+        "failed",
+        "unset",
+        "changed",
+        "updated",
+        "deleted",
+        "field",
+        "value",
+        "here",
+        "above",
+        "below",
+        "and",
+        "the",
+    }
+)
+
+
+def _looks_like_a_username(value: str) -> bool:
+    """Reject the outcome words that follow a username keyword in prose."""
+    return value.lower() not in _NOT_A_USERNAME
+
+
 def _looks_like_a_secret(value: str) -> bool:
     """Reject the ordinary words that follow these keywords in prose.
 
@@ -999,6 +1077,24 @@ class RegexDetector(BaseDetector):
                     )
                 )
 
+        # A username introduced by the word for it. Same shape of problem as the
+        # password above: the cue carries the meaning, the value carries none.
+        if "USERNAME" in self.enabled_entities:
+            for match in _KEYWORD_USERNAME.finditer(scan_text):
+                value = match.group("user")
+                if not _looks_like_a_username(value):
+                    continue
+                start, end = match.start("user"), match.end("user")
+                cued_secret_spans.add((start, end))
+                spans.append(
+                    DetectedSpan(
+                        entity_type="USERNAME",
+                        text=text[start:end],
+                        start=start,
+                        end=end,
+                    )
+                )
+
         for entity_type, pattern in _COMPILED.items():
             # The library already produced this type's spans; running the pattern
             # too would only add lower-coverage duplicates for the resolver to drop.
@@ -1065,8 +1161,9 @@ class RegexDetector(BaseDetector):
         # and LLM adjudication can treat a fuzzy match differently from a proven
         # one (a checksum span is never overridable; a fuzzy ADDRESS is).
         for s in spans:
-            # A keyword-cued credential is a heuristic — the word beside it is
-            # the only evidence — so it does not get the prefix branches' tier.
+            # A keyword-cued credential or username is a heuristic — the word
+            # beside it is the only evidence — so it does not get the tier a
+            # self-identifying pattern earns.
             if (s.start, s.end) in cued_secret_spans:
                 s.confidence = CONF_FUZZY
             else:

@@ -500,3 +500,79 @@ class TestKeywordCuedCredentials:
             .with_min_confidence(0.95)
         )
         assert guard.scan("şifresi: Gizli!42x").is_clean
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# USERNAME — the other identifier with no shape of its own
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestUsername:
+    @pytest.mark.parametrize(
+        ("text", "handle"),
+        [
+            ("Şirket sistemindeki kullanıcı adı ahmet.yilmaz, örnek", "ahmet.yilmaz"),
+            ("kullanıcı adınız: ahmet_y42", "ahmet_y42"),
+            ("kullanıcı kodu AY-1042", "AY-1042"),
+            ("hesap adı jsmith", "jsmith"),
+            ("username: jsmith42", "jsmith42"),
+            ("user name = ahmet.yilmaz", "ahmet.yilmaz"),
+            ("login jdoe", "jdoe"),
+            ("nickname: kedi_2026", "kedi_2026"),
+            ("user id: 4471xyz", "4471xyz"),
+        ],
+    )
+    def test_the_handle_is_found(self, detector, text, handle):
+        spans = [s for s in detector.detect(text) if s.entity_type == "USERNAME"]
+        assert [s.text for s in spans] == [handle]
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "kullanıcı adı boş bırakılamaz",
+            "kullanıcı adı zorunlu alandır",
+            "kullanıcı adı bulunamadı",
+            "kullanıcı adı yanlış girildi",
+            "kullanıcı adı geçersiz",
+            "kullanıcı adı güncellendi",
+            "kullanıcı adı silindi",
+            "kullanıcı adı hatalı",
+            "kullanıcı adı tanımsız",
+            "kullanıcı adı ile şifre eşleşmiyor",
+            "username is required",
+            "username not found",
+            "username invalid",
+            "login failed",
+        ],
+    )
+    def test_an_outcome_word_is_not_a_handle(self, detector, text):
+        """Nothing but the stoplist separates 'ahmetyilmaz' from 'bulunamadı'.
+
+        Both are lower-case letter runs after the same keyword, so no shape rule
+        can tell them apart — which is why the list exists and is tested.
+        """
+        assert "USERNAME" not in types_in(detector, text)
+
+    def test_a_turkish_word_is_not_cut_into_a_handle(self, detector):
+        """Handles are ASCII, so 'yanlış' must not arrive as 'yanlı'."""
+        spans = [s for s in detector.detect("kullanıcı adı yanlış") if s.entity_type == "USERNAME"]
+        assert spans == []
+
+    def test_an_email_local_part_is_left_to_the_email_filter(self):
+        guard = Wardcat(salt="s").add_entities(
+            [Entity.USERNAME, Entity.EMAIL], action=Action.REDACT
+        )
+        result = guard.scan("mail ahmet.yilmaz@example.com")
+        assert result.sanitized_text == "mail [EMAIL]"
+        assert {v.entity_type for v in result.violations} == {"EMAIL"}
+
+    def test_only_the_handle_is_taken(self):
+        guard = Wardcat(salt="s").add_entity(Entity.USERNAME, Action.REDACT)
+        out = guard.scan("Şirket sistemindeki kullanıcı adı ahmet.yilmaz kayıtlıdır").sanitized_text
+        assert out == "Şirket sistemindeki kullanıcı adı [USERNAME] kayıtlıdır"
+
+    def test_scored_as_the_heuristic_it_is(self, detector):
+        from wardcat.detectors.regex_detector import CONF_FUZZY
+
+        spans = [s for s in detector.detect("username: jsmith42") if s.entity_type == "USERNAME"]
+        assert spans and all(s.confidence == CONF_FUZZY for s in spans)
