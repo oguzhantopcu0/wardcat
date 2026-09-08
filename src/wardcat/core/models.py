@@ -118,6 +118,7 @@ class Entity(str, Enum):
     NHS_NUMBER = "NHS_NUMBER"
     LOCATION = "LOCATION"
     NRP = "NRP"
+    USERNAME = "USERNAME"
 
 
 # Known entity types — for typo checking and IDE support.

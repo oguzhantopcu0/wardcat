@@ -13,6 +13,7 @@ import concurrent.futures
 from wardcat.detectors.regex_detector import (
     _COMPILED,
     _KEYWORD_CREDENTIAL,
+    _KEYWORD_USERNAME,
     _URI_CREDENTIAL,
 )
 
@@ -54,8 +55,14 @@ def test_auxiliary_patterns_are_redos_safe():
     for name, pattern in (
         ("_URI_CREDENTIAL", _URI_CREDENTIAL),
         ("_KEYWORD_CREDENTIAL", _KEYWORD_CREDENTIAL),
+        ("_KEYWORD_USERNAME", _KEYWORD_USERNAME),
     ):
-        for text in [*_ADVERSARIAL, "password " * 200, "şifre:" + "a" * 400]:
+        for text in [
+            *_ADVERSARIAL,
+            "password " * 200,
+            "şifre:" + "a" * 400,
+            "kullanıcı adı " * 150,
+        ]:
             assert _finishes_fast(pattern, text), (
                 f"{name} did not finish in time on adversarial input "
                 f"{text[:24]!r}… — possible ReDoS."

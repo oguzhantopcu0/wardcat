@@ -675,8 +675,8 @@ guard = Wardcat(salt="s").with_llm(
 ```
 
 > **`with_llm()` brings its own entity policy.** Unlike `with_ner()`, which enables
-> nothing on its own, the LLM layer ships a default policy of **30 entity types,
-> 26 of them switched on**, each with its own action (`PERSON` → `hash`,
+> nothing on its own, the LLM layer ships a default policy of **31 entity types,
+> 27 of them switched on**, each with its own action (`PERSON` → `hash`,
 > `EMAIL` → `warn`, …). The four that ship off are `ORG`, `LOCATION`, `NRP` and
 > `SPECIAL_CATEGORY`.
 > So `.with_llm(...).add_entity(Entity.EMAIL, Action.TOKENIZE)` detects and
@@ -813,6 +813,7 @@ Runnable scripts in [`examples/`](examples/):
 | `MAC_ADDRESS` | `warn` | Network hardware address (00:1A:2B:3C:4D:5E) |
 | `IMEI` | `hash` | Mobile device IMEI — 15 digits, Luhn-checked |
 | `UUID` | `warn` | RFC 4122 UUID / GUID |
+| `USERNAME` | `hash` | Account name introduced by its keyword — `kullanıcı adı ahmet.yilmaz`, `username: jsmith42`, `login jdoe`. Only the handle is taken |
 | `JWT` | `hash` | JSON Web Token (starts with `eyJ`) |
 | `CUSTOM_SECRET` | `hash` | API keys & tokens: OpenAI/Anthropic (`sk-`, `sk-ant-`), Stripe (`sk_live_`), AWS (`AKIA`), Google (`AIza`, `ya29.`), GitHub (`ghp_`), GitLab (`glpat-`), Slack (`xoxb-`, webhook URLs), Twilio (`SK`/`AC`), SendGrid (`SG.`), npm (`npm_`), and PEM private-key blocks. Also a credential written into a sentence — `parolası ise …`, `password is …`, `erişim kodu …` — where the word beside it is the only evidence; only the value is taken, not the keyword |
 
@@ -1010,7 +1011,7 @@ wardcat/
 │   │   └── models.py         # Entity, Action, Violation, ScanResult
 │   ├── detectors/
 │   │   ├── base.py           # BaseDetector ABC
-│   │   ├── regex_detector.py # 28 regex patterns with checksum/Luhn validation
+│   │   ├── regex_detector.py # 28 patterns + keyword-cued secrets/usernames
 │   │   ├── ner_detector.py   # SpaCy NER (multilingual) + gazetteer FP filter
 │   │   └── llm_detector.py   # LLM-based detection with hallucination filter
 │   ├── llm/

@@ -91,6 +91,12 @@ _ENTITY_DESCRIPTIONS: dict[str, str] = {
         "UK NHS number — 10 digits, normally written in 3-3-4 groups "
         "(e.g. '943 476 5919'). NOT a phone number."
     ),
+    "USERNAME": (
+        "an account or login name for a person, introduced by a word such as "
+        "'username', 'kullanıcı adı', 'login' or 'nick' (e.g. 'ahmet.yilmaz', "
+        "'jsmith42'). Extract the handle only, not the word introducing it, and "
+        "not the local part of an email address."
+    ),
     "LOCATION": (
         "a named place — country, city, region, or a geographic feature "
         "(e.g. 'Istanbul', 'Bavaria', 'the Thames'). NOT a full street address, "

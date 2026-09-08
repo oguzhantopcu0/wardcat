@@ -44,6 +44,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arrived as the same kind of finding. The same spans are still detected; they
   now carry a type that says what they are.
 
+- **`USERNAME` — the account name beside the password.** An online identifier
+  tied to a person, and the other thing in a personnel record with no shape of
+  its own: `ahmet.yilmaz` is a handle in one sentence and a filename in the
+  next. Cued the same way as the credential — `kullanıcı adı`, `kullanıcı kodu`,
+  `hesap adı`, `username`, `user id`, `login`, `nick` — with the Turkish
+  suffixes allowed for.
+
+  The shape rule that gates the credential does not work here: a username is
+  often a plain lower-case run, and so is "bulunamadı". A stoplist of the words
+  that actually follow these keywords in prose is what separates them, and it is
+  tested against fourteen such sentences. Handles are ASCII, so the match also
+  refuses to stop in the middle of a Turkish word — otherwise "yanlış" arrives
+  as the handle "yanlı". Reported at `0.90`, value only, keyword left in place.
+
 - **A credential written out in prose is now caught.** The secret patterns keyed
   on a provider prefix — `sk-`, `ghp_`, `AKIA` — and a password typed into a
   sentence has no prefix, so `parolası ise TestPass!2026` went straight through.
@@ -143,8 +157,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shadowing a built-in rather than adding a new action.
 
 - **`with_llm()` now says what it switches on.** Unlike `with_ner()`, which enables
-  no entity by itself, the LLM layer carries its own default entity policy (24
-  types, 22 of them on, each with its own action), so
+  no entity by itself, the LLM layer carries its own default entity policy (31
+  types, 27 of them on, each with its own action), so
   `.with_llm(...).add_entity(EMAIL, ...)` has
   always detected and anonymized far more than the one type named — under the
   policy's actions, not the caller's. The behaviour is unchanged; the first scan

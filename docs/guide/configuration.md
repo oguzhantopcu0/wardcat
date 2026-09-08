@@ -27,13 +27,13 @@ to `hash` (with a one-time warning). Actions are
 ## The LLM layer's own entity policy
 
 `with_ner()` enables no entity by itself — you opt in with `add_entity`. **`with_llm()`
-does not work that way**: the LLM layer carries its own default policy of **30 entity
-types, 26 of them switched on** (`ORG`, `LOCATION`, `NRP` and `SPECIAL_CATEGORY` ship
+does not work that way**: the LLM layer carries its own default policy of **31 entity
+types, 27 of them switched on** (`ORG`, `LOCATION`, `NRP` and `SPECIAL_CATEGORY` ship
 off), each with its own action, so
 
 ```python
 guard = Wardcat(salt="s").with_llm(...).add_entity(Entity.EMAIL, Action.TOKENIZE)
-guard.enabled_entities()                 # 26 types, not 1
+guard.enabled_entities()                 # 27 types, not 1
 guard.get_entity_action(Entity.PERSON)   # 'hash' — nobody asked for this
 ```
 

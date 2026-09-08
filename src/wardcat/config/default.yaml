@@ -112,6 +112,10 @@ entities:
     enabled: true
     action: hash
 
+  USERNAME:          # "kullanıcı adı ahmet.yilmaz" — anahtar kelimeyle
+    enabled: true
+    action: hash
+
   # ── SpaCy NER tabanlı ──────────────────────────────────────
   # Türkçe model için: spacy_model: "tr_core_news_sm"
   # Kurulum: uv pip install <tr model wheel URL>
