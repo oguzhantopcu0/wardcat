@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import concurrent.futures
 
-from wardcat.detectors.regex_detector import _COMPILED
+from wardcat.detectors.regex_detector import (
+    _COMPILED,
+    _KEYWORD_CREDENTIAL,
+    _URI_CREDENTIAL,
+)
 
 # Inputs designed to trigger backtracking in address/name/number-style patterns.
 _ADVERSARIAL = [
@@ -41,5 +45,18 @@ def test_builtin_patterns_are_redos_safe():
         for text in _ADVERSARIAL:
             assert _finishes_fast(pattern, text), (
                 f"built-in pattern {name!r} did not finish in time on adversarial input "
+                f"{text[:24]!r}… — possible ReDoS."
+            )
+
+
+def test_auxiliary_patterns_are_redos_safe():
+    """The two credential patterns run outside _COMPILED and were untested."""
+    for name, pattern in (
+        ("_URI_CREDENTIAL", _URI_CREDENTIAL),
+        ("_KEYWORD_CREDENTIAL", _KEYWORD_CREDENTIAL),
+    ):
+        for text in [*_ADVERSARIAL, "password " * 200, "şifre:" + "a" * 400]:
+            assert _finishes_fast(pattern, text), (
+                f"{name} did not finish in time on adversarial input "
                 f"{text[:24]!r}… — possible ReDoS."
             )

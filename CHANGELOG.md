@@ -44,6 +44,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arrived as the same kind of finding. The same spans are still detected; they
   now carry a type that says what they are.
 
+- **A credential written out in prose is now caught.** The secret patterns keyed
+  on a provider prefix — `sk-`, `ghp_`, `AKIA` — and a password typed into a
+  sentence has no prefix, so `parolası ise TestPass!2026` went straight through.
+  The word introducing it is the evidence instead: `password`, `passphrase`,
+  `api key`, `access token`, `erişim kodu`, and the Turkish roots with their
+  possessive and case suffixes (`şifresi`, `parolanız`), joined by `=`, `:`,
+  `is`, `ise` or nothing at all.
+
+  Prose puts ordinary words in that position too — "şifre yanlış",
+  "password is unknown" — so the value must look like a credential: at least six
+  characters mixing two of {lower, upper, digit, symbol}. A lower-case word never
+  does. Reported at `0.90`, the heuristic tier, not the `0.97` a recognised
+  prefix earns, and **only the value is taken** so the sentence still reads:
+  `kullanıcı şifresi: [CUSTOM_SECRET]`.
+
 - **More provider secrets.** GitHub fine-grained PATs (`github_pat_`), Hugging
   Face tokens, Shopify, DigitalOcean, Slack app-level tokens, Azure storage
   account keys, Google service-account key ids, and the AWS secret access key —

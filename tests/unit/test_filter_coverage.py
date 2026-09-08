@@ -416,3 +416,87 @@ class TestConfidenceFloor:
 
         with pytest.raises(ConfigError, match="min_confidence"):
             Wardcat(salt="s").with_min_confidence(bad)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A credential introduced by the word for it, rather than by its own prefix
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestKeywordCuedCredentials:
+    @pytest.mark.parametrize(
+        ("text", "secret"),
+        [
+            ("örnek erişim parolası ise TestPass!2026 olarak", "TestPass!2026"),
+            ("kullanıcı şifresi: Gizli!42x", "Gizli!42x"),
+            ("şifreniz = Bahar2026!", "Bahar2026!"),
+            ("parolam Yaz-2026x", "Yaz-2026x"),
+            ("password is hunter2X", "hunter2X"),
+            ("PASSWORD: Sup3rSecret", "Sup3rSecret"),
+            ("api_key = abc123XYZdef", "abc123XYZdef"),
+            ("access token: eyJhbGciOiJIUzI1", "eyJhbGciOiJIUzI1"),
+            ("erişim kodu ALPHA-BRAVO-42", "ALPHA-BRAVO-42"),
+            ('passphrase "correct-Horse-9"', "correct-Horse-9"),
+        ],
+    )
+    def test_the_value_is_found(self, detector, text, secret):
+        spans = [s for s in detector.detect(text) if s.entity_type == "CUSTOM_SECRET"]
+        assert [s.text for s in spans] == [secret]
+
+    def test_only_the_value_is_taken_not_the_keyword(self):
+        """The word introducing the secret stays, so the redacted line still reads."""
+        guard = Wardcat(salt="s").add_entity(Entity.CUSTOM_SECRET, Action.REDACT)
+        out = guard.scan("kullanıcı şifresi: Gizli!42x").sanitized_text
+        assert out == "kullanıcı şifresi: [CUSTOM_SECRET]"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "şifre yanlış girildi",
+            "parola değiştirildi",
+            "password is unknown",
+            "şifresi unutulmuş",
+            "parolanız sıfırlandı",
+            "the password is not set",
+            "api key rotation policy",
+            "access code generation failed",
+            "password reset requested",
+            "şifre politikası güncellendi",
+            "kullanıcı parolasını hatırlamıyor",
+        ],
+    )
+    def test_an_ordinary_word_after_the_keyword_is_not_a_secret(self, detector, text):
+        """These sentences all put a plain word where a credential would go.
+
+        A credential mixes character classes; a lower-case word does not, and
+        that is the whole gate — there is no shape to key on otherwise.
+        """
+        assert "CUSTOM_SECRET" not in types_in(detector, text)
+
+    def test_scored_as_the_heuristic_it_is(self, detector):
+        """The keyword is the only evidence, so it must not claim a prefix match's tier."""
+        from wardcat.detectors.regex_detector import CONF_FUZZY
+
+        spans = [
+            s for s in detector.detect("şifresi: Gizli!42x") if s.entity_type == "CUSTOM_SECRET"
+        ]
+        assert spans and all(s.confidence == CONF_FUZZY for s in spans)
+
+    def test_a_prefixed_token_still_reports_at_its_own_tier(self, detector):
+        """A recognisable token is proof in itself, cue or no cue."""
+        from wardcat.detectors.regex_detector import CONF_STRUCTURAL
+
+        spans = [
+            s
+            for s in detector.detect("token ghp_ABCDEFGHIJKLMNOPQRSTUV0123456789")
+            if s.entity_type == "CUSTOM_SECRET"
+        ]
+        assert spans and all(s.confidence == CONF_STRUCTURAL for s in spans)
+
+    def test_dropped_when_the_floor_is_raised_above_the_heuristic_tier(self):
+        guard = (
+            Wardcat(salt="s")
+            .add_entity(Entity.CUSTOM_SECRET, Action.REDACT)
+            .with_min_confidence(0.95)
+        )
+        assert guard.scan("şifresi: Gizli!42x").is_clean
