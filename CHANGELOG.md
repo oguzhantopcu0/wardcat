@@ -39,11 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   about one US-format number in eleven through. A number both layers claim is
   resolved as `PHONE` at `0.97` rather than dropped as a weak NHS match.
 
-- **`LOCATION` — place names get their own type.** SpaCy's `GPE` and `LOC`
-  labels were folded into `ADDRESS`, so "Germany" and "Moda Caddesi No:42"
-  arrived as the same kind of finding. The same spans are still detected; they
-  now carry a type that says what they are.
-
 - **`USERNAME` — the account name beside the password.** An online identifier
   tied to a person, and the other thing in a personnel record with no shape of
   its own: `ahmet.yilmaz` is a handle in one sentence and a filename in the
@@ -159,6 +154,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Two kinds of NER span moved into types of their own — enable them or lose
+  the coverage.** SpaCy's `GPE`/`LOC` labels were folded into `ADDRESS`, so
+  "Germany" and "Moda Caddesi No:42" arrived as the same kind of finding; and
+  `NORP` — nationality, religious and political group, GDPR Article 9 data —
+  was folded into `ORG`, which both mistyped it and, under `ORG`'s `warn`
+  action, left it in the text. Place names are `LOCATION` now and group names
+  are `NRP`.
+
+  **This narrows an existing configuration.** A guard with `ADDRESS` enabled on
+  the NER layer no longer redacts "Germany"; one with `ORG` enabled no longer
+  reports "Kurdish". Nothing errors and nothing is over-detected — the spans
+  simply stop being reported, which is the failure that does not announce
+  itself, so the first scan of an affected guard now logs a one-time warning
+  naming the type to add:
+
+  ```python
+  guard.add_entity(Entity.LOCATION, Action.REDACT, layers=["ner"])
+  guard.add_entity(Entity.NRP, Action.REDACT, layers=["ner"])
+  ```
+
+  `LOCATION` is on in the shipped example policy. `NRP` is off: "Turkish" and
+  "Catholic" are ordinary vocabulary, and redacting every occurrence would wreck
+  the text for anyone not doing Article 9 work.
+
 - **`tokenize` is now a built-in action name.** It was the running example of a
   *custom* action in the README and docs; those now use `vault` instead.
   `register_action("tokenize", ...)` still wins over the built-in — overriding a
@@ -179,13 +198,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guide.
 
 ### Fixed
-
-- **NORP was being reported as an organisation.** SpaCy's `NORP` label covers
-  nationality, religious and political groups — GDPR Article 9 data. It was
-  mapped to `ORG`, which both mistyped it and, under `ORG`'s `warn` action, left
-  it in the text. It has its own `NRP` type now, off by default: "Turkish" and
-  "Catholic" are ordinary vocabulary, and redacting every occurrence would wreck
-  the text for anyone not doing Article 9 work.
 
 - **`phone_regions` was rejected as an unknown YAML key.** It has been a valid
   configuration key since the libphonenumber work, but was never added to the
