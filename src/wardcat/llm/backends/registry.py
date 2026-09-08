@@ -69,6 +69,7 @@ def _make_transformers(cfg: dict[str, Any]) -> BaseLLMBackend:
         device_map=cfg.get("device_map", "auto"),
         load_in_8bit=cfg.get("load_in_8bit", False),
         load_in_4bit=cfg.get("load_in_4bit", False),
+        dtype=cfg.get("dtype"),
     )
 
 

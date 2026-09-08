@@ -452,6 +452,7 @@ class Wardcat(EntityPolicyMixin):
         device_map: str = "auto",
         load_in_8bit: bool = False,
         load_in_4bit: bool = False,
+        dtype: str | None = None,
         language: str | Language | None = None,
     ) -> Wardcat:
         """
@@ -487,6 +488,12 @@ class Wardcat(EntityPolicyMixin):
             it here would otherwise override the backend-specific default (so
             selecting ``vllm`` without a ``base_url`` must still reach vLLM,
             not Ollama).
+        :param dtype: weight dtype for the ``transformers`` backend, as a torch
+            dtype name (``"float16"``, ``"bfloat16"``, ``"float32"``). Left
+            unset, one is chosen for the device: ``bfloat16`` on a CUDA card
+            that supports it, ``float16`` on Apple Silicon (which emulates
+            bf16 rather than running it), ``float32`` on plain CPU. Ignored by
+            the other backends, which do not load weights themselves.
         :param language: selects a localized system prompt for :meth:`is_sensitive`
             (``tr``/``de``/``fr``; anything else uses the English, multilingual-aware
             prompt). It does not change the entity-detection prompt used by
@@ -507,6 +514,7 @@ class Wardcat(EntityPolicyMixin):
                 "device_map": device_map,
                 "load_in_8bit": load_in_8bit,
                 "load_in_4bit": load_in_4bit,
+                "dtype": dtype,
                 "language": lang_code,
             }
         )
