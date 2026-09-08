@@ -824,8 +824,8 @@ Runnable scripts in [`examples/`](examples/):
 | `PERSON` | `hash` | Person names (first + last) — cross-language |
 | `ORG` | `warn` | Organization / company names |
 | `ADDRESS` | `warn` | Street addresses and facilities (complements regex) |
-| `LOCATION` | `warn` | Countries, cities, regions and geographic features (spaCy `GPE` / `LOC`) |
-| `NRP` | `redact` | Nationality, religious or political group — GDPR Art. 9 data. **Off by default** |
+| `LOCATION` | `warn` | Countries, cities, regions and geographic features (spaCy `GPE` / `LOC`). **These used to arrive as `ADDRESS`** — enable this to keep covering them |
+| `NRP` | `redact` | Nationality, religious or political group — GDPR Art. 9 data. **These used to arrive as `ORG`.** Off by default: these are ordinary words |
 
 > **NER requires an explicit model — there is no default.** NER is **off by default**; calling `with_ner()` without a model (or language) raises `ConfigError`. Choose a model in a documented way via `language=` (recommended) or `spacy_model=`. Running, say, the Turkish model on German text produces noisy results, so pick the model per language (or rely on the LLM layer for cross-language names). A multilingual gazetteer filters out job titles, HR terms, and abbreviations (EN/DE/FR/TR) that NER models commonly mislabel.
 
@@ -1080,6 +1080,7 @@ uv run pytest --cov=src/wardcat --cov-report=term-missing
 | Lower-cased text | Where the document carries no capitals, the "a name has a capital" rule is switched off, so a common-word sequence can surface as a `PERSON` | Preserve the original casing if you want the stricter rule, or drop the phrase with `add_allowlist([...])` / `with_llm(adjudicate=True)` |
 | Weak checksums | The ABA routing, NHS and IMEI checks each let roughly one bare digit run in ten through, so an uncued match is scored `0.70` and the default floor leaves it alone | Write the number with its keyword (`IMEI: …`, `routing number …`), or call `with_min_confidence(0.6)` to act on uncued matches |
 | Ethereum addresses | The `0x` + 40-hex form is checked on its shape; EIP-55 mixed-case checksumming needs keccak-256, which the standard library does not carry | Bitcoin addresses are fully checksum-verified; for Ethereum, pair the match with the LLM layer if a stricter check matters |
+| NER types that moved | `GPE`/`LOC` used to be reported as `ADDRESS`, and `NORP` as `ORG`. A configuration written before that keeps working but stops covering them | Add `LOCATION` and/or `NRP` on the NER layer. The first scan of an affected guard says so once |
 | Turkish NER quality | `tr_core_news_md/lg` are news-trained and may miss names in non-standard contexts | Combine with `.with_llm(...)` — the LLM catches names NER misses |
 
 ---
