@@ -15,11 +15,16 @@ _SPACY_LABEL_MAP: dict[str, str] = {
     # English model labels
     "PERSON": "PERSON",
     "ORG": "ORG",
-    "GPE": "ADDRESS",  # Geopolitical entity
-    "LOC": "ADDRESS",  # Location
+    "GPE": "LOCATION",  # Geopolitical entity — country, city, region
+    "LOC": "LOCATION",  # Non-political location — mountain, river, area
     # Turkish model labels (tr_core_news_sm / tr_core_news_md / tr_core_news_lg)
     "PER": "PERSON",  # Person name in Turkish model
-    "NORP": "ORG",  # Nationality, religious group, etc.
+    # NORP is nationality, religious or political group — GDPR Article 9 data,
+    # not a company. Mapping it to ORG labelled it as one and, with ORG's `warn`
+    # action, left it in the text. It gets its own type, off by default: these
+    # words ("Turkish", "Catholic") are ordinary vocabulary, so redacting every
+    # one of them by default would wreck the text for no gain outside Art. 9 work.
+    "NORP": "NRP",
     "FAC": "ADDRESS",  # Building, bridge, etc.
 }
 

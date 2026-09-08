@@ -71,12 +71,12 @@ if guard.is_sensitive(text):
 - **Semantic sensitivity gate** — `is_sensitive(text) → bool`: a holistic yes/no on whether text is safe to send onward (LLM-only), catching confidential content the typed detectors miss (unreleased financials, deal terms, a confidential project); optional per-language prompt
 - **Ensemble adjudication** (optional) — the LLM verifies/relabels/drops regex & NER candidates and adds what they missed, in one call; deterministic regex results are always protected
 - **Five actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt; the default when `action` is omitted), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking), `tokenize` (`[TYPE_1]` — **reversible**, see [reversible masking](#reversible-masking-mask-on-the-way-out-restore-on-the-way-back))
-- **Checksum validation** — TC_ID (Nüfus İdaresi algorithm), IBAN (mod-97), and CREDIT_CARD (Luhn mod-10) validated before flagging — eliminates false positives
+- **Checksum validation** — TC_ID (Nüfus İdaresi), IBAN (mod-97), CREDIT_CARD (Luhn), Bitcoin (Base58Check / bech32), NHS (mod-11), ABA routing (mod-10), IMEI (Luhn) and every EU national-ID scheme are verified before flagging — eliminates false positives
 - **Rainbow table protection** — user-defined salt for all hashes
 - **Two APIs** — method chaining (programmatic) and YAML (declarative)
 - **Async & batch** — `scan_async` / `scan_batch` / `is_sensitive_async`; concurrent requests overlap (native async LLM I/O), one shared guard is safe to reuse across scans
 - **Multilingual support** — Turkish, English, German, and French for names, addresses, birth dates, and phone numbers; plus Spanish, Italian, Dutch address patterns; TC_ID, IBAN, SSN, NIN, DNI/NIE, UK postcodes, US ZIP+4, EU VAT numbers and more
-- **Secret detection** — API keys and tokens (OpenAI, Anthropic, Stripe, AWS, Google, GitHub, GitLab, Slack, Twilio, SendGrid, npm) and PEM private keys
+- **Secret detection** — API keys and tokens (OpenAI, Anthropic, Stripe, AWS, Google, GitHub incl. fine-grained PATs, GitLab, Slack, Twilio, SendGrid, npm, Hugging Face, Shopify, DigitalOcean), Azure storage keys, Sentry DSNs, connection-string passwords and PEM private keys
 - **Passport detection** — contextual passport number detection (regex keyword-based + LLM) for any country
 - **Evasion resistance** — confusable/homoglyph folding catches lookalike-character tricks (Cyrillic/fullwidth/Arabic-Indic) that fool ASCII-oriented regex
 - **Fault tolerance** — a layer that can't run (e.g. LLM backend down) degrades gracefully and is surfaced on `ScanResult.warnings` instead of crashing the scan
@@ -418,6 +418,42 @@ stronger than a bare digit run but weaker than a checksum, and **every extra
 region widens what counts as a number**. Add the regions you serve, not every
 region there is.
 
+### How sure is a match? (the confidence floor)
+
+Every detection carries a confidence, tiered by how strong the evidence actually
+is. A checksum-verified card is `1.0`; a distinctive format such as an email or a
+JWT is `0.97`; a keyword heuristic such as a street address is `0.90`; a model
+layer is `0.85`.
+
+Three checksums are too weak to stand on their own. A bare nine-digit run passes
+the ABA routing check roughly once in ten, and the same holds for the NHS mod-11
+and the IMEI Luhn. Refusing to match the bare form would cost real coverage;
+treating it as proven would flag ordinary reference numbers. So both forms are
+matched, and a match with no supporting keyword beside it lands in an **uncued**
+tier at `0.70` instead.
+
+The floor decides what is acted on. It defaults to `0.8`, which sits above that
+tier and below every other one, so uncued matches are found but left alone:
+
+```python
+guard = (
+    Wardcat(salt="s")
+    .add_entity(Entity.IMEI, Action.HASH)
+    .with_min_confidence(0.6)      # act on uncued checksum matches too
+)
+
+guard.scan("IMEI: 490154203237518")            # detected at any floor
+guard.scan("reference 490154203237518 logged")  # only below 0.8
+```
+
+The floor is applied **after** overlap resolution, so a stronger span still wins
+its overlap first. The NHS 3-3-4 grouping is also the US phone grouping, and
+mod-11 lets about one US-format number in eleven through; a number both layers
+claim is resolved as `PHONE` at `0.97`, never dropped as a weak NHS match.
+
+Raising the floor works too: `with_min_confidence(0.95)` keeps only checksummed
+and high-precision structural matches and drops the fuzzy address heuristics.
+
 ### Catching every occurrence (value propagation)
 
 Model-based layers (SpaCy NER, the LLM) sometimes report a value that
@@ -639,9 +675,10 @@ guard = Wardcat(salt="s").with_llm(
 ```
 
 > **`with_llm()` brings its own entity policy.** Unlike `with_ner()`, which enables
-> nothing on its own, the LLM layer ships a default policy of **24 entity types,
-> 22 of them switched on**, each with its own action (`PERSON` → `hash`,
-> `EMAIL` → `warn`, …). The two that ship off are `ORG` and `SPECIAL_CATEGORY`.
+> nothing on its own, the LLM layer ships a default policy of **31 entity types,
+> 27 of them switched on**, each with its own action (`PERSON` → `hash`,
+> `EMAIL` → `warn`, …). The four that ship off are `ORG`, `LOCATION`, `NRP` and
+> `SPECIAL_CATEGORY`.
 > So `.with_llm(...).add_entity(Entity.EMAIL, Action.TOKENIZE)` detects and
 > anonymizes far more than the one type you named, under those actions rather
 > than yours — `enabled_entities()` shows the full set, and the first scan logs a
@@ -743,9 +780,12 @@ Runnable scripts in [`examples/`](examples/):
 | `CREDIT_CARD` | `hash` | Visa (13/16/19-digit), MasterCard (`51`–`55` and the 2-series `2221`–`2720`), Amex, Discover, Diners, JCB (`3528`–`3589` and the legacy 15-digit `1800`/`2131`), Maestro — with or without separators; Luhn (mod-10) validated |
 | `IBAN` | `hash` | International IBAN — mod-97 checksum validated |
 | `SSN` | `hash` | US Social Security Number (123-45-6789) |
+| `BANK_ROUTING` | `hash` | US bank routing number (ABA / RTN) — mod-10 checksum over a Federal Reserve prefix |
+| `CRYPTO_WALLET` | `hash` | Bitcoin (Base58Check and bech32/bech32m segwit, both checksum-verified) and Ethereum-style `0x` addresses |
 | `NIN` | `hash` | UK National Insurance Number (AB123456C) |
+| `NHS_NUMBER` | `hash` | UK NHS number — 10 digits, mod-11 checksum |
 | `TC_ID` | `hash` | Turkish national ID — 11 digits, Nüfus İdaresi checksum validated |
-| `EU_NATIONAL_ID` | `hash` | Spanish DNI (12345678Z) / NIE (X1234567L), French INSEE (15 digits) |
+| `EU_NATIONAL_ID` | `hash` | Spanish DNI / NIE, French INSEE, Dutch BSN, Polish PESEL — each verified against its own check rule |
 | `CODICE_FISCALE` | `hash` | Italian tax code (RSSMRA85T10A562S) |
 | `VAT_NUMBER` | `warn` | EU VAT (DE/FR/GB/IT/ES/AT/NL prefixed) + Turkish Vergi No (keyword-based) |
 | `PASSPORT` | `hash` | Passport numbers — keyword-based (`passport no:`, `pasaport`, `Reisepass`, `passeport`) |
@@ -771,9 +811,11 @@ Runnable scripts in [`examples/`](examples/):
 | `IP_ADDRESS` | `warn` | IPv4 addresses — the quad must stand alone, so a longer dotted run (`03.93.92.16.85`, a French phone number) is not read as an address |
 | `IPv6` | `warn` | IPv6 addresses (full and compressed forms) |
 | `MAC_ADDRESS` | `warn` | Network hardware address (00:1A:2B:3C:4D:5E) |
+| `IMEI` | `hash` | Mobile device IMEI — 15 digits, Luhn-checked |
 | `UUID` | `warn` | RFC 4122 UUID / GUID |
+| `USERNAME` | `hash` | Account name introduced by its keyword — `kullanıcı adı ahmet.yilmaz`, `username: jsmith42`, `login jdoe`. Only the handle is taken |
 | `JWT` | `hash` | JSON Web Token (starts with `eyJ`) |
-| `CUSTOM_SECRET` | `hash` | API keys & tokens: OpenAI/Anthropic (`sk-`, `sk-ant-`), Stripe (`sk_live_`), AWS (`AKIA`), Google (`AIza`, `ya29.`), GitHub (`ghp_`), GitLab (`glpat-`), Slack (`xoxb-`, webhook URLs), Twilio (`SK`/`AC`), SendGrid (`SG.`), npm (`npm_`), and PEM private-key blocks |
+| `CUSTOM_SECRET` | `hash` | API keys & tokens: OpenAI/Anthropic (`sk-`, `sk-ant-`), Stripe (`sk_live_`), AWS (`AKIA`), Google (`AIza`, `ya29.`), GitHub (`ghp_`), GitLab (`glpat-`), Slack (`xoxb-`, webhook URLs), Twilio (`SK`/`AC`), SendGrid (`SG.`), npm (`npm_`), and PEM private-key blocks. Also a credential written into a sentence — `parolası ise …`, `password is …`, `erişim kodu …` — where the word beside it is the only evidence; only the value is taken, not the keyword |
 
 ### SpaCy NER (requires `spacy` + language model)
 
@@ -781,7 +823,9 @@ Runnable scripts in [`examples/`](examples/):
 |---|---|---|
 | `PERSON` | `hash` | Person names (first + last) — cross-language |
 | `ORG` | `warn` | Organization / company names |
-| `ADDRESS` | `warn` | Location entities (complements regex) |
+| `ADDRESS` | `warn` | Street addresses and facilities (complements regex) |
+| `LOCATION` | `warn` | Countries, cities, regions and geographic features (spaCy `GPE` / `LOC`) |
+| `NRP` | `redact` | Nationality, religious or political group — GDPR Art. 9 data. **Off by default** |
 
 > **NER requires an explicit model — there is no default.** NER is **off by default**; calling `with_ner()` without a model (or language) raises `ConfigError`. Choose a model in a documented way via `language=` (recommended) or `spacy_model=`. Running, say, the Turkish model on German text produces noisy results, so pick the model per language (or rely on the LLM layer for cross-language names). A multilingual gazetteer filters out job titles, HR terms, and abbreviations (EN/DE/FR/TR) that NER models commonly mislabel.
 
@@ -967,7 +1011,7 @@ wardcat/
 │   │   └── models.py         # Entity, Action, Violation, ScanResult
 │   ├── detectors/
 │   │   ├── base.py           # BaseDetector ABC
-│   │   ├── regex_detector.py # 24 regex patterns with checksum/Luhn validation
+│   │   ├── regex_detector.py # 28 patterns + keyword-cued secrets/usernames
 │   │   ├── ner_detector.py   # SpaCy NER (multilingual) + gazetteer FP filter
 │   │   └── llm_detector.py   # LLM-based detection with hallucination filter
 │   ├── llm/
@@ -1034,6 +1078,8 @@ uv run pytest --cov=src/wardcat --cov-report=term-missing
 | European addresses | Regex needs a street-type keyword (Straße, Rue, Calle…); unnumbered informal addresses may be missed | Use the NER `ADDRESS` / LLM layer, or add a `custom_patterns` rule for your address format |
 | Turkish NER (`tr_core_news_trf`) | The transformer model is incompatible with SpaCy 3.5+ | Use `tr_core_news_md` or `tr_core_news_lg` |
 | Lower-cased text | Where the document carries no capitals, the "a name has a capital" rule is switched off, so a common-word sequence can surface as a `PERSON` | Preserve the original casing if you want the stricter rule, or drop the phrase with `add_allowlist([...])` / `with_llm(adjudicate=True)` |
+| Weak checksums | The ABA routing, NHS and IMEI checks each let roughly one bare digit run in ten through, so an uncued match is scored `0.70` and the default floor leaves it alone | Write the number with its keyword (`IMEI: …`, `routing number …`), or call `with_min_confidence(0.6)` to act on uncued matches |
+| Ethereum addresses | The `0x` + 40-hex form is checked on its shape; EIP-55 mixed-case checksumming needs keccak-256, which the standard library does not carry | Bitcoin addresses are fully checksum-verified; for Ethereum, pair the match with the LLM layer if a stricter check matters |
 | Turkish NER quality | `tr_core_news_md/lg` are news-trained and may miss names in non-standard contexts | Combine with `.with_llm(...)` — the LLM catches names NER misses |
 
 ---

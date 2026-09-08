@@ -112,6 +112,13 @@ class Entity(str, Enum):
     FINANCIAL_AMOUNT = "FINANCIAL_AMOUNT"
     VAT_NUMBER = "VAT_NUMBER"
     SPECIAL_CATEGORY = "SPECIAL_CATEGORY"
+    CRYPTO_WALLET = "CRYPTO_WALLET"
+    IMEI = "IMEI"
+    BANK_ROUTING = "BANK_ROUTING"
+    NHS_NUMBER = "NHS_NUMBER"
+    LOCATION = "LOCATION"
+    NRP = "NRP"
+    USERNAME = "USERNAME"
 
 
 # Known entity types — for typo checking and IDE support.
