@@ -29,6 +29,20 @@ jobs:
         with:
           enable-cache: true
 
+      # A tag that does not match pyproject.toml builds the wrong version and
+      # only fails at the upload step, where the error ("file already exists")
+      # says nothing about the real cause. Catch it before anything is built.
+      - name: Tag must match the packaged version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match pyproject version ${version}."
+            echo "Bump the version (and the CHANGELOG heading) or retag."
+            exit 1
+          fi
+          echo "releasing ${version}"
+
       - name: Install dependencies
         run: uv sync --dev
 
