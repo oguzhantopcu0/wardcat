@@ -77,6 +77,37 @@ _ENTITY_DESCRIPTIONS: dict[str, str] = {
         "Italian 'IT12345678901') or Turkish tax number labeled 'Vergi No' / 'VKN' "
         "(10 digits). Often introduced by 'VAT', 'USt-IdNr', 'TVA', 'Vergi No'."
     ),
+    "CRYPTO_WALLET": (
+        "cryptocurrency wallet address — Bitcoin starting with '1', '3' or 'bc1' "
+        "(e.g. '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa', 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq'), "
+        "or an Ethereum-style address: '0x' followed by 40 hex characters"
+    ),
+    "IMEI": "mobile device IMEI — 15 digits, usually labelled 'IMEI' (e.g. 'IMEI: 490154203237518')",
+    "BANK_ROUTING": (
+        "US bank routing number (ABA / RTN) — 9 digits, introduced by 'routing number', "
+        "'ABA' or 'RTN' (e.g. 'routing number 021000021'). NOT the account number."
+    ),
+    "NHS_NUMBER": (
+        "UK NHS number — 10 digits, normally written in 3-3-4 groups "
+        "(e.g. '943 476 5919'). NOT a phone number."
+    ),
+    "USERNAME": (
+        "an account or login name for a person, introduced by a word such as "
+        "'username', 'kullanıcı adı', 'login' or 'nick' (e.g. 'ahmet.yilmaz', "
+        "'jsmith42'). Extract the handle only, not the word introducing it, and "
+        "not the local part of an email address."
+    ),
+    "LOCATION": (
+        "a named place — country, city, region, or a geographic feature "
+        "(e.g. 'Istanbul', 'Bavaria', 'the Thames'). NOT a full street address, "
+        "which is ADDRESS."
+    ),
+    "NRP": (
+        "a person's nationality, religious group or political affiliation stated as "
+        "a group name (e.g. 'Kurdish', 'Alevi', 'Catholic', 'Green Party member'). "
+        "GDPR Article 9 data. Extract the group word only, and only where it "
+        "describes an identifiable person — not a general discussion of the group."
+    ),
     "SPECIAL_CATEGORY": (
         "GDPR Article 9 special-category personal data — an EXPLICIT statement "
         "revealing a specific person's: health/medical condition, racial or ethnic "

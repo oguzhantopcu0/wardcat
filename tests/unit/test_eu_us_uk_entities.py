@@ -109,7 +109,7 @@ class TestEUNationalID:
             assert any(s.entity_type == "EU_NATIONAL_ID" and "12345678Z" in s.text for s in spans)
 
         def test_dni_another_letter(self, detector):
-            spans = detector.detect("documento: 87654321T")
+            spans = detector.detect("documento: 87654321X")
             assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
 
         def test_no_false_positive_invalid_letter(self, detector):
@@ -127,21 +127,21 @@ class TestEUNationalID:
             assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
 
         def test_nie_y_prefix(self, detector):
-            spans = detector.detect("NIE: Y9876543T")
+            spans = detector.detect("NIE: Y9876543N")
             assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
 
         def test_nie_z_prefix(self, detector):
-            spans = detector.detect("NIE: Z0000001R")
+            spans = detector.detect("NIE: Z0000001Y")
             assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
 
     class TestFrenchINSEE:
         def test_male_insee(self, detector):
             # Male: 1 + year(2) + month(01-12) + 9 digits = 15 digits
-            spans = detector.detect("INSEE: 180027512345678")
+            spans = detector.detect("INSEE: 180027512345676")
             assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
 
         def test_female_insee(self, detector):
-            spans = detector.detect("numéro: 290117512345612")
+            spans = detector.detect("numéro: 290117512345668")
             assert any(s.entity_type == "EU_NATIONAL_ID" for s in spans)
 
         def test_no_false_positive_invalid_month(self, detector):

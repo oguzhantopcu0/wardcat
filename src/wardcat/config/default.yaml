@@ -96,6 +96,26 @@ entities:
     enabled: true
     action: hash
 
+  NHS_NUMBER:        # UK NHS numarası: 943 476 5919 (mod-11 doğrulamalı)
+    enabled: true
+    action: hash
+
+  CRYPTO_WALLET:     # Bitcoin (base58/bech32) ve Ethereum cüzdan adresleri
+    enabled: true
+    action: hash
+
+  IMEI:              # Cihaz IMEI numarası — "IMEI" anahtar kelimesiyle
+    enabled: true
+    action: hash
+
+  BANK_ROUTING:      # ABD ABA/RTN banka yönlendirme numarası — anahtar kelimeyle
+    enabled: true
+    action: hash
+
+  USERNAME:          # "kullanıcı adı ahmet.yilmaz" — anahtar kelimeyle
+    enabled: true
+    action: hash
+
   # ── SpaCy NER tabanlı ──────────────────────────────────────
   # Türkçe model için: spacy_model: "tr_core_news_sm"
   # Kurulum: uv pip install <tr model wheel URL>
@@ -106,6 +126,14 @@ entities:
   ORG:
     enabled: false   # Kurumsal isimler, ihtiyaca göre açın
     action: warn
+
+  LOCATION:          # Ülke, şehir, bölge (spaCy GPE/LOC etiketleri)
+    enabled: true
+    action: warn
+
+  NRP:               # Milliyet, dinî veya siyasi grup — GDPR 9. madde verisi.
+    enabled: false   # "Türk", "Katolik" gibi sıradan kelimeler; bilinçli açın.
+    action: redact
 
 # ── On-Prem LLM Dedektörü ──────────────────────────────────────────────────
 # Regex ve NER'ın yanında üçüncü bir dedektör katmanı.

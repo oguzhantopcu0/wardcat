@@ -11,6 +11,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Eight more checksum-verified filters, and the tier that makes them usable.**
+  `CRYPTO_WALLET` (Bitcoin Base58Check plus bech32/bech32m segwit, both fully
+  verified; Ethereum `0x` addresses on their shape — EIP-55 needs keccak-256,
+  which the standard library does not carry), `NHS_NUMBER` (mod-11),
+  `BANK_ROUTING` (ABA mod-10 over a Federal Reserve prefix) and `IMEI` (Luhn).
+  `EU_NATIONAL_ID` gains Dutch BSN and Polish PESEL, and — the larger change —
+  every scheme it already claimed is now actually checked: a Spanish DNI whose
+  letter does not follow from its digits, or an INSEE number with the wrong
+  two-digit key, used to match on format alone.
+
+  Three of these checksums are weak: a bare digit run passes the ABA check, the
+  NHS mod-11 or the IMEI Luhn roughly once in ten. Refusing the bare form costs
+  real coverage; treating it as proven flags ordinary reference numbers. Both
+  forms are matched, and a match with no supporting keyword beside it lands in a
+  new **uncued** confidence tier at `0.70`.
+
+- **`min_confidence` — a floor on what gets acted on.** Spans below it are
+  dropped after overlap resolution. It defaults to `0.8`, which sits above the
+  uncued tier and below every other one, so nothing detected before this release
+  changes and the new bare-form matches are found but left alone.
+  `with_min_confidence(0.6)` acts on them; `with_min_confidence(0.95)` goes the
+  other way, keeping only checksummed and high-precision structural matches.
+
+  Applying the floor *after* overlap resolution is what makes the NHS filter
+  safe: the NHS 3-3-4 grouping is also the US phone grouping, and mod-11 lets
+  about one US-format number in eleven through. A number both layers claim is
+  resolved as `PHONE` at `0.97` rather than dropped as a weak NHS match.
+
+- **`LOCATION` — place names get their own type.** SpaCy's `GPE` and `LOC`
+  labels were folded into `ADDRESS`, so "Germany" and "Moda Caddesi No:42"
+  arrived as the same kind of finding. The same spans are still detected; they
+  now carry a type that says what they are.
+
+- **`USERNAME` — the account name beside the password.** An online identifier
+  tied to a person, and the other thing in a personnel record with no shape of
+  its own: `ahmet.yilmaz` is a handle in one sentence and a filename in the
+  next. Cued the same way as the credential — `kullanıcı adı`, `kullanıcı kodu`,
+  `hesap adı`, `username`, `user id`, `login`, `nick` — with the Turkish
+  suffixes allowed for.
+
+  How much the keyword proves depends on whether it is assigning anything. With
+  a connector — `username: jsmith`, `hesap adı = jsmith` — somebody is plainly
+  naming a handle, so any handle-shaped token counts. Without one the keyword
+  sits in ordinary prose as often as not ("the login page", "kullanıcı adı
+  alanı"), and no stoplist can enumerate what follows it, so the token has to
+  carry a mark an ordinary word does not: a dot, underscore, hyphen or digit.
+  Measured over 32 sentences, that rule gives no misses and no false positives;
+  a stoplist alone gave eight false positives out of twelve.
+
+  Two details worth knowing. The value is matched case-sensitively, because
+  `re.IGNORECASE` folds the Turkish dotless "ı" into `[A-Za-z]` and let "alanı"
+  through as a handle. And a trailing full stop is taken with the value rather
+  than trimmed: it reads like the sentence's, but a password or handle may
+  genuinely end in one, and trimming the wrong one leaves a character of the
+  real value in the text. Reported at `0.90`, value only, keyword left in place.
+
+- **A credential written out in prose is now caught.** The secret patterns keyed
+  on a provider prefix — `sk-`, `ghp_`, `AKIA` — and a password typed into a
+  sentence has no prefix, so `parolası ise TestPass!2026` went straight through.
+  The word introducing it is the evidence instead: `password`, `passphrase`,
+  `api key`, `access token`, `erişim kodu`, and the Turkish roots with their
+  possessive and case suffixes (`şifresi`, `parolanız`), joined by `=`, `:`,
+  `is`, `ise` or nothing at all.
+
+  Prose puts ordinary words in that position too — "şifre yanlış",
+  "password is unknown" — so the value must look like a credential: at least six
+  characters mixing two of {lower, upper, digit, symbol}. A lower-case word never
+  does. Reported at `0.90`, the heuristic tier, not the `0.97` a recognised
+  prefix earns, and **only the value is taken** so the sentence still reads:
+  `kullanıcı şifresi: [CUSTOM_SECRET]`.
+
+- **More provider secrets.** GitHub fine-grained PATs (`github_pat_`), Hugging
+  Face tokens, Shopify, DigitalOcean, Slack app-level tokens, Azure storage
+  account keys, Google service-account key ids, and the AWS secret access key —
+  which has no prefix, only a 40-character shape, so it is matched under the
+  name it is written with. Sentry DSNs too, which fixes a mislabel: the DSN's
+  public key sits where an email address's local part would, so it was reported
+  as an `EMAIL` under that type's `warn` action and left in the text.
+
 - **Reversible masking — `Action.TOKENIZE` and `ScanResult.restore()`.** The
   existing actions are one-way; `tokenize` replaces each value with a numbered
   placeholder and keeps the mapping on the result, so the values can be put back
@@ -87,8 +166,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shadowing a built-in rather than adding a new action.
 
 - **`with_llm()` now says what it switches on.** Unlike `with_ner()`, which enables
-  no entity by itself, the LLM layer carries its own default entity policy (24
-  types, 22 of them on, each with its own action), so
+  no entity by itself, the LLM layer carries its own default entity policy (31
+  types, 27 of them on, each with its own action), so
   `.with_llm(...).add_entity(EMAIL, ...)` has
   always detected and anonymized far more than the one type named — under the
   policy's actions, not the caller's. The behaviour is unchanged; the first scan
@@ -100,6 +179,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guide.
 
 ### Fixed
+
+- **NORP was being reported as an organisation.** SpaCy's `NORP` label covers
+  nationality, religious and political groups — GDPR Article 9 data. It was
+  mapped to `ORG`, which both mistyped it and, under `ORG`'s `warn` action, left
+  it in the text. It has its own `NRP` type now, off by default: "Turkish" and
+  "Catholic" are ordinary vocabulary, and redacting every occurrence would wreck
+  the text for anyone not doing Article 9 work.
+
+- **`phone_regions` was rejected as an unknown YAML key.** It has been a valid
+  configuration key since the libphonenumber work, but was never added to the
+  known-key set, so a config file that used it logged a typo warning.
 
 - **Credit card ranges the issuer prefixes were missing.** Measured against
   presidio-research's 1500-sample corpus, `CREDIT_CARD` recall was 54% — 62 of 136
