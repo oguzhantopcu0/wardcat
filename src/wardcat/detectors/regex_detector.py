@@ -334,7 +334,8 @@ _PATTERNS: dict[str, tuple[str, int]] = {
     ),
     # ── Custom Secret ─────────────────────────────────────────────────
     # Known token/credential prefix patterns — services with well-defined formats.
-    # Contextual detection (password=VALUE) is delegated to the LLM detector.
+    # A credential with no shape of its own, introduced by the word for it
+    # ("parolası ise …"), is handled separately by _KEYWORD_CREDENTIAL.
     # Supported:
     #   sk-... / sk-ant-...   — OpenAI / Anthropic API key
     #   sk_live_/sk_test_/rk_live_ — Stripe secret/restricted key
@@ -470,6 +471,46 @@ _COMPILED: dict[str, re.Pattern] = {
 # matches "password@host" as an email and, being the longer span, wins overlap
 # resolution — leaving the real secret undetected. We capture the password and
 # suppress the spurious EMAIL match that starts at the same offset.
+# ── Keyword-cued credentials ─────────────────────────────────────────────────
+# A password written out in prose has no shape of its own to key on, so the word
+# introducing it is the evidence. Turkish takes possessive and case suffixes on
+# the noun ("parolası", "şifreniz"), which is why the roots carry a suffix
+# allowance, and joins with "ise" where English uses "is".
+#
+# Only the value is reported — the keyword stays in the text, which is what makes
+# the redacted line still readable.
+_KEYWORD_CREDENTIAL: re.Pattern = re.compile(
+    r"(?:password|passwd|passphrase|pwd"
+    r"|api[_\- ]?key|apikey"
+    r"|access[_\- ]?(?:token|code)|auth[_\- ]?token"
+    r"|(?:şifre|sifre|parola)[a-zçğıöşü]{0,8}"
+    r"|eri[şs]im\s+kodu)"
+    # The connector is optional: "erişim kodu ALPHA-BRAVO-42" has none, and
+    # _looks_like_a_secret is what stops an ordinary following word matching.
+    r"\s*(?:ise|is|=|:)?\s*"
+    r"[\"']?(?P<secret>[^\s\"']{6,128})[\"']?",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_a_secret(value: str) -> bool:
+    """Reject the ordinary words that follow these keywords in prose.
+
+    "şifre yanlış", "password is unknown" and "parola değiştirildi" all put a
+    plain word where a secret would go. A credential almost always mixes
+    character classes; a lower-case word never does.
+    """
+    if len(value) < 6:
+        return False
+    classes = (
+        any(c.islower() for c in value)
+        + any(c.isupper() for c in value)
+        + any(c.isdigit() for c in value)
+        + any(not c.isalnum() for c in value)
+    )
+    return classes >= 2
+
+
 _URI_CREDENTIAL: re.Pattern = re.compile(
     # Bounded quantifiers keep this linear; an unbounded run before the required
     # "://" backtracks quadratically on adversarial input. See _REDOS_GATE.
@@ -939,6 +980,25 @@ class RegexDetector(BaseDetector):
                     )
                 )
 
+        # A credential introduced by the word for it ("parolası ise …",
+        # "password: …"). Only the value is reported, not the keyword.
+        cued_secret_spans: set[tuple[int, int]] = set()
+        if "CUSTOM_SECRET" in self.enabled_entities:
+            for match in _KEYWORD_CREDENTIAL.finditer(scan_text):
+                value = match.group("secret")
+                if not _looks_like_a_secret(value):
+                    continue
+                start, end = match.start("secret"), match.end("secret")
+                cued_secret_spans.add((start, end))
+                spans.append(
+                    DetectedSpan(
+                        entity_type="CUSTOM_SECRET",
+                        text=text[start:end],
+                        start=start,
+                        end=end,
+                    )
+                )
+
         for entity_type, pattern in _COMPILED.items():
             # The library already produced this type's spans; running the pattern
             # too would only add lower-coverage duplicates for the resolver to drop.
@@ -1005,7 +1065,12 @@ class RegexDetector(BaseDetector):
         # and LLM adjudication can treat a fuzzy match differently from a proven
         # one (a checksum span is never overridable; a fuzzy ADDRESS is).
         for s in spans:
-            s.confidence = _regex_confidence(s.entity_type, s.text)
+            # A keyword-cued credential is a heuristic — the word beside it is
+            # the only evidence — so it does not get the prefix branches' tier.
+            if (s.start, s.end) in cued_secret_spans:
+                s.confidence = CONF_FUZZY
+            else:
+                s.confidence = _regex_confidence(s.entity_type, s.text)
 
         # Appended after tiering: these carry their own confidence, which is lower
         # than the structural tier this loop would stamp on a PHONE span.
