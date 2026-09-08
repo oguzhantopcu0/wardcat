@@ -179,6 +179,10 @@ class Wardcat(EntityPolicyMixin):
         # that configuration is implicit, so the warning is skipped for them.
         self._policy_from_file = config_path is not None
         self._implicit_llm_warned = False
+        # Place names and group names moved out of ADDRESS/ORG into their own
+        # types. A configuration written before that silently stops covering
+        # them — see _warn_ner_type_split.
+        self._ner_split_warned = False
 
         # Warn at most once when a hash action is active without a salt. Checked
         # in _rebuild() too, since entities are opt-in and usually added after init.
@@ -194,6 +198,7 @@ class Wardcat(EntityPolicyMixin):
         """Scan text and return a ScanResult."""
         self._warn_orphan_entities()
         self._warn_implicit_llm_entities()
+        self._warn_ner_type_split()
         return self._engine.scan(text)
 
     async def scan_async(self, text: str) -> ScanResult:
@@ -205,6 +210,7 @@ class Wardcat(EntityPolicyMixin):
         """
         self._warn_orphan_entities()
         self._warn_implicit_llm_entities()
+        self._warn_ner_type_split()
         return await self._engine.scan_async(text)
 
     # ------------------------------------------------------------------
@@ -768,6 +774,48 @@ class Wardcat(EntityPolicyMixin):
             "layers=['llm']), or switch it off with remove_entity(name).",
             ", ".join(f"{name} ({action})" for name, action in sorted(implicit.items())),
         )
+
+    # Spans the NER layer used to report under another type, and the type each
+    # one moved to. Both moves are corrections — a city is not a street address,
+    # and a nationality is not a company — but a configuration written before
+    # them keeps working and quietly covers less.
+    _NER_TYPE_SPLIT: dict[str, tuple[str, str]] = {
+        "ADDRESS": ("LOCATION", "countries, cities and regions (SpaCy GPE/LOC)"),
+        "ORG": ("NRP", "nationality, religious and political groups (SpaCy NORP)"),
+    }
+
+    def _warn_ner_type_split(self) -> None:
+        """Warn once when a moved span type is enabled but its new home is not.
+
+        Nothing breaks and nothing is over-detected; the spans simply stop being
+        reported, which is the failure that does not announce itself. Said once,
+        lazily at scan time, like the other two warnings here.
+        """
+        if self._ner_split_warned or self._policy_from_file:
+            return
+        if not self._config.get("use_ner", False):
+            return
+        enabled = self._active_entities()
+        moved = [
+            (old, new, what)
+            for old, (new, what) in self._NER_TYPE_SPLIT.items()
+            if old in enabled and new not in enabled
+        ]
+        if not moved:
+            return
+        self._ner_split_warned = True
+        for old, new, what in moved:
+            logger.warning(
+                "%s no longer covers %s — those spans are reported as %s now, which "
+                "is not enabled. Add it with add_entity(Entity.%s, action, "
+                "layers=['ner']) to keep covering them, or ignore this if you only "
+                "wanted %s itself.",
+                old,
+                what,
+                new,
+                new,
+                old,
+            )
 
     def _rebuild(self) -> None:
         """Rebuild detectors and engine when configuration changes."""
