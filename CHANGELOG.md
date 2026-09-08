@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Transformers backend loaded every model as `bfloat16`.** That is right on
+  a recent NVIDIA card and wrong everywhere else. Apple Silicon has no bf16
+  arithmetic unit — Metal emulates it, so every matmul paid a conversion the
+  fp16 path does not. Plain CPU is worse: most CPU kernels have no
+  half-precision path at all and fall back through fp32 anyway, so asking for a
+  narrow dtype there bought nothing.
+
+  The dtype is now chosen for the device — `bfloat16` on a CUDA card that
+  reports support for it, `float16` on Apple Silicon, `float32` on CPU — and
+  `with_llm(dtype="float32")` overrides the choice. Ampere and later keep
+  `bfloat16`: it runs natively there and its wider exponent range is the safer
+  of the two half formats.
+
+
 ## [1.2.0] — 2026-09-08
 
 ### Added
