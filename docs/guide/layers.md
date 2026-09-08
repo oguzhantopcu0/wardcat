@@ -18,7 +18,7 @@ Discover what each layer can detect:
 
 ```python
 Wardcat.supported_entities()          # every known type
-Wardcat.supported_entities("ner")     # {"PERSON", "ORG", "ADDRESS"}
+Wardcat.supported_entities("ner")     # {"PERSON", "ORG", "ADDRESS", "LOCATION", "NRP"}
 ```
 
 ## Regex
