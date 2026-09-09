@@ -23,15 +23,35 @@ Wardcat.supported_entities("ner")     # {"PERSON", "ORG", "ADDRESS", "LOCATION",
 
 ## Regex
 
-Deterministic, exhaustive, and free — the backbone. 25+ patterns; TC_ID (Nüfus
-İdaresi), IBAN (mod-97) and CREDIT_CARD (Luhn) are **checksum-validated**, so
-those are flagged with no false positives. Covers cards, IBAN, SSN, NIN, TC_ID,
-EU national IDs, secrets/API keys, JWT, UUID, IPs, and more. Always on for any
-enabled regex-supported entity; no extra dependency.
+Deterministic, exhaustive, and free — the backbone. 28 patterns, always on for
+any enabled regex-supported entity, with no extra dependency.
+
+**Checksum-validated, so a match is proof rather than a guess:** `TC_ID` (Nüfus
+İdaresi), `IBAN` (mod-97), `CREDIT_CARD` (Luhn), `CRYPTO_WALLET` (Base58Check for
+legacy Bitcoin addresses, the bech32/bech32m polymod for segwit), `NHS_NUMBER`
+(mod-11), `BANK_ROUTING` (ABA mod-10 over a Federal Reserve prefix), `IMEI`
+(Luhn), and every scheme inside `EU_NATIONAL_ID` — Spanish DNI/NIE check letters,
+the French INSEE key, the Dutch BSN elfproef, the Polish PESEL check digit.
+
+**Structural, matched on a distinctive shape:** email, phone, JWT, UUID, IPv4 and
+IPv6, MAC address, postcodes, VAT numbers, and the provider-prefixed secrets
+(`sk-`, `ghp_`, `github_pat_`, `AKIA`, `hf_`, Azure account keys, Sentry DSNs,
+and more).
+
+**Cued by the word beside them,** because they have no shape of their own: a
+credential written into a sentence (`parolası ise …`, `password is …`) and
+`USERNAME` (`kullanıcı adı ahmet.yilmaz`). Only the value is taken, never the
+keyword, so the redacted line still reads.
+
+Three of those checksums are weak enough that a bare digit run passes about one
+time in ten — the ABA, NHS and IMEI checks. Both the cued and the bare form are
+matched, and the bare one is scored at `0.70` instead, under the
+[confidence floor](configuration.md#confidence-floor).
 
 ## SpaCy NER (`ner`)
 
-Names, organisations, and locations via SpaCy. Off by default and ships no
+Names, organisations, places and group affiliations via SpaCy — `PERSON`, `ORG`,
+`ADDRESS`, `LOCATION` and `NRP`. Off by default and ships no
 default model — enable with a language (recommended) or an explicit model:
 
 ```python
@@ -43,6 +63,17 @@ guard = Wardcat(salt="s").with_ner(spacy_model=["en_core_web_sm", "de_core_news_
 
 A multilingual gazetteer filters out job titles and abbreviations that NER models
 commonly mislabel as names.
+
+`LOCATION` covers countries, cities and regions, kept apart from `ADDRESS` (a
+street address) because the two carry different risk. `NRP` is nationality,
+religious or political affiliation — GDPR Article 9 data — and ships **off by
+default**: "Turkish" and "Catholic" are ordinary vocabulary, so redacting every
+occurrence would wreck the text for anyone not doing Article 9 work.
+
+A `PERSON` normally has to contain a capitalized word. That rule is skipped where
+the surrounding text carries no capitals at all, since a chat log or an ASR
+transcript would otherwise lose every name to a property it never had. The trade
+is that a lower-cased document can surface a common-word sequence as a `PERSON`.
 
 ### Choosing a language (and auto-detection)
 
@@ -102,6 +133,29 @@ into RAM/VRAM **the first time you scan** and then reused for the lifetime of
 that `Wardcat` object. On a tiny 135M model the first scan pays ~3–5 s of load;
 every subsequent scan in the same process is warm (~0.1 s). For an 8B model the
 cold load is tens of seconds — so **where you create the `Wardcat` matters**.
+
+#### Weight dtype
+
+The `transformers` backend picks a dtype the device runs natively: `bfloat16` on
+a CUDA card that reports support for it, `float16` on Apple Silicon, `float32` on
+plain CPU. Override it when you have a reason:
+
+```python
+guard = Wardcat(salt="s").with_llm(
+    backend=Backend.TRANSFORMERS, model="Qwen/Qwen2.5-3B-Instruct", dtype="float32"
+)
+```
+
+The choice matters more than it looks. Apple Silicon has no bf16 arithmetic unit
+— Metal emulates it, so every matmul pays a conversion the fp16 path does not —
+and most CPU kernels have no half-precision path at all, falling back through
+fp32 anyway. Ampere and later keep `bfloat16` by default: it runs natively there,
+and its wider exponent range is the safer of the two half formats.
+
+!!! warning "float16 on Apple Silicon"
+    Some torch/transformers combinations segfault loading `float16` through
+    `device_map="auto"` on MPS. If that happens, name `bfloat16` explicitly — it
+    is slower there, but it loads.
 
 The **HTTP backends** (`ollama`, `vllm`, `openai_compatible`) don't load anything
 in your process — they call a daemon/server that keeps the model resident (Ollama

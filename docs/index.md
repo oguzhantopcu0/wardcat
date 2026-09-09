@@ -56,8 +56,14 @@ if guard.is_sensitive(text):
 
 - **Hybrid detection** across three cooperating layers, merged with a
   confidence-first overlap resolver (a deterministic regex span always wins).
-- **Checksum validation** — TC_ID, IBAN, and CREDIT_CARD are mathematically
-  verified before flagging, eliminating false positives.
+- **Checksum validation** — TC_ID, IBAN, CREDIT_CARD, Bitcoin wallet addresses,
+  NHS numbers, ABA routing numbers, IMEI and every EU national-ID scheme are
+  mathematically verified before flagging, so a match is proof rather than a
+  guess ([Detection layers](guide/layers.md#regex)).
+- **A confidence floor** — every detection is tiered by how strong the evidence
+  is, and `min_confidence` decides what is acted on. Weak-checksum matches with
+  no supporting keyword are found but left alone until you lower it
+  ([Configuration](guide/configuration.md#confidence-floor)).
 - **Five actions** — `warn`, `hash` (salted SHA-256), `redact`, `mask`, and the
   reversible `tokenize` — all pluggable via a registry.
 - **Reversible masking** — mask on the way out, restore the LLM's answer on the
@@ -68,6 +74,14 @@ if guard.is_sensitive(text):
 - **Degraded-scan visibility** — if a layer can't run (e.g. LLM backend down),
   it's recorded on `ScanResult.warnings` instead of failing silently.
 - **Safe logging** — `result.redacted()` returns a PII-free dict.
+
+!!! tip "New in 1.2.0"
+    Eight more checksum-verified filters (crypto wallets, NHS numbers, ABA
+    routing numbers, IMEI, Dutch BSN and Polish PESEL), the `min_confidence`
+    floor that places them, `USERNAME` and credentials written into a sentence,
+    and `LOCATION` / `NRP` split out of the NER layer so place names and GDPR
+    Article 9 data no longer arrive typed as something else. The
+    [changelog](changelog.md) has the reasoning behind each one.
 
 ## Where next
 
