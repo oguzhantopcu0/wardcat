@@ -1,0 +1,64 @@
+{#-
+  Material's own toc partial, with a "What's new" card appended underneath it.
+
+  The list itself lives in mkdocs.yml under `extra.whats_new`, so adding a
+  release note is a YAML edit rather than template surgery. The card is hidden
+  on a page with no table of contents, where the right column is collapsed
+  anyway and it would float on its own.
+
+  Everything above the card is a verbatim copy of the upstream partial; keep it
+  that way so a Material upgrade is a clean diff.
+-#}
+{% set title = lang.t("toc") %}
+{% if config.mdx_configs.toc and config.mdx_configs.toc.title %}
+  {% set title = config.mdx_configs.toc.title %}
+{% endif %}
+<nav class="md-nav md-nav--secondary" aria-label="{{ title | e }}">
+  {% set toc = page.toc %}
+  {% set first = toc | first %}
+  {% if first and first.level == 1 %}
+    {% set toc = first.children %}
+  {% endif %}
+  {% if toc %}
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      {{ title }}
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      {% for toc_item in toc %}
+        {% include "partials/toc-item.html" %}
+      {% endfor %}
+    </ul>
+  {% endif %}
+</nav>
+
+{#-
+  Material includes this partial twice: from base.html for the right-hand
+  column, and from nav-item.html to nest the page's own headings under the
+  active entry in the left navigation. `nav_item` is only bound in the second
+  case, so testing for it keeps the card out of the left column — where it
+  appeared duplicated, and read as part of the site navigation.
+-#}
+{% if toc and config.extra.whats_new and nav_item is not defined %}
+  <aside class="wc-whats-new" aria-labelledby="wc-whats-new-title">
+    <p class="wc-whats-new__title" id="wc-whats-new-title">
+      What&rsquo;s new
+      {% if config.extra.whats_new_version %}
+        <span class="wc-whats-new__version">{{ config.extra.whats_new_version }}</span>
+      {% endif %}
+    </p>
+    <ul class="wc-whats-new__list">
+      {% for item in config.extra.whats_new %}
+        <li class="wc-whats-new__item">
+          {% if item.link %}
+            <a href="{{ item.link | url }}">{{ item.title }}</a>
+          {% else %}
+            <span class="wc-whats-new__name">{{ item.title }}</span>
+          {% endif %}
+          {% if item.note %}<span class="wc-whats-new__note">{{ item.note }}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+    <a class="wc-whats-new__more" href="{{ 'changelog/' | url }}">Full changelog &rarr;</a>
+  </aside>
+{% endif %}

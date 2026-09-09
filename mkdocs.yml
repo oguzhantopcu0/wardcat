@@ -34,6 +34,31 @@ theme:
     - content.code.copy
     - content.code.annotate
 
+# Feeds the "What's new" card in the right-hand column (overrides/partials/toc.html).
+# Keep it to the handful of changes worth interrupting a reader for; the card
+# links to the changelog for the rest.
+extra:
+  whats_new_version: "1.2.0"
+  whats_new:
+    - title: Reversible masking
+      note: tokenize out, restore the answer
+      link: guide/reversible/
+    - title: Eight checksum-verified filters
+      note: wallets, NHS, ABA routing, IMEI, EU IDs
+      link: guide/layers/#regex
+    - title: Confidence floor
+      note: min_confidence decides what is acted on
+      link: guide/configuration/#confidence-floor
+    - title: USERNAME and in-sentence credentials
+      note: cued by the word beside them
+      link: guide/layers/#regex
+    - title: LOCATION and NRP split out of NER
+      note: place names and Article 9 data get their own types
+      link: guide/layers/#spacy-ner-ner
+    - title: libphonenumber phone regions
+      note: national formats beyond TR/FR/DE
+      link: guide/configuration/#phone-regions
+
 extra_css:
   - stylesheets/extra.css
 
