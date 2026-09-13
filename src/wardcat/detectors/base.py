@@ -39,6 +39,12 @@ class BaseDetector(ABC):
     #: candidate spans (currently the LLM detector). The engine reads this flag.
     can_adjudicate: bool = False
 
+    #: Problems found while building the detector that leave it covering less
+    #: than was configured — an optional package that is missing, say. The engine
+    #: copies them into every result's ``warnings``, because each of those scans
+    #: really did run with less coverage than the caller asked for.
+    build_warnings: tuple[str, ...] = ()
+
     @abstractmethod
     def detect(self, text: str, candidates: list[DetectedSpan] | None = None) -> list[DetectedSpan]:
         """Scan *text* and return the spans found.

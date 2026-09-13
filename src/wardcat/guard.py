@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from wardcat.detectors.llm_detector import LLMDetector
 
 from wardcat._entity_policy import EntityPolicyMixin
-from wardcat.config.loader import load_config
+from wardcat.config.loader import _validate_denylist, load_config
 from wardcat.core.engine import DetectionEngine
 from wardcat.core.models import KNOWN_ENTITY_TYPES, ScanResult
 from wardcat.core.registry import (
@@ -83,6 +83,20 @@ def _resolve_spacy_model(model: str) -> str:
         model,
     )
     return fallback
+
+
+def _ner_fallback_warning(requested: str, used: str) -> str:
+    """Describe a SpaCy model substitution, calling out a change of language."""
+    message = (
+        f"SpaCy model {requested!r} is not installed; the NER layer is using {used!r} instead."
+    )
+    wanted_lang, used_lang = requested.split("_")[0], used.split("_")[0]
+    if wanted_lang != used_lang:
+        message += (
+            f" That model is for a different language ({used_lang!r}, not {wanted_lang!r}), "
+            "so most names in the requested language will be missed."
+        )
+    return message + f" Install the requested model with: python -m spacy download {requested}"
 
 
 class Wardcat(EntityPolicyMixin):
@@ -196,9 +210,7 @@ class Wardcat(EntityPolicyMixin):
 
     def scan(self, text: str) -> ScanResult:
         """Scan text and return a ScanResult."""
-        self._warn_orphan_entities()
-        self._warn_implicit_llm_entities()
-        self._warn_ner_type_split()
+        self._warn_about_configuration()
         return self._engine.scan(text)
 
     async def scan_async(self, text: str) -> ScanResult:
@@ -208,9 +220,7 @@ class Wardcat(EntityPolicyMixin):
         the LLM detector (if enabled) uses ``httpx.AsyncClient`` natively,
         so multiple concurrent calls do not block each other.
         """
-        self._warn_orphan_entities()
-        self._warn_implicit_llm_entities()
-        self._warn_ner_type_split()
+        self._warn_about_configuration()
         return await self._engine.scan_async(text)
 
     # ------------------------------------------------------------------
@@ -304,6 +314,9 @@ class Wardcat(EntityPolicyMixin):
         if not texts:
             return []
 
+        # Workers call the engine directly, so the one-time configuration warnings
+        # that scan() logs have to be raised here, once for the whole batch.
+        self._warn_about_configuration()
         workers = max_workers or self._config.get("scan_batch_workers", 4)
 
         results: list[ScanResult | None] = [None] * len(texts)
@@ -323,6 +336,7 @@ class Wardcat(EntityPolicyMixin):
                     sanitized_text=text,
                     violations=[],
                     scan_error=f"{type(exc).__name__}: {exc}",
+                    warnings=list(self._engine.build_warnings),
                 )
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -360,6 +374,7 @@ class Wardcat(EntityPolicyMixin):
                     sanitized_text=text,
                     violations=[],
                     scan_error=f"{type(exc).__name__}: {exc}",
+                    warnings=list(self._engine.build_warnings),
                 )
 
         pairs = await asyncio.gather(*(_one(i, t) for i, t in enumerate(texts)))
@@ -639,28 +654,25 @@ class Wardcat(EntityPolicyMixin):
     def add_denylist(self, entries: list[dict[str, str]]) -> Wardcat:
         """Add values that should always be flagged as PII.
 
-        Each entry must have a ``value`` key and an ``entity_type`` key.
-        The action applied is taken from the entity's config (same as
+        Each entry has an ``entity_type`` and either an exact ``value`` or a regex
+        ``pattern``. The action applied is taken from the entity's config (same as
         regular detections).  Supports method chaining::
 
             guard.add_denylist([
                 {"value": "John Smith",    "entity_type": "PERSON"},
-                {"value": "ProjectSecret", "entity_type": "CUSTOM_SECRET"},
+                {"pattern": r"\\bPRJ-\\d{4}\\b", "entity_type": "CUSTOM_SECRET"},
             ])
 
-        :param entries: List of dicts with ``value`` and ``entity_type`` keys.
+        Entries are validated exactly as a YAML ``denylist`` is, and all of them
+        before any is added: a pattern that is not valid regex, or that backtracks
+        catastrophically, is refused — a match cannot be interrupted once a scan
+        has started it.
+
+        :param entries: List of dicts with ``entity_type`` and ``value`` or ``pattern``.
+        :raises ConfigError: if any entry is invalid.
         """
-        existing: list[dict[str, str]] = self._config.setdefault("denylist", [])
-        for entry in entries:
-            if not isinstance(entry, dict):
-                raise ConfigError(
-                    f"Each denylist entry must be a dict with a 'value' or 'pattern' key: {entry!r}"
-                )
-            if "value" not in entry and "pattern" not in entry:
-                raise ConfigError(
-                    f"Each denylist entry must have either a 'value' or a 'pattern' key: {entry!r}"
-                )
-            existing.append(entry)
+        _validate_denylist(entries)
+        self._config.setdefault("denylist", []).extend(entries)
         self._rebuild()
         return self
 
@@ -691,6 +703,12 @@ class Wardcat(EntityPolicyMixin):
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    def _warn_about_configuration(self) -> None:
+        """Log the once-only configuration warnings; run before any scan starts."""
+        self._warn_orphan_entities()
+        self._warn_implicit_llm_entities()
+        self._warn_ner_type_split()
 
     def _maybe_warn_unsalted(self) -> None:
         """Warn once if a hash action is active but no salt is set."""
@@ -835,6 +853,9 @@ class Wardcat(EntityPolicyMixin):
         self._detectors: list[BaseDetector] = []
         self._llm_detector: LLMDetector | None = None
         entity_cfg = self._config.get("entities", {})
+        # Everything below that leaves a layer covering less than was configured
+        # is recorded here as well as logged; the engine puts it on every result.
+        build_warnings: list[str] = []
 
         # Regex detector
         custom_patterns = self._config.get("custom_patterns", {})
@@ -877,16 +898,28 @@ class Wardcat(EntityPolicyMixin):
 
                             ensure_model(model, auto_download=True)
                         resolved = _resolve_spacy_model(model)
+                        if resolved != model:
+                            build_warnings.append(_ner_fallback_warning(model, resolved))
                         if resolved in loaded:  # avoid duplicate detectors
                             continue
-                        loaded.add(resolved)
                         self._detectors.append(NERDetector(enabled_ner, resolved))
+                        loaded.add(resolved)
                     except Exception as exc:
                         logger.warning(
                             "SpaCy NER model %r could not be loaded, skipping it. Error: %s",
                             model,
                             exc,
                         )
+                        build_warnings.append(
+                            f"NERDetector did not run: SpaCy model {model!r} could not be "
+                            f"loaded ({type(exc).__name__}: {exc})."
+                        )
+                if models and not loaded:
+                    build_warnings.append(
+                        "The NER layer has no model loaded and detects nothing, so "
+                        f"{', '.join(sorted(enabled_ner))} will only be found if another "
+                        "layer covers them."
+                    )
 
         # LLM detector (optional). Kept on a dedicated attribute too, so the
         # semantic is_sensitive() check can reuse its backend directly.
@@ -895,7 +928,7 @@ class Wardcat(EntityPolicyMixin):
             self._llm_detector = self._build_llm_detector(llm_cfg)
             self._detectors.append(self._llm_detector)
 
-        self._engine = DetectionEngine(self._config, self._detectors)
+        self._engine = DetectionEngine(self._config, self._detectors, build_warnings=build_warnings)
 
     def _build_llm_detector(self, llm_cfg: dict[str, Any]) -> LLMDetector:
         """Build the LLM detector according to configuration."""

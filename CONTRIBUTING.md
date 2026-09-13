@@ -66,25 +66,39 @@ uv run pytest --cov=src/wardcat --cov-report=term-missing # coverage
 
 Three detector layers feed a single engine:
 
-- **Regex** (`detectors/regex_detector.py`) — structural PII, deterministic
-  (confidence 1.0), with checksum/Luhn validators in the `_VALIDATORS` registry.
-- **NER** (`detectors/ner_detector.py`) — SpaCy names/orgs/locations (0.85).
+- **Regex** (`detectors/regex_detector.py`) — structural PII, with checksum
+  validators in the `_VALIDATORS` registry. Confidence is tiered by the evidence:
+  `1.00` checksum-verified, `0.97` distinctive structure, `0.90` keyword-cued
+  heuristic, `0.70` a checksum match with no supporting keyword.
+- **NER** (`detectors/ner_detector.py`) — SpaCy names, organisations, places and
+  group affiliations (0.85).
 - **LLM** (`detectors/llm_detector.py`) — contextual/semantic PII (0.85); can
   also adjudicate the other layers' candidates in one call.
 
-The `DetectionEngine` (`core/engine.py`) merges spans, resolves overlaps
-(longest wins), applies allow/deny lists, and runs the configured action
-(`warn` / `hash` / `redact` / `mask`).
+The `DetectionEngine` (`core/engine.py`) merges spans, resolves overlaps (higher
+confidence wins, then the longer span), drops spans below `min_confidence`,
+applies allow/deny lists, and hands the result to the `Anonymizer`, which runs
+the configured action (`warn` / `hash` / `redact` / `mask` / `tokenize`, or one
+added with `register_action`).
+
+A layer that cannot run must say so in `ScanResult.warnings` — failing mid-scan
+through `_safe_detect`, failing while the guard is built through
+`BaseDetector.build_warnings` or the `build_warnings` the guard hands the engine.
+Logging alone is not enough: nobody reads a log line before trusting a clean
+result.
 
 ## Adding a new entity type
 
 1. **Regex entity:** add a pattern to `_PATTERNS` in `regex_detector.py`
-   (+ a validator in `_VALIDATORS` if it has a checksum), then register it in
-   `guard._REGEX_ENTITIES`, `loader.DEFAULT_CONFIG["entities"]`, `default.yaml`,
-   and `models.KNOWN_ENTITY_TYPES`.
-2. **LLM-only entity:** add a description (+ example) to `llm/prompt.py` and an
-   entry under `llm_detector.entities`; register it in `KNOWN_ENTITY_TYPES`.
-3. Add tests and a row to the README entity table.
+   (+ a validator in `_VALIDATORS` if it has a checksum), add a member to
+   `Entity` in `core/models.py` (which feeds `KNOWN_ENTITY_TYPES`), list it in
+   `REGEX_ENTITIES` in `core/registry.py`, and document it in `default.yaml`.
+   Entities are opt-in, so there is no default-on entry to add.
+2. **LLM-only entity:** add a description (+ example) to `llm/prompt.py`, an
+   entry under `llm_detector.entities` in `config/loader.py`, and an `Entity`
+   member.
+3. Add it to the matching groups in `entity_groups.py`, then add tests and a row
+   to the README entity table.
 
 ## Conventions
 

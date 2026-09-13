@@ -22,7 +22,8 @@ for confirmed issues.
 
 ## Supported versions
 
-Being pre-1.0, only the latest released `0.x` line receives security fixes.
+Security fixes are released for the latest `1.x` minor version. Upgrade to the
+newest release to receive them; older minor versions are not patched.
 
 ## Scope & known limitations
 
@@ -46,6 +47,12 @@ should understand them when relying on wardcat:
 - **On-prem only.** wardcat never sends PII off-host on its own; plaintext HTTP
   to a *remote* LLM backend is blocked by default. If you point it at a hosted
   endpoint, PII leaves your infrastructure — that is your choice, not a default.
+- **Your own regex patterns are screened, not proven safe.** A `custom_patterns`
+  or `denylist` pattern runs to completion on every scan — Python's `re` cannot be
+  interrupted mid-match. Patterns are checked when they are configured, and one
+  shown to backtrack exponentially (`(a+)+$`) is refused, but the screen does not
+  catch polynomial backtracking. Keep patterns simple and anchored to literals;
+  `max_text_bytes` bounds the input they run on.
 
 Reports that improve any of the above (e.g. a ReDoS in a built-in pattern, a way
 to bypass the HTTP-to-remote guard, or a hash-handling flaw) are in scope.

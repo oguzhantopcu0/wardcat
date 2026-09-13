@@ -28,7 +28,8 @@ no-op.
 
 ## Install & run
 
-Not on PyPI yet — run from source (wardcat itself is source-only for now):
+The server is not on PyPI yet, so it runs from its repository; `wardcat` itself
+is installed from PyPI as a dependency:
 
 ```bash
 uvx --from git+https://github.com/oguzhantopcu0/wardcat-mcp.git wardcat-mcp
