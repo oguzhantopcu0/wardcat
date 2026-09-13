@@ -9,24 +9,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The ReDoS check on your own regex patterns now works.** `custom_patterns`
+  were run against one pathological input in a thread with a 0.5 s timeout.
+  Python's `re` holds the GIL for a whole match and cannot be interrupted, so
+  the timeout could not fire until the match was over: on `(a+)+$` the check
+  **hung configuration loading outright**, and it passed `(\d+)+$` and
+  `(\w+\s?)+$` because it only ever tried a run of `a`.
+
+  Patterns are now screened when they are configured. The parse tree is searched
+  for a variable-width repeat nested in another repeat, or alternation inside a
+  repeat that can consume the same text; each suspect is then run against inputs
+  built from its shape in a child interpreter that the kernel kills after one
+  second. Most patterns have no suspect shape and never start a process. A
+  pattern shown to be catastrophic raises `ConfigError` — so a configuration that
+  loaded before, or hung, can now refuse to load, and only for that reason.
+
+- **Denylist patterns get the same screening, from YAML and from
+  `add_denylist()`.** YAML patterns were only compiled; `add_denylist()` checked
+  nothing at all, so `(a+)+$` was accepted and a 28-character input then took
+  **9 seconds per scan**. Invalid regex added through `add_denylist()` is refused
+  now too, where it used to be skipped on every scan without a word. Patterns are
+  compiled once rather than on every scan.
+
+- The scan-time timeout around custom patterns is removed. It bounded nothing,
+  for the same reason, and discarded the matches of any pattern that ran past two
+  seconds.
+
 ### Fixed
 
-- **A pre-Ampere CUDA card no longer gets a dtype it cannot run.** The
-  Transformers backend hardcoded `bfloat16`; those cards have no bf16 support at
-  all, and `torch.cuda.is_bf16_supported()` says so, so they get `float16` now.
+- **A layer that could not be built shows up in `warnings`, on every result.**
+  The README promises that a non-empty `warnings` means a degraded scan, and that
+  held for a layer failing mid-scan. A SpaCy model that would not load, SpaCy not
+  being installed at all, or the `phonenumbers` extra missing for
+  `with_phone_regions()` was only logged — `John Smith` came back clean with
+  nothing in `warnings`. Each of those is now on every result, since every scan
+  runs without the layer; the log line is still written once per build.
 
-- **`with_llm(dtype=...)` chooses the weight dtype.** A torch dtype name
-  (`"float16"`, `"bfloat16"`, `"float32"`); an unknown name is refused rather
-  than silently ignored.
+- **A missing SpaCy model replaced by another is reported, and a change of
+  language is called out.** Asking for a model that is not installed quietly
+  loaded the first installed model instead — in practice a Turkish model reading
+  English text. The substitution still happens, and the warning names both models.
 
-  The default stays `bfloat16` everywhere else, including Apple Silicon, and
-  that is worth writing down because the obvious change does not work. Metal has
-  no bf16 arithmetic unit and emulates it, so fp16 ought to be faster there —
-  but loading a model as `float16` with `device_map="auto"` on MPS **segfaults
-  the interpreter** on the torch/transformers versions this package supports,
-  where the same model as `bfloat16` answers in 13 seconds (measured on an M1
-  with SmolLM2-135M-Instruct). A default that crashes is worse than one that is
-  merely slow. The argument is there for anyone whose stack does better.
+- `scan_batch()` now logs the one-time configuration warnings `scan()` logs, such
+  as an entity enabled with no layer that detects it; it called the engine
+  directly and skipped them. An item that fails inside a batch keeps the build
+  warnings on its result.
+
+- Documentation that had fallen behind the code: `SECURITY.md` still described a
+  pre-1.0 support policy, `CONTRIBUTING.md` described overlap resolution as
+  "longest wins" and listed registration steps that no longer exist, the MCP
+  server guide said wardcat was not on PyPI, and the config loader's docstring
+  referred to a CLI the package does not have. A test now keeps the source-tree
+  version fallback in step with `pyproject.toml`.
+
+- The two dtype entries previously listed here shipped in 1.2.0 and have moved to
+  that release.
 
 ## [1.2.0] — 2026-09-08
 
@@ -219,6 +258,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guide.
 
 ### Fixed
+
+- **A pre-Ampere CUDA card no longer gets a dtype it cannot run.** The
+  Transformers backend hardcoded `bfloat16`; those cards have no bf16 support at
+  all, and `torch.cuda.is_bf16_supported()` says so, so they get `float16` now.
+
+- **`with_llm(dtype=...)` chooses the weight dtype.** A torch dtype name
+  (`"float16"`, `"bfloat16"`, `"float32"`); an unknown name is refused rather
+  than silently ignored.
+
+  The default stays `bfloat16` everywhere else, including Apple Silicon, and
+  that is worth writing down because the obvious change does not work. Metal has
+  no bf16 arithmetic unit and emulates it, so fp16 ought to be faster there —
+  but loading a model as `float16` with `device_map="auto"` on MPS **segfaults
+  the interpreter** on the torch/transformers versions this package supports,
+  where the same model as `bfloat16` answers in 13 seconds (measured on an M1
+  with SmolLM2-135M-Instruct). A default that crashes is worse than one that is
+  merely slow. The argument is there for anyone whose stack does better.
 
 - **`phone_regions` was rejected as an unknown YAML key.** It has been a valid
   configuration key since the libphonenumber work, but was never added to the

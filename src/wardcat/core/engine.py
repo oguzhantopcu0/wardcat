@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 import time
+from collections.abc import Sequence
 from typing import Any
 
 from wardcat.core.actions import new_context_id
@@ -32,7 +33,13 @@ class DetectionEngine:
     applies configured actions, and returns a ScanResult.
     """
 
-    def __init__(self, config: dict[str, Any], detectors: list[BaseDetector]) -> None:
+    def __init__(
+        self,
+        config: dict[str, Any],
+        detectors: list[BaseDetector],
+        *,
+        build_warnings: Sequence[str] = (),
+    ) -> None:
         self.config = config
         self.detectors = detectors
         # Ensemble adjudication: when enabled and an LLM detector is present,
@@ -60,7 +67,32 @@ class DetectionEngine:
         # other tier, so lowering it trades precision for recall and nothing
         # else changes.
         self._min_confidence: float = float(config.get("min_confidence", 0.8))
-        self._denylist: list[dict[str, str]] = config.get("denylist", [])
+        # Denylist entries, in configured order, as (entity_type, value or compiled
+        # pattern). Compiled once here rather than on every scan. Patterns were
+        # screened for catastrophic backtracking when they were configured.
+        self._denylist: list[tuple[str, str | re.Pattern[str]]] = []
+        denylist_warnings: list[str] = []
+        for entry in config.get("denylist", []):
+            entity_type = entry.get("entity_type", "CUSTOM")
+            if "pattern" in entry:
+                try:
+                    self._denylist.append((entity_type, re.compile(entry["pattern"])))
+                except re.error as exc:
+                    denylist_warnings.append(
+                        f"Denylist pattern {entry['pattern']!r} is not valid regex and was "
+                        f"skipped: {exc}"
+                    )
+            elif entry.get("value"):
+                self._denylist.append((entity_type, entry["value"]))
+        # Problems found while the guard was built that leave every scan covering
+        # less than was configured — an NER model that did not load, say. A log
+        # line is read once if at all; the result is what a caller checks, so each
+        # result carries them, since each scan really was incomplete.
+        self.build_warnings: tuple[str, ...] = (
+            *build_warnings,
+            *(warning for detector in detectors for warning in detector.build_warnings),
+            *denylist_warnings,
+        )
         # Value propagation: once any layer detects a value, redact every other
         # whole-token occurrence of that exact value too. Closes the gap where a
         # model-based layer (NER/LLM) reports a repeated value only once.
@@ -87,7 +119,7 @@ class DetectionEngine:
         t_start = time.perf_counter()
         self._check_size(text)
 
-        warnings: list[str] = []
+        warnings: list[str] = list(self.build_warnings)
         if self._use_adjudication:
             candidate_spans: list[DetectedSpan] = []
             for detector in self._other_detectors:
@@ -137,7 +169,7 @@ class DetectionEngine:
         t_start = time.perf_counter()
         self._check_size(text)
 
-        warnings: list[str] = []
+        warnings: list[str] = list(self.build_warnings)
         if self._use_adjudication:
             cand_results = await asyncio.gather(
                 *(self._safe_detect_async(d, text) for d in self._other_detectors)
@@ -309,17 +341,9 @@ class DetectionEngine:
     def _collect_denylist_spans(self, text: str) -> list[DetectedSpan]:
         """Match denylist entries (exact value or regex pattern) against *text*."""
         spans: list[DetectedSpan] = []
-        for entry in self._denylist:
-            entity_type = entry.get("entity_type", "CUSTOM")
-
-            if "pattern" in entry:
-                # Regex denylist entry
-                try:
-                    compiled = re.compile(entry["pattern"])
-                except re.error:
-                    logger.warning("Denylist pattern %r is invalid — skipped.", entry["pattern"])
-                    continue
-                for m in compiled.finditer(text):
+        for entity_type, matcher in self._denylist:
+            if isinstance(matcher, re.Pattern):
+                for m in matcher.finditer(text):
                     spans.append(
                         DetectedSpan(
                             entity_type=entity_type,
@@ -329,12 +353,9 @@ class DetectionEngine:
                             confidence=1.0,
                         )
                     )
-
-            elif "value" in entry:
+            else:
                 # Exact-match denylist entry
-                value = entry["value"]
-                if not value:
-                    continue
+                value = matcher
                 start = 0
                 while True:
                     pos = text.find(value, start)

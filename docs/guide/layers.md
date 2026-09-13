@@ -61,6 +61,12 @@ guard = Wardcat(salt="s").with_ner(language=Language.TR).add_entity("PERSON")
 guard = Wardcat(salt="s").with_ner(spacy_model=["en_core_web_sm", "de_core_news_sm"])
 ```
 
+A model that cannot be loaded — SpaCy is not installed, or the model is missing
+and could not be downloaded — is skipped, and every `ScanResult.warnings` says so.
+If a missing model is replaced by another one that is installed, the warning names
+both, and says plainly when the replacement is for a different language: an
+English model reading Turkish text misses most names.
+
 A multilingual gazetteer filters out job titles and abbreviations that NER models
 commonly mislabel as names.
 

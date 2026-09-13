@@ -196,29 +196,23 @@ def test_custom_pattern_pattern_not_a_string_raises(tmp_path: Path):
         load_config(cfg_file)
 
 
-def test_check_redos_timeout_rejects_pattern(tmp_path: Path):
-    """A pattern that times out during ReDoS check should be rejected."""
-    import concurrent.futures
-    from unittest.mock import MagicMock, patch
+def test_catastrophic_custom_pattern_is_rejected_without_hanging(tmp_path: Path):
+    """A pattern that backtracks exponentially is refused, and refusing it is quick.
 
-    override = {"custom_patterns": {"SAFE": {"pattern": r"\btest\b", "action": "warn"}}}
+    The previous check ran the pattern in a thread and waited on a timeout. ``re``
+    holds the GIL for a whole match, so the wait never ended early — on this very
+    pattern it hung the loader outright.
+    """
+    import time
+
+    override = {"custom_patterns": {"BAD": {"pattern": r"(a+)+$", "action": "warn"}}}
     cfg_file = tmp_path / "policy.yaml"
     cfg_file.write_text(yaml.dump(override))
 
-    # Make _check_redos simulate a timeout
-    mock_future = MagicMock()
-    mock_future.result.side_effect = concurrent.futures.TimeoutError()
-    mock_executor = MagicMock()
-    mock_executor.submit.return_value = mock_future
-    mock_ctx = MagicMock()
-    mock_ctx.__enter__ = MagicMock(return_value=mock_executor)
-    mock_ctx.__exit__ = MagicMock(return_value=False)
-
-    with (
-        patch("wardcat.config.loader.concurrent.futures.ThreadPoolExecutor", return_value=mock_ctx),
-        pytest.raises(ValueError, match="catastrophic backtracking"),
-    ):
+    started = time.perf_counter()
+    with pytest.raises(ValueError, match="catastrophic backtracking"):
         load_config(cfg_file)
+    assert time.perf_counter() - started < 15
 
 
 def test_load_config_does_not_read_env(monkeypatch):

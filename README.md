@@ -923,11 +923,14 @@ class Violation:
     confidence:  float        # checksum 1.0 · structural regex 0.97 · fuzzy regex 0.90 · NER/LLM 0.85
 ```
 
-> **Degraded scans — check `warnings`.** If a detector layer cannot run (most
-> commonly the LLM backend being unreachable), the scan still returns the other
-> layers' results but records the failure in `result.warnings`. A non-empty
-> `warnings` means detection was **degraded** — some PII may have been missed —
-> so you are not silently misled into thinking every layer ran:
+> **Degraded scans — check `warnings`.** If a detector layer cannot run — the LLM
+> backend is unreachable, a SpaCy model could not be loaded, an optional package
+> such as `phonenumbers` is missing — the scan still returns the other layers'
+> results but records the problem in `result.warnings`. A layer that failed while
+> the guard was being built is reported on every result, since every scan runs
+> without it. A non-empty `warnings` means detection was **degraded** — some PII
+> may have been missed — so you are not silently misled into thinking every layer
+> ran:
 >
 > ```python
 > result = guard.scan(text)
