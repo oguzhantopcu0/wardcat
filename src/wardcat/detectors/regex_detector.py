@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import concurrent.futures
 import hashlib
 import logging
 import re
@@ -617,41 +616,12 @@ _URI_CREDENTIAL: re.Pattern = re.compile(
     re.IGNORECASE,
 )
 
-# Timeout for a single custom-pattern execution (seconds).
-_CUSTOM_PATTERN_TIMEOUT = 2.0
-
 # Cheap pre-filter for built-in patterns that only ever match when a given
 # literal is present ("@" for EMAIL). Skipping the scan when the literal is
 # absent is an O(n) substring check that avoids running the regex over
 # irrelevant text at all. (The patterns themselves are already linear thanks to
 # their bounded quantifiers; this is an optimization, not the ReDoS fix.)
 _REDOS_GATE: dict[str, str] = {"EMAIL": "@"}
-
-
-def _safe_finditer(pattern: re.Pattern, text: str) -> list:
-    """Execute a *custom* regex with a timeout so a user pattern can't ReDoS a scan.
-
-    Returns the matches, or an empty list if the pattern exceeds
-    ``_CUSTOM_PATTERN_TIMEOUT``. ``shutdown(wait=False)`` lets the call return
-    promptly on timeout instead of blocking on the still-running match thread
-    (that orphaned thread finishes on its own). Built-in patterns don't need this
-    — they are bounded to linear time by construction.
-    """
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    try:
-        future = executor.submit(list, pattern.finditer(text))
-        try:
-            return future.result(timeout=_CUSTOM_PATTERN_TIMEOUT)
-        except concurrent.futures.TimeoutError:
-            logger.warning(
-                "Custom pattern %r timed out after %.1fs on input of length %d — skipped.",
-                pattern.pattern,
-                _CUSTOM_PATTERN_TIMEOUT,
-                len(text),
-            )
-            return []
-    finally:
-        executor.shutdown(wait=False)
 
 
 def _finditer_builtin(entity_type: str, pattern: re.Pattern, text: str) -> list:
@@ -997,11 +967,13 @@ class RegexDetector(BaseDetector):
             try:
                 import phonenumbers  # noqa: F401
             except ImportError:
-                logger.warning(
+                message = (
                     "phone_regions is set but the 'phonenumbers' package is missing, so "
                     "PHONE detection falls back to the built-in pattern. "
                     "Install with: pip install 'wardcat[phone]'"
                 )
+                logger.warning(message)
+                self.build_warnings = (message,)
                 self._phone_regions = []
         # When True, matching runs on a confusable-folded copy of the input so
         # homoglyph-obfuscated PII (Cyrillic/Greek lookalikes, fullwidth/Arabic
@@ -1175,9 +1147,12 @@ class RegexDetector(BaseDetector):
                         end=match.end(),
                     )
                 )
-        # Custom patterns — no checksum validation; use timeout wrapper for ReDoS safety
+        # Custom patterns — no checksum validation. They run unguarded: ``re`` cannot
+        # be interrupted mid-match, so a timeout here would bound nothing and only
+        # throw away a slow match's results. The guard is at configuration time,
+        # where a catastrophic pattern is refused (see wardcat.utils.regex_safety).
         for entity_type, (pattern, _action) in self._custom_compiled.items():
-            for match in _safe_finditer(pattern, text):
+            for match in pattern.finditer(text):
                 value = match.group()
                 spans.append(
                     DetectedSpan(
