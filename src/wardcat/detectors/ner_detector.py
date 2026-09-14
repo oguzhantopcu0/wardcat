@@ -6,6 +6,7 @@ import threading
 from typing import Any
 
 from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.utils.text import strip_name_suffix
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +263,7 @@ class NERDetector(BaseDetector):
             if not mapped or mapped not in self.enabled_entities:
                 continue
             value, start, end = _trim_span(ent.text, ent.start_char, ent.end_char)
+            value, start, end = strip_name_suffix(value, start, end)
             # Multilingual gazetteer filter: drop spans that are entirely
             # job titles, HR terms, or abbreviations (never PII on their own).
             if _is_all_stopwords(value):

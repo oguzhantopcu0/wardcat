@@ -39,6 +39,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A name gets the same placeholder in every grammatical case.** Turkish writes
+  case endings on proper nouns after an apostrophe, and the Turkish SpaCy models
+  put the ending inside the entity: `Ahmet Yılmaz'ın`, `İstanbul'da`,
+  `Türk Telekom'un`. The ending became part of the value, so one person hashed
+  differently in every sentence — an index built from those chunks saw a new
+  person each time. NER and LLM spans now end at the name, and the ending stays
+  in the text: `[PERSON:…]'ın`. The English possessive (`John's`) is handled the
+  same way.
+
+  A name whose apostrophe belongs to it is kept whole: the ending must be lower
+  case and contain a vowel, and at least two letters must precede it, so
+  `O'Brien` and `D'Angelo` are untouched and `O'Brien'ın` becomes `O'Brien`.
+
 - **The LLM layer works with reasoning models on Ollama.** Qwen3 and
   DeepSeek-R1 think before answering unless asked not to, and wardcat never
   asked. On `qwen3:14b` (Ollama 0.33, M1 16 GB) a one-sentence scan took between

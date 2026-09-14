@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from wardcat.detectors.base import BaseDetector, DetectedSpan
 from wardcat.llm.backends.base import BaseLLMBackend
 from wardcat.llm.prompt import build_messages, strip_reasoning
-from wardcat.utils.text import chunk_by_paragraph
+from wardcat.utils.text import chunk_by_paragraph, strip_name_suffix
 
 logger = logging.getLogger(__name__)
 
@@ -313,7 +313,9 @@ class LLMDetector(BaseDetector):
 
         for item in entities:
             entity_type = str(item.get("type", "")).upper().strip()
-            entity_text = str(item.get("text", "")).strip()
+            # A model quoting "Ahmet Yılmaz'ın" means the name; locating the bare
+            # name also covers its other occurrences, in any grammatical case.
+            entity_text, _, _ = strip_name_suffix(str(item.get("text", "")).strip(), 0, 0)
 
             if not entity_text or entity_type not in self.enabled_entities:
                 continue
