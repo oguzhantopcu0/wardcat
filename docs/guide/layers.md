@@ -67,6 +67,13 @@ If a missing model is replaced by another one that is installed, the warning nam
 both, and says plainly when the replacement is for a different language: an
 English model reading Turkish text misses most names.
 
+Case endings written after an apostrophe are left out of the span. Turkish SpaCy
+models return `Ahmet Yılmaz'ın` and `İstanbul'da` as entities; wardcat replaces
+only the name, so the text reads `[PERSON:…]'ın` and one person keeps one
+placeholder whatever case the sentence puts them in — which is what lets an index
+link the mentions. `O'Brien` and similar names, where the apostrophe is part of
+the name, are kept whole.
+
 A multilingual gazetteer filters out job titles and abbreviations that NER models
 commonly mislabel as names.
 
