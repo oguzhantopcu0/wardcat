@@ -26,7 +26,10 @@ import pytest
 from wardcat import Entity, Wardcat
 from wardcat.llm.backends.ollama import OllamaBackend
 
-pytestmark = pytest.mark.slow
+# The project-wide 30 s pytest timeout is sized for unit tests. A local model can
+# take longer than that to load before its first answer, which failed these tests
+# whenever Ollama happened to be running during a plain `pytest`.
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(600)]
 
 _OLLAMA_URL = os.environ.get("WARDCAT_TEST_OLLAMA_URL", "http://localhost:11434")
 

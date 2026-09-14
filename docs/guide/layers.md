@@ -131,6 +131,14 @@ guard = Wardcat(salt="s").with_llm(backend=Backend.TRANSFORMERS,
                                    model="Qwen/Qwen2.5-3B-Instruct")
 ```
 
+Reasoning models such as Qwen3 and DeepSeek-R1 are asked not to think: wardcat
+wants a bare JSON list, and on `qwen3:14b` thinking stretched a one-sentence scan
+from about ten seconds to minutes. The Ollama backend sends `think: false`. Other
+servers are not sent a vendor-specific flag, so switch reasoning off in the
+server's own configuration (vLLM and llama.cpp accept
+`chat_template_kwargs={"enable_thinking": false}`); any `<think>…</think>` that
+still reaches wardcat is removed before the reply is parsed.
+
 ### Model lifecycle & choosing a backend
 
 The **`transformers`** backend loads the model **in-process**. Weights are cached

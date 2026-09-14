@@ -504,6 +504,26 @@ def build_sensitivity_messages(text: str, language: str | None = None) -> list[d
     ]
 
 
+_REASONING_BLOCK = re.compile(r"<think>.*?(?:</think>|\Z)", re.DOTALL | re.IGNORECASE)
+_REASONING_END = re.compile(r"</think>", re.IGNORECASE)
+
+
+def strip_reasoning(reply: str) -> str:
+    """Remove the reasoning a thinking model left in its reply.
+
+    Ollama asked with ``think: false`` returns none, but an Ollama that predates
+    the flag, or an OpenAI-compatible server that does not separate reasoning,
+    puts it inline as ``<think>…</think>``. Left in, it misleads both parsers: a
+    bracketed aside in the reasoning is taken for the JSON answer, and a "no"
+    while thinking decides a sensitivity verdict. A block cut off before its
+    closing tag is removed to the end; a closing tag with no opening one — some
+    chat templates open the block themselves — keeps only what follows it.
+    """
+    reply = _REASONING_BLOCK.sub("", reply)
+    parts = _REASONING_END.split(reply)
+    return parts[-1]
+
+
 def parse_sensitivity(reply: str) -> bool:
     """Interpret a sensitivity-classification reply as a boolean.
 
@@ -512,7 +532,7 @@ def parse_sensitivity(reply: str) -> bool:
     affirmatives/negatives (EN/TR). Anything ambiguous is treated as **sensitive**
     (the cautious default for a guardrail).
     """
-    words = re.findall(r"[a-zçğıöşü]+", reply.strip().lower())
+    words = re.findall(r"[a-zçğıöşü]+", strip_reasoning(reply).strip().lower())
     negatives = {"false", "no", "hayır", "hayir", "none", "nein", "non"}
     affirmatives = {"true", "yes", "evet", "ja", "oui"}
     for word in words:
