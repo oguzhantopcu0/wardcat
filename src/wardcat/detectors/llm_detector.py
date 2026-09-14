@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 from wardcat.detectors.base import BaseDetector, DetectedSpan
 from wardcat.llm.backends.base import BaseLLMBackend
-from wardcat.llm.prompt import build_messages
+from wardcat.llm.prompt import build_messages, strip_reasoning
 from wardcat.utils.text import chunk_by_paragraph
 
 logger = logging.getLogger(__name__)
@@ -282,8 +282,9 @@ class LLMDetector(BaseDetector):
         Small models sometimes add ```json ... ``` blocks or
         explanatory text; these are cleaned up with regex.
         """
-        # Strip markdown code block
-        raw = re.sub(r"```(?:json)?", "", raw).strip()
+        # Drop inline reasoning first: a bracketed aside in it would be taken for
+        # the answer. Then strip the markdown code block.
+        raw = re.sub(r"```(?:json)?", "", strip_reasoning(raw)).strip()
 
         match = _JSON_RE.search(raw)
         if not match:

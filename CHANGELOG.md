@@ -39,6 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The LLM layer works with reasoning models on Ollama.** Qwen3 and
+  DeepSeek-R1 think before answering unless asked not to, and wardcat never
+  asked. On `qwen3:14b` (Ollama 0.33, M1 16 GB) a one-sentence scan took between
+  71 and 492 seconds with thinking and 10–12 seconds without it, with identical
+  detections — so under the default timeout the layer mostly did not run at all.
+  Generate calls now send `"think": false`, which Ollama ignores for models that
+  do not think.
+
+  Reasoning that still arrives inline as `<think>…</think>` — from an Ollama
+  that predates the flag, or an OpenAI-compatible server that does not separate
+  it — is removed before parsing. Left in, a bracketed aside was taken for the
+  JSON answer, and a "no" written while thinking could decide an
+  `is_sensitive()` verdict.
+
 - **A layer that could not be built shows up in `warnings`, on every result.**
   The README promises that a non-empty `warnings` means a degraded scan, and that
   held for a layer failing mid-scan. A SpaCy model that would not load, SpaCy not
