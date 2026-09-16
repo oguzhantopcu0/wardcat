@@ -61,10 +61,11 @@ python -m spacy download tr_core_news_md
 ```bash
 python benchmarks/compare.py download
 
-# English: Presidio, wardcat with defaults, wardcat with phone regions
+# English: Presidio, then wardcat layer by layer
 python benchmarks/compare.py predict --engine presidio        --corpus en   # Presidio env
-uv run python benchmarks/compare.py predict --engine wardcat         --corpus en
-uv run python benchmarks/compare.py predict --engine wardcat-regions --corpus en
+uv run python benchmarks/compare.py predict --engine wardcat-regex   --corpus en  # regex only
+uv run python benchmarks/compare.py predict --engine wardcat         --corpus en  # + NER
+uv run python benchmarks/compare.py predict --engine wardcat-regions --corpus en  # + phone regions
 uv run python benchmarks/compare.py score --corpus en
 
 # English with the LLM layer: needs Ollama and `ollama pull qwen3:14b`.
@@ -100,8 +101,14 @@ Apple M1 16 GB.
 | English, 1,500 samples | Precision | Recall | F1 | Median latency |
 |---|---|---|---|---|
 | Presidio | 64.8% | 76.8% | 0.703 | 4 ms |
-| wardcat, defaults | 69.3% | 75.4% | 0.722 | 4 ms |
-| wardcat, phone regions | 69.7% | 77.9% | 0.736 | 4 ms |
+| wardcat, regex only | 100% | 16.9% | 0.290 | <1 ms |
+| wardcat, regex + NER | 69.3% | 75.4% | 0.722 | 4 ms |
+| wardcat, + phone regions | 69.7% | 77.9% | 0.736 | 4 ms |
+
+On the first 200 samples, where the LLM layer was measured: Presidio 0.723,
+regex + NER 0.750, + phone regions 0.768, + LLM 0.774 (2.8 s median per sample).
+Turkish, 20 samples: Presidio 0.928, regex only 0.712, regex + NER 0.968,
++ LLM 0.989.
 
 wardcat with phone regions minus Presidio: ΔF1 +0.033, 95% interval
 [+0.026, +0.041]. With defaults wardcat finds fewer phone numbers (recall 21%

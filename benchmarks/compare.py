@@ -69,7 +69,7 @@ WARDCAT_ONLY: dict[str, str] = {"TC_ID": "TC_ID"}
 NER_MODEL = {"en": "en_core_web_lg", "tr": "tr_core_news_md"}
 # The countries whose phone formats occur in the English corpus.
 PHONE_REGIONS = ("US", "GB", "BE", "ES", "FR", "DE")
-ENGINES = ("presidio", "wardcat", "wardcat-regions", "wardcat-llm")
+ENGINES = ("presidio", "wardcat-regex", "wardcat", "wardcat-regions", "wardcat-llm")
 
 Prediction = tuple[str, int, int]
 Runner = Callable[[str], tuple[list[Prediction], list[str]]]
@@ -175,11 +175,17 @@ def presidio_engine(corpus: str) -> tuple[Runner, dict]:
 
 
 def wardcat_engine(
-    corpus: str, *, phone_regions: tuple[str, ...] = (), llm_model: str | None = None
+    corpus: str,
+    *,
+    ner: bool = True,
+    phone_regions: tuple[str, ...] = (),
+    llm_model: str | None = None,
 ) -> tuple[Runner, dict]:
     from wardcat import Action, Backend, Entity, Wardcat
 
-    guard = Wardcat(salt="benchmark").with_ner(spacy_model=NER_MODEL[corpus], auto_download=False)
+    guard = Wardcat(salt="benchmark")
+    if ner:
+        guard = guard.with_ner(spacy_model=NER_MODEL[corpus], auto_download=False)
     if phone_regions:
         guard = guard.with_phone_regions(*phone_regions)
     regex = [
@@ -192,8 +198,9 @@ def wardcat_engine(
         Entity.TC_ID,
     ]
     layers: dict[Entity, list[str]] = {entity: ["regex"] for entity in regex}
-    layers[Entity.PERSON] = ["ner"]
-    layers[Entity.ORG] = ["ner"]
+    if ner:
+        layers[Entity.PERSON] = ["ner"]
+        layers[Entity.ORG] = ["ner"]
     if llm_model:
         guard = guard.with_llm(backend=Backend.OLLAMA, model=llm_model, timeout=600)
         guard.remove_entity(Entity.ALL)  # drop the LLM layer's own default policy
@@ -203,7 +210,7 @@ def wardcat_engine(
 
     info = {
         "wardcat": version("wardcat"),
-        "ner_model": NER_MODEL[corpus],
+        "ner_model": NER_MODEL[corpus] if ner else None,
         "phone_regions": list(phone_regions),
         "llm": {"backend": "ollama", "model": llm_model} if llm_model else None,
     }
@@ -218,6 +225,8 @@ def wardcat_engine(
 def build_engine(engine: str, corpus: str, llm_model: str) -> tuple[Runner, dict]:
     if engine == "presidio":
         return presidio_engine(corpus)
+    if engine == "wardcat-regex":
+        return wardcat_engine(corpus, ner=False)
     if engine == "wardcat-regions":
         return wardcat_engine(corpus, phone_regions=PHONE_REGIONS)
     if engine == "wardcat-llm":
