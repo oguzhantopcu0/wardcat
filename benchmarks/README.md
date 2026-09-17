@@ -10,6 +10,8 @@ checks live in `tests/benchmark/`.
 | `compare.py` | Downloads the English corpus, runs an engine over a corpus, scores every engine that has predictions, and computes paired bootstrap intervals. |
 | `corpus_tr.py` | 20 hand-written Turkish samples in the same schema as the English corpus. |
 | `consistency.py` | Whether one Turkish name gets one value across grammatical case endings. |
+| `corpus_hard.py` | 100 hard cases, 60 English and 40 Turkish, including decoys with no gold. |
+| `sensitivity.py`, `corpus_sensitivity.py` | `is_sensitive()` on 100 texts labelled sensitive or not, against "anything found" from Presidio and wardcat regex + NER. |
 
 ## Corpora
 
@@ -29,6 +31,10 @@ checks live in `tests/benchmark/`.
 - **Turkish:** 20 samples written for wardcat: names in lower case, local number
   formats, values inside prose. Every IBAN, TC ID and card passes its checksum.
   Because wardcat's side wrote it, treat Turkish results as direction, not proof.
+- **Hard cases and sensitivity:** also written by wardcat's side, and committed
+  before any engine was run on them (`1dae1a9`); no case was changed after a
+  result. The hard cases include wardcat's known weaknesses: unlabelled national
+  phone numbers, Turkish sentence-initial run-ons, spoken and obfuscated values.
 
 ## Scoring
 
@@ -63,13 +69,15 @@ wardcat and Presidio are installed in separate environments.
 # wardcat, from the repository root
 uv sync --extra ner
 uv run python -m spacy download en_core_web_lg
-uv run python -m spacy download tr_core_news_md
+uv pip install https://huggingface.co/turkish-nlp-suite/tr_core_news_md/resolve/main/tr_core_news_md-1.0-py3-none-any.whl
 
 # Presidio, in its own environment
 python -m venv .presidio && . .presidio/bin/activate
 pip install presidio-analyzer
 python -m spacy download en_core_web_lg
-python -m spacy download tr_core_news_md
+# The Turkish model is published by turkish-nlp-suite, not by spaCy, so
+# `spacy download` cannot find it:
+pip install https://huggingface.co/turkish-nlp-suite/tr_core_news_md/resolve/main/tr_core_news_md-1.0-py3-none-any.whl
 ```
 
 ```bash
@@ -102,6 +110,18 @@ uv run python benchmarks/compare.py score --corpus tr
 
 # Is a difference real?
 uv run python benchmarks/compare.py bootstrap --corpus en --a wardcat-regions --b presidio
+
+# Hard cases: each sample runs through its own language's pipeline
+python benchmarks/compare.py predict --engine presidio --corpus hard         # Presidio env
+uv run python benchmarks/compare.py predict --engine wardcat     --corpus hard
+uv run python benchmarks/compare.py predict --engine wardcat-llm --corpus hard
+uv run python benchmarks/compare.py score --corpus hard
+
+# is_sensitive()
+python benchmarks/sensitivity.py predict --engine presidio                    # Presidio env
+uv run python benchmarks/sensitivity.py predict --engine wardcat
+uv run python benchmarks/sensitivity.py predict --engine wardcat-llm
+uv run python benchmarks/sensitivity.py score
 
 # Turkish case endings
 uv run python benchmarks/consistency.py --engine wardcat --ner-model tr_core_news_lg
@@ -154,3 +174,36 @@ On the first 200 English samples, where the LLM layer was measured: Presidio
 0.723, regex + NER 0.776, + phone regions 0.785, + LLM (`qwen3:14b`) 0.785 at
 1.9 s median per sample. Turkish, 20 samples: Presidio 0.928, regex only 0.712,
 regex + NER 0.968, + LLM 0.989.
+
+### Hard cases, 100 samples
+
+| | Precision | Recall | F1 | hidden | Median latency |
+|---|---|---|---|---|---|
+| Presidio | 80.1% | 87.9% | 0.838 | 85.2% | 7 ms |
+| wardcat, regex only | 96.2% | 41.1% | 0.576 | 47.0% | <1 ms |
+| wardcat, regex + NER | 90.4% | 83.1% | 0.866 | 80.2% | 6 ms |
+| wardcat, + LLM | 89.8% | 91.9% | 0.908 | 89.2% | 6.7 s |
+
+Paired bootstrap against Presidio: regex + NER ΔF1 +0.027 [−0.009, +0.062],
+recall −0.048 [−0.090, −0.015]; + LLM ΔF1 +0.070 [+0.036, +0.108]. English F1:
+Presidio 0.862, regex + NER 0.882, + LLM 0.904. Turkish: 0.796, 0.837, 0.915.
+Missed by every engine: spoken numbers, `[at]`/`(at)` e-mail obfuscation,
+lower-case `deniz aydın`, `Trendyol`. Missed by wardcat without the LLM:
+unlabelled national phone numbers, the Troy card `9792 …`, a spaced SSN and a
+spaced TC number. The LLM layer added two false positives that fail their
+checksums, a test card and `TR00 …`.
+
+### is_sensitive(), 100 texts
+
+| | Accuracy | Precision | Recall | F1 | Median latency |
+|---|---|---|---|---|---|
+| Presidio, anything found | 63% | 64% | 60% | 0.619 | 7 ms |
+| wardcat regex + NER, anything found | 71% | 70% | 74% | 0.718 | 5 ms |
+| wardcat `is_sensitive()`, qwen3:14b | 88% | 82% | 98% | 0.891 | 1.6 s |
+
+`is_sensitive()` missed one sensitive text (an unannounced acquisition, in German)
+and flagged eleven harmless ones, six of them templates and format examples
+(`name@example.com`, `XXX-XX-XXXX`) and two public customer-service numbers.
+Detector-based answers miss what has no entity — diagnoses, layoffs, lawsuits,
+unannounced deals — and flag public figures.
+
