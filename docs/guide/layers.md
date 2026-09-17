@@ -39,9 +39,12 @@ IPv6, MAC address, postcodes, VAT numbers, and the provider-prefixed secrets
 and more).
 
 **Cued by the word beside them,** because they have no shape of their own: a
-credential written into a sentence (`parolası ise …`, `password is …`) and
-`USERNAME` (`kullanıcı adı ahmet.yilmaz`). Only the value is taken, never the
-keyword, so the redacted line still reads.
+credential written into a sentence (`parolası ise …`, `password is …`),
+`USERNAME` (`kullanıcı adı ahmet.yilmaz`), and a phone number in any national
+format once it is labelled — `Phone: 0490 75 40 81`, `call me at 905-674-3793`, or
+`781 1704 office` in a signature. Only the value is taken, never the keyword, so
+the redacted line still reads. A labelled number scores `0.90`, below the
+structural pattern's `0.97`.
 
 Three of those checksums are weak enough that a bare digit run passes about one
 time in ten — the ABA, NHS and IMEI checks. Both the cued and the bare form are
@@ -74,8 +77,19 @@ placeholder whatever case the sentence puts them in — which is what lets an in
 link the mentions. `O'Brien` and similar names, where the apostrophe is part of
 the name, are kept whole.
 
-A multilingual gazetteer filters out job titles and abbreviations that NER models
-commonly mislabel as names.
+A multilingual gazetteer filters out job titles, abbreviations, form-field labels
+(`SSN`, `IBAN`, `Phone`) and postal designators (`P.O. Box`, `APO AP`) that NER
+models commonly mislabel as names or organisations. An organisation whose last
+word is a street designator (`Pollen Crescent`) is dropped as a street name.
+
+Span edges are cleaned before a value is replaced, so one name keeps one
+placeholder. A span stops at a line break — in an address block the model runs on
+into the next field (`Anna Josefsen\nAddress`). A short, fixed list of words is
+trimmed from the front: articles, greetings and salutations (`The`, `Dear`,
+`Sayın`, `dün`). Nothing outside that list is trimmed, because a word too many
+costs consistency and a word too few leaks part of a name. That is why the
+Turkish `md` model's sentence-initial run-ons (`Raporu Ayşe Demir`) are left as
+they are; `tr_core_news_lg` makes that mistake far less often.
 
 `LOCATION` covers countries, cities and regions, kept apart from `ADDRESS` (a
 street address) because the two carry different risk. `NRP` is nationality,
