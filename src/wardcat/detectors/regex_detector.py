@@ -36,6 +36,8 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         rf"|35(?:2[89]|[3-8][0-9]){_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # JCB 3528-3589
         rf"|(?:1800|2131)[0-9]{{11}}"  # JCB legacy, 15 digits
         rf"|6(?:011|5[0-9]{{2}}){_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # Discover
+        # Troy, Turkey's domestic scheme — 9792 BIN range, 16 digits
+        rf"|9792{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"
         # Maestro — 12 to 19 digits, so the length is carried by the quantifier
         rf"|(?:5018|5020|5038|5893|6304|6759|676[1-3])[0-9]{{8,15}}"
         r")"
@@ -144,8 +146,13 @@ _PATTERNS: dict[str, tuple[str, int]] = {
     ),
     # ── Turkish National ID (TC Kimlik No) ────────────────────────────
     # Regex performs format check only; checksum validated by _validate_tc_id().
+    # Written whole, or in the 3-3-3-2 grouping forms and printouts use
+    # ("111 654 670 34"); no other grouping, so a spaced run of digits is not
+    # offered to a checksum that one number in a hundred passes by chance.
     "TC_ID": (
-        r"(?<!\d)[1-9][0-9]{10}(?!\d)",
+        r"(?<!\d)(?:[1-9][0-9]{10}"
+        # The grouped form must not be a slice of a longer grouped run.
+        r"|(?<!\d )[1-9][0-9]{2} [0-9]{3} [0-9]{3} [0-9]{2}(?! \d))(?!\d)",
         0,
     ),
     # ── Turkey postal code: 01000–81999 ──────────────────────────────
@@ -648,6 +655,17 @@ _PHONE_VALUE = (
 _CUED_PHONE_BEFORE: re.Pattern = re.compile(_PHONE_CUE_BEFORE + _PHONE_VALUE)
 _CUED_PHONE_AFTER: re.Pattern = re.compile(r"(?<![\w+.\-/])" + _PHONE_VALUE + _PHONE_CUE_AFTER)
 
+# ── Keyword-cued SSN ──────────────────────────────────────────────────────────
+# The built-in SSN pattern needs dashes: a bare "412 76 9038" or "412769038" is
+# any nine digits. Named as a social security number, it is one. Only the value
+# is reported, at CONF_FUZZY, and it must still have a valid area, group and
+# serial.
+_CUED_SSN: re.Pattern = re.compile(
+    r"(?i:\b(?:ssn|ss\#|social\s+security(?:\s+(?:number|no\.?|\#))?))"
+    r"[\s:#.=\-]{0,4}(?:is[\s:]{1,3})?"
+    r"(?P<ssn>(?!000|666|9\d{2})\d{3}[ ]?(?!00)\d{2}[ ]?(?!0000)\d{4})(?![\d\-])"
+)
+
 _EXTENSION = re.compile(r"(?:x|ext\.?)[ ]?\d{1,6}$")
 # A date or timestamp after "Phone:" is a form's other field, not a number. Only a
 # value that is, or starts with, a whole date counts: "28-64-66-98" is a Danish
@@ -797,6 +815,7 @@ def _validate_tc_id(value: str) -> bool:
     - (d[0]+d[2]+d[4]+d[6]+d[8]) * 7 - (d[1]+d[3]+d[5]+d[7]) mod 10 == d[9]
     - (d[0]+d[1]+...+d[9]) mod 10 == d[10]
     """
+    value = value.replace(" ", "")
     if len(value) != 11 or not value.isdigit() or value[0] == "0":
         return False
     d = [int(c) for c in value]
@@ -973,6 +992,13 @@ _VALIDATORS: dict[str, Callable[[str], bool]] = {
     "BANK_ROUTING": _validate_aba_routing,
     "NHS_NUMBER": _validate_nhs_number,
     "EU_NATIONAL_ID": _validate_eu_national_id,
+}
+
+# The checksums a value from another layer must pass too. Only schemes whose
+# check is strong and whose written form is unambiguous: an LLM quoting a TC
+# number, an IBAN or a card number quotes the whole value.
+CHECKSUM_VALIDATORS: dict[str, Callable[[str], bool]] = {
+    entity: _VALIDATORS[entity] for entity in ("TC_ID", "IBAN", "CREDIT_CARD")
 }
 
 # ── Confidence tiers ──────────────────────────────────────────────────────────
@@ -1246,6 +1272,20 @@ class RegexDetector(BaseDetector):
             if self._phone_regions:
                 spans.extend(self._phone_spans(text))
             spans.extend(self._cued_phone_spans(text, scan_text, spans))
+        if "SSN" in self.enabled_entities:
+            taken = {(s.start, s.end) for s in spans if s.entity_type == "SSN"}
+            for match in _CUED_SSN.finditer(scan_text):
+                start, end = match.span("ssn")
+                if (start, end) not in taken:
+                    spans.append(
+                        DetectedSpan(
+                            entity_type="SSN",
+                            text=text[start:end],
+                            start=start,
+                            end=end,
+                            confidence=CONF_FUZZY,
+                        )
+                    )
         return spans
 
     @staticmethod

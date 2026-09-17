@@ -23,6 +23,7 @@ import time
 from dataclasses import dataclass
 
 from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.detectors.regex_detector import CHECKSUM_VALIDATORS
 from wardcat.llm.backends.base import BaseLLMBackend
 from wardcat.llm.prompt import build_messages, strip_reasoning
 from wardcat.utils.text import chunk_by_paragraph, strip_name_suffix
@@ -49,16 +50,16 @@ _STRUCTURAL_VALIDATORS: dict[str, re.Pattern] = {
     # Person name must consist of at least two words (first + last name).
     # Single words (e.g. "target", "customer") are LLM hallucinations → discarded.
     "PERSON": re.compile(r"^\S+(?:\s+\S+)+$"),
-    "TC_ID": re.compile(r"^\d{11}$"),
+    "TC_ID": re.compile(r"^\d(?: ?\d){10}$"),
     "IBAN": re.compile(r"^[A-Z]{2}\d{2}[A-Z0-9 ]{10,}$", re.IGNORECASE),
-    "CREDIT_CARD": re.compile(r"^[\d\s\-]{13,19}$"),
+    "CREDIT_CARD": re.compile(r"^[\d\s\-]{12,23}$"),
     "PHONE": re.compile(r"[\d\s\-\+\(\)]{7,}"),
     "IP_ADDRESS": re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$"),
     "POSTAL_CODE": re.compile(r"^\d{5}$"),
     "UUID": re.compile(
         r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
     ),
-    "SSN": re.compile(r"^\d{3}-\d{2}-\d{4}$"),
+    "SSN": re.compile(r"^\d{3}[\- ]?\d{2}[\- ]?\d{4}$"),
     "MAC_ADDRESS": re.compile(r"^(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$"),
     "JWT": re.compile(r"^eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]*$"),
     "IPv6": re.compile(
@@ -328,6 +329,15 @@ class LLMDetector(BaseDetector):
                     "Hallucination filter: %s %r failed format validation",
                     entity_type,
                     entity_text,
+                )
+                continue
+            # A model reads "4111 1111 1111 1112" as a card and "TR00 0000 …" as an
+            # IBAN as readily as the real thing. The regex layer refuses both on
+            # their checksum; a model proposal gets the same test.
+            checksum = CHECKSUM_VALIDATORS.get(entity_type)
+            if checksum is not None and not checksum(entity_text):
+                logger.debug(
+                    "Hallucination filter: %s %r failed its checksum", entity_type, entity_text
                 )
                 continue
 
