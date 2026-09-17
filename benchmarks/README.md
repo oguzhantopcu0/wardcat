@@ -16,6 +16,16 @@ checks live in `tests/benchmark/`.
 - **English:** [presidio-research](https://github.com/microsoft/presidio-research)
   `data/synth_dataset_v2.json` (MIT), 1,500 synthetic samples built to Presidio's
   own taxonomy. `download` fetches it at commit `f3ff907` and checks its sha256.
+- **Gretel (held out):**
+  [gretelai/synthetic_pii_finance_multilingual](https://huggingface.co/datasets/gretelai/synthetic_pii_finance_multilingual)
+  (Apache-2.0), the English test split: 2,891 full-length financial documents
+  (contracts, EDI messages, emails, logs) from a different generator and a
+  different taxonomy. No wardcat rule was written while looking at it. `download`
+  fetches the parquet at revision `7b844d1`, checks its sha256 and converts it to
+  the schema above, which needs pyarrow. Its labels are incomplete: the second
+  copy of an e-mail address in a `[x](mailto:x)` link and many phone numbers in
+  letterheads are unlabelled, so every engine's precision reads low, by the same
+  measure for each.
 - **Turkish:** 20 samples written for wardcat: names in lower case, local number
   formats, values inside prose. Every IBAN, TC ID and card passes its checksum.
   Because wardcat's side wrote it, treat Turkish results as direction, not proof.
@@ -26,6 +36,10 @@ A prediction is a true positive when it overlaps an unclaimed gold span whose ty
 maps to it; each gold span is claimed once. Predictions that claim nothing are false
 positives, unclaimed gold spans are misses. Overlap is used rather than exact
 boundaries so that multi-line addresses do not turn into a punctuation contest.
+
+Overlap cannot see a span that is too short: `Smith` for `John Smith` still counts.
+The `hidden` column covers that — the share of gold characters of the scored types
+that fall inside some prediction of any type, which is what redaction removes.
 
 Only the eight types both engines offer are scored: `PERSON`, `ORGANIZATION`,
 `CREDIT_CARD`, `PHONE_NUMBER`, `EMAIL_ADDRESS`, `IBAN_CODE`, `US_SSN`, `IP_ADDRESS`.
@@ -59,7 +73,7 @@ python -m spacy download tr_core_news_md
 ```
 
 ```bash
-python benchmarks/compare.py download
+uv run --with pyarrow python benchmarks/compare.py download
 
 # English: Presidio, then wardcat layer by layer
 python benchmarks/compare.py predict --engine presidio        --corpus en   # Presidio env
@@ -72,6 +86,13 @@ uv run python benchmarks/compare.py score --corpus en
 # Seconds per sample, so the first 200; every engine is rescored on the same 200.
 uv run python benchmarks/compare.py predict --engine wardcat-llm --corpus en --limit 200
 uv run python benchmarks/compare.py score --corpus en --limit 200
+
+# Gretel: same engines, no LLM run (2,891 long documents)
+python benchmarks/compare.py predict --engine presidio        --corpus gretel  # Presidio env
+uv run python benchmarks/compare.py predict --engine wardcat-regex   --corpus gretel
+uv run python benchmarks/compare.py predict --engine wardcat         --corpus gretel
+uv run python benchmarks/compare.py predict --engine wardcat-regions --corpus gretel
+uv run python benchmarks/compare.py score --corpus gretel
 
 # Turkish
 python benchmarks/compare.py predict --engine presidio --corpus tr           # Presidio env
@@ -93,25 +114,43 @@ directories and the downloaded corpus are git-ignored.
 `score` and `bootstrap` only read predictions, so they run in either environment.
 Delete a `preds/` file to rerun that engine from scratch.
 
-## Results, 14 September 2026
+## Results, 17 September 2026
 
 wardcat 1.2.0 with unreleased fixes, presidio-analyzer 2.2.364, spaCy 3.8.16,
-Apple M1 16 GB.
+Apple M1 16 GB. `hidden` is the share of gold PII characters removed.
 
-| English, 1,500 samples | Precision | Recall | F1 | Median latency |
-|---|---|---|---|---|
-| Presidio | 64.8% | 76.8% | 0.703 | 4 ms |
-| wardcat, regex only | 100% | 16.9% | 0.290 | <1 ms |
-| wardcat, regex + NER | 69.3% | 75.4% | 0.722 | 4 ms |
-| wardcat, + phone regions | 69.7% | 77.9% | 0.736 | 4 ms |
+| English, 1,500 samples | Precision | Recall | F1 | hidden | Median latency |
+|---|---|---|---|---|---|
+| Presidio | 64.8% | 76.8% | 0.703 | 85.3% | 4 ms |
+| wardcat, regex only | 100% | 20.9% | 0.346 | 28.2% | <1 ms |
+| wardcat, regex + NER | 72.6% | 79.4% | 0.759 | 87.7% | 4 ms |
+| wardcat, + phone regions | 72.6% | 80.2% | 0.762 | 88.7% | 4 ms |
 
-On the first 200 samples, where the LLM layer was measured: Presidio 0.723,
-regex + NER 0.750, + phone regions 0.768, + LLM 0.774 (2.8 s median per sample).
-Turkish, 20 samples: Presidio 0.928, regex only 0.712, regex + NER 0.968,
-+ LLM 0.989.
+| Gretel, 2,891 documents | Precision | Recall | F1 | hidden | Median latency |
+|---|---|---|---|---|---|
+| Presidio | 33.5% | 74.1% | 0.462 | 77.5% | 75 ms |
+| wardcat, regex only | 59.3% | 11.7% | 0.195 | 13.4% | 1 ms |
+| wardcat, regex + NER | 38.7% | 72.1% | 0.504 | 74.7% | 46 ms |
+| wardcat, + phone regions | 37.8% | 71.5% | 0.495 | 74.3% | 49 ms |
 
-wardcat with phone regions minus Presidio: ΔF1 +0.033, 95% interval
-[+0.026, +0.041]. With defaults wardcat finds fewer phone numbers (recall 21%
-against 59%) and its overall recall is 1.4 points lower; its lead in that
-configuration comes from precision. One synthetic corpus supports "better on this
-benchmark", not "better everywhere".
+wardcat regex + NER minus Presidio, paired bootstrap:
+
+| | ΔPrecision | ΔRecall | ΔF1 |
+|---|---|---|---|
+| English | +0.079 [+0.067, +0.091] | +0.026 [+0.013, +0.038] | +0.056 [+0.046, +0.066] |
+| Gretel | +0.052 [+0.047, +0.057] | −0.021 [−0.026, −0.015] | +0.042 [+0.037, +0.047] |
+
+On Gretel wardcat's lead is precision; Presidio finds more names and
+organisations and removes more gold characters. The phone regions chosen for the
+English corpus (`US GB BE ES FR DE`) lower phone precision on Gretel from 75% to
+43%, which is the cost the documentation warns about.
+
+The labelled-phone and NER span changes were written while reading errors on the
+English corpus, so the English gain from them is partly fitted: regex + NER went
+from 0.723 to 0.759 there, and from 0.497 to 0.504 on Gretel, which no rule was
+written against.
+
+On the first 200 English samples, where the LLM layer was measured: Presidio
+0.723, regex + NER 0.776, + phone regions 0.785, + LLM (`qwen3:14b`) 0.785 at
+1.9 s median per sample. Turkish, 20 samples: Presidio 0.928, regex only 0.712,
+regex + NER 0.968, + LLM 0.989.
