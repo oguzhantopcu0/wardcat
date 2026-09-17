@@ -408,6 +408,11 @@ guard.scan("call 07700 063 966 or 699 956 915")
 # both detected; the built-in pattern reaches neither
 ```
 
+A number that is labelled is found without any of this, in any national format:
+`Phone: 0490 75 40 81`, `Mobile:`, `Fax:`, `call me at …`, `telefon: …`, or a
+trailing `office` / `fax` in a signature. The label is the evidence, so these
+score `0.90`; an unlabelled national number still needs its region.
+
 Needs `pip install "wardcat[phone]"`. Without it the built-in pattern is used and
 a warning is logged — nothing breaks. Call `with_phone_regions()` with no
 arguments to go back to the pattern.

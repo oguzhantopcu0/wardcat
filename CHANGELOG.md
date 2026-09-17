@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A labelled phone number is found in any national format, with no
+  `phone_regions`.** The built-in pattern refuses a bare `905-674-3793` or
+  `0490 75 40 81`, rightly: a digit run is an order number as often as a phone
+  number. The label settles it — `Phone:`, `Mobile:`, `Fax:`, `call me at …`,
+  `telefon: …`, `Handy:`, or `781 1704 office` in a signature block — so a
+  number next to one is now reported, at `0.90`. The value must hold 7–15 digits
+  and must not be a date; phrases that merely tend to precede a number ("messages
+  to", "not answering at") are deliberately not cues.
+
 ### Security
 
 - **The ReDoS check on your own regex patterns now works.** `custom_patterns`
@@ -38,6 +49,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seconds.
 
 ### Fixed
+
+- **NER spans are cut at the edges where models run over.** A span now stops at
+  a line break (`Anna Josefsen\nAddress` in an address block), and a short fixed
+  list of leading words is trimmed — articles, greetings, salutations: `The`,
+  `Dear`, `Sayın`, `dün`. Nothing outside the list is trimmed, since a word too
+  few leaks part of a name; the Turkish `md` model's sentence-initial run-ons
+  (`Raporu Ayşe Demir`) are therefore left as they are.
+
+- **Form-field labels and postal designators are no longer organisations.**
+  `SSN`, `IBAN`, `Phone`, `P.O. Box`, `Suite` and `APO AP` next to a value were
+  reported as `ORG`. So were spans with fewer than two letters, and street names
+  whose last word is a designator (`Pollen Crescent`, `Koepenicker Str`).
 
 - **A name gets the same placeholder in every grammatical case.** Turkish writes
   case endings on proper nouns after an apostrophe, and the Turkish SpaCy models

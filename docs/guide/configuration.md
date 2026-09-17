@@ -51,7 +51,8 @@ Wardcat(config_path="policy.yaml")                              # replace it who
 ## Phone regions
 
 `PHONE` is matched by a precision-first pattern covering TR/FR/DE national formats
-plus E.164. For national formats elsewhere, name the regions you serve and
+plus E.164, and by the label beside a number (`Phone:`, `call me at …`) in any
+format. For national formats elsewhere, name the regions you serve and
 detection moves to libphonenumber:
 
 ```python

@@ -13,16 +13,27 @@ be stopped and resumed:
     python benchmarks/compare.py bootstrap --corpus en --a wardcat-regions --b presidio
 
 Corpora
-  en  presidio-research ``synth_dataset_v2.json`` (MIT), 1,500 samples: the
-      competitor's own dataset and taxonomy. Downloaded at a pinned commit and
-      checked against its sha256.
-  tr  20 hand-written Turkish samples (``corpus_tr.py``). Written by wardcat's
-      side, which is home-field advantage; read those results as direction only.
+  en      presidio-research ``synth_dataset_v2.json`` (MIT), 1,500 samples: the
+          competitor's own dataset and taxonomy. Downloaded at a pinned commit and
+          checked against its sha256.
+  gretel  gretelai/synthetic_pii_finance_multilingual (Apache-2.0), English test
+          split, 2,891 full-length financial documents from a different generator
+          and taxonomy. Neither engine's rules were written against it. Downloaded
+          at a pinned revision, checked against its sha256 and converted to the
+          same schema; the conversion needs pyarrow
+          (``uv run --with pyarrow python benchmarks/compare.py download``).
+  tr      20 hand-written Turkish samples (``corpus_tr.py``). Written by wardcat's
+          side, which is home-field advantage; read those results as direction only.
 
 Scoring: a prediction is a true positive when it overlaps an unclaimed gold span
 whose type maps to it; each gold span is claimed at most once. Predictions of a
 scored type that claim nothing are false positives; unclaimed gold spans are
 misses. Only the entity types both engines offer are scored.
+
+Overlap scoring cannot see a span that is too short — "Smith" for "John Smith"
+still counts. The ``hidden`` column closes that gap: the share of gold characters
+of the scored types that fall inside some prediction, whatever its type, which is
+what redaction actually removes.
 """
 
 from __future__ import annotations
@@ -52,6 +63,30 @@ EN_URL = (
 )
 EN_SHA256 = "ec08a771ba8135314cafb60752b2295212222ba3a4cd75d73811839c699e0012"
 
+GRETEL_PARQUET = DATA / "gretel_en_test.parquet"
+GRETEL_FILE = DATA / "gretel_en_test.json"
+GRETEL_URL = (
+    "https://huggingface.co/datasets/gretelai/synthetic_pii_finance_multilingual/resolve/"
+    "7b844d16738527a04264f50214cb426a4cea0897/data/English_test-00000-of-00001.parquet"
+)
+GRETEL_SHA256 = "c02b06d3c5b7c375525136d6f74acc52ab8fc07fa863d0aa50734910ec0ef2ad"
+# Gretel label -> gold type. Labels not listed stay in the gold under their own
+# name, so a prediction on them is neither credited nor matched.
+GRETEL_LABELS = {
+    "name": "PERSON",
+    "first_name": "PERSON",
+    "last_name": "PERSON",
+    "company": "ORGANIZATION",
+    "credit_card_number": "CREDIT_CARD",
+    "phone_number": "PHONE_NUMBER",
+    "email": "EMAIL_ADDRESS",
+    "iban": "IBAN_CODE",
+    "ssn": "US_SSN",
+    "ipv4": "IP_ADDRESS",
+    "ipv6": "IP_ADDRESS",
+}
+CORPORA = ("en", "gretel", "tr")
+
 # Gold type -> (wardcat entity, Presidio entity). Only types both engines offer.
 SCORED: dict[str, tuple[str, str]] = {
     "PERSON": ("PERSON", "PERSON"),
@@ -61,12 +96,14 @@ SCORED: dict[str, tuple[str, str]] = {
     "EMAIL_ADDRESS": ("EMAIL", "EMAIL_ADDRESS"),
     "IBAN_CODE": ("IBAN", "IBAN_CODE"),
     "US_SSN": ("SSN", "US_SSN"),
-    "IP_ADDRESS": ("IP_ADDRESS", "IP_ADDRESS"),
+    # wardcat reports IPv6 as its own type; Presidio folds it into IP_ADDRESS.
+    "IP_ADDRESS": ("IP_ADDRESS|IPv6", "IP_ADDRESS"),
 }
 # Gold types only wardcat offers: reported as coverage, never in the shared score.
 WARDCAT_ONLY: dict[str, str] = {"TC_ID": "TC_ID"}
 
-NER_MODEL = {"en": "en_core_web_lg", "tr": "tr_core_news_md"}
+NER_MODEL = {"en": "en_core_web_lg", "gretel": "en_core_web_lg", "tr": "tr_core_news_md"}
+LANGUAGE = {"en": "en", "gretel": "en", "tr": "tr"}
 # The countries whose phone formats occur in the English corpus.
 PHONE_REGIONS = ("US", "GB", "BE", "ES", "FR", "DE")
 ENGINES = ("presidio", "wardcat-regex", "wardcat", "wardcat-regions", "wardcat-llm")
@@ -82,25 +119,59 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def download(_: argparse.Namespace) -> None:
-    if EN_FILE.exists() and _sha256(EN_FILE) == EN_SHA256:
-        print(f"{EN_FILE.name} already present and verified")
+def _fetch(url: str, path: Path, sha256: str) -> None:
+    if path.exists() and _sha256(path) == sha256:
+        print(f"{path.name} already present and verified")
         return
     DATA.mkdir(exist_ok=True)
-    with urllib.request.urlopen(EN_URL, timeout=60) as response:  # noqa: S310 - fixed URL
-        EN_FILE.write_bytes(response.read())
-    digest = _sha256(EN_FILE)
-    if digest != EN_SHA256:
-        EN_FILE.unlink()
-        sys.exit(f"sha256 mismatch for {EN_URL}: got {digest}, expected {EN_SHA256}")
-    print(f"downloaded and verified {EN_FILE}")
+    with urllib.request.urlopen(url, timeout=120) as response:  # noqa: S310 - fixed URL
+        path.write_bytes(response.read())
+    digest = _sha256(path)
+    if digest != sha256:
+        path.unlink()
+        sys.exit(f"sha256 mismatch for {url}: got {digest}, expected {sha256}")
+    print(f"downloaded and verified {path}")
+
+
+def _convert_gretel() -> None:
+    """Rewrite the Gretel parquet in the synth_dataset_v2.json schema."""
+    try:
+        import pyarrow.parquet as pq
+    except ImportError:
+        sys.exit(
+            "converting the Gretel corpus needs pyarrow: "
+            "uv run --with pyarrow python benchmarks/compare.py download"
+        )
+    out = []
+    for row in pq.read_table(GRETEL_PARQUET).to_pylist():
+        text = row["generated_text"]
+        spans = [
+            {
+                "entity_type": GRETEL_LABELS.get(span["label"], span["label"]),
+                "entity_value": text[span["start"] : span["end"]],
+                "start_position": span["start"],
+                "end_position": span["end"],
+            }
+            for span in json.loads(row["pii_spans"])
+        ]
+        out.append({"full_text": text, "spans": spans, "document_type": row["document_type"]})
+    GRETEL_FILE.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+    print(f"converted {len(out)} documents to {GRETEL_FILE}")
+
+
+def download(_: argparse.Namespace) -> None:
+    _fetch(EN_URL, EN_FILE, EN_SHA256)
+    _fetch(GRETEL_URL, GRETEL_PARQUET, GRETEL_SHA256)
+    if not GRETEL_FILE.exists():
+        _convert_gretel()
 
 
 def load_corpus(name: str, limit: int = 0) -> list[dict]:
-    if name == "en":
-        if not EN_FILE.exists():
-            sys.exit("English corpus missing: run `python benchmarks/compare.py download` first")
-        data = json.loads(EN_FILE.read_text(encoding="utf-8"))
+    if name in ("en", "gretel"):
+        path = EN_FILE if name == "en" else GRETEL_FILE
+        if not path.exists():
+            sys.exit(f"{path.name} missing: run `python benchmarks/compare.py download` first")
+        data = json.loads(path.read_text(encoding="utf-8"))
     else:
         sys.path.insert(0, str(HERE))
         from corpus_tr import as_dataset
@@ -116,9 +187,10 @@ def presidio_engine(corpus: str) -> tuple[Runner, dict]:
     from presidio_analyzer import AnalyzerEngine
     from presidio_analyzer.nlp_engine import NlpEngineProvider
 
+    language = LANGUAGE[corpus]
     config = {
         "nlp_engine_name": "spacy",
-        "models": [{"lang_code": corpus, "model_name": NER_MODEL[corpus]}],
+        "models": [{"lang_code": language, "model_name": NER_MODEL[corpus]}],
         "ner_model_configuration": {
             "model_to_presidio_entity_mapping": {
                 "PERSON": "PERSON",
@@ -136,9 +208,9 @@ def presidio_engine(corpus: str) -> tuple[Runner, dict]:
     }
     analyzer = AnalyzerEngine(
         nlp_engine=NlpEngineProvider(nlp_configuration=config).create_engine(),
-        supported_languages=[corpus],
+        supported_languages=[language],
     )
-    if corpus != "en":
+    if language != "en":
         # Presidio registers its pattern recognizers for English only. Card, IBAN,
         # e-mail, IP and SSN formats do not depend on the language and a real
         # Turkish deployment would enable them; leaving them out would score a
@@ -152,14 +224,16 @@ def presidio_engine(corpus: str) -> tuple[Runner, dict]:
             UsSsnRecognizer,
         )
 
-        present = {r.name for r in analyzer.get_recognizers(language=corpus)}
+        present = {r.name for r in analyzer.get_recognizers(language=language)}
         for recognizer in (
-            CreditCardRecognizer(supported_language=corpus),
-            EmailRecognizer(supported_language=corpus),
-            IbanRecognizer(supported_language=corpus),
-            IpRecognizer(supported_language=corpus),
-            UsSsnRecognizer(supported_language=corpus),
-            PhoneRecognizer(supported_language=corpus, supported_regions=["TR", "US", "UK", "DE"]),
+            CreditCardRecognizer(supported_language=language),
+            EmailRecognizer(supported_language=language),
+            IbanRecognizer(supported_language=language),
+            IpRecognizer(supported_language=language),
+            UsSsnRecognizer(supported_language=language),
+            PhoneRecognizer(
+                supported_language=language, supported_regions=["TR", "US", "UK", "DE"]
+            ),
         ):
             if recognizer.name not in present:
                 analyzer.registry.add_recognizer(recognizer)
@@ -168,7 +242,7 @@ def presidio_engine(corpus: str) -> tuple[Runner, dict]:
     info = {"presidio_analyzer": version("presidio-analyzer"), "ner_model": NER_MODEL[corpus]}
 
     def run(text: str) -> tuple[list[Prediction], list[str]]:
-        results = analyzer.analyze(text=text, language=corpus, entities=wanted)
+        results = analyzer.analyze(text=text, language=language, entities=wanted)
         return [(r.entity_type, r.start, r.end) for r in results], []
 
     return run, info
@@ -195,6 +269,7 @@ def wardcat_engine(
         Entity.IBAN,
         Entity.SSN,
         Entity.IP_ADDRESS,
+        Entity.IPv6,
         Entity.TC_ID,
     ]
     layers: dict[Entity, list[str]] = {entity: ["regex"] for entity in regex}
@@ -281,8 +356,10 @@ def _prf(t: dict[str, int]) -> tuple[float, float, float]:
 
 
 def _match(gold: list[dict], preds: list[Prediction], wanted: str, tally: dict[str, int]) -> None:
+    """``wanted`` is one entity type, or several joined with ``|``."""
+    types = set(wanted.split("|"))
     claimed: set[int] = set()
-    for _, start, end in (p for p in preds if p[0] == wanted):
+    for _, start, end in (p for p in preds if p[0] in types):
         for k, span in enumerate(gold):
             if k not in claimed and start < span["end_position"] and span["start_position"] < end:
                 claimed.add(k)
@@ -297,6 +374,20 @@ def _load_preds(corpus: str, engine: str, n: int) -> dict[int, dict]:
     path = PREDS / f"{corpus}-{engine}.jsonl"
     rows = (json.loads(line) for line in path.read_text().splitlines() if line.strip())
     return {row["i"]: row for row in rows if row["i"] < n}
+
+
+def _hidden_chars(sample: dict, preds: list[Prediction]) -> tuple[int, int]:
+    """Gold characters of the scored types, and how many of them some prediction covers."""
+    covered = set()
+    for _, start, end in preds:
+        covered.update(range(start, end))
+    total = hidden = 0
+    for span in sample["spans"]:
+        if span["entity_type"] in SCORED:
+            chars = range(span["start_position"], span["end_position"])
+            total += len(chars)
+            hidden += sum(1 for c in chars if c in covered)
+    return total, hidden
 
 
 def _sample_tallies(sample: dict, preds: list[Prediction], engine: str) -> dict[str, dict]:
@@ -321,8 +412,12 @@ def score(args: argparse.Namespace) -> None:
             continue
         per_type: dict[str, dict] = defaultdict(_tally)
         coverage: dict[str, dict] = defaultdict(_tally)
+        gold_chars = hidden_chars = 0
         for i, sample in enumerate(corpus):
             preds = [tuple(p) for p in rows[i]["pred"]]
+            total, hidden = _hidden_chars(sample, preds)
+            gold_chars += total
+            hidden_chars += hidden
             for gold_type, t in _sample_tallies(sample, preds, engine).items():
                 for key in t:
                     per_type[gold_type][key] += t[key]
@@ -339,6 +434,7 @@ def score(args: argparse.Namespace) -> None:
         table[engine] = {
             "micro": micro,
             "micro_prf": _prf(micro),
+            "hidden": hidden_chars / gold_chars if gold_chars else 0.0,
             "per_type": {k: {**v, "prf": _prf(v)} for k, v in per_type.items()},
             "coverage": {k: {**v, "prf": _prf(v)} for k, v in coverage.items()},
             "latency_ms": {
@@ -349,14 +445,17 @@ def score(args: argparse.Namespace) -> None:
         }
 
     print(f"\n{args.corpus} corpus, {n} samples, micro-average over {len(SCORED)} shared types")
-    print(f"{'engine':<17}{'P':>8}{'R':>8}{'F1':>8}{'TP/FP/FN':>18}{'median':>10}{'p95':>10}")
+    print(
+        f"{'engine':<17}{'P':>8}{'R':>8}{'F1':>8}{'hidden':>8}{'TP/FP/FN':>18}"
+        f"{'median':>10}{'p95':>10}"
+    )
     for engine, r in table.items():
         p, rc, f = r["micro_prf"]
         m = r["micro"]
         counts = f"{m['tp']}/{m['fp']}/{m['fn']}"
         lat = r["latency_ms"]
         print(
-            f"{engine:<17}{p:>8.1%}{rc:>8.1%}{f:>8.3f}{counts:>18}"
+            f"{engine:<17}{p:>8.1%}{rc:>8.1%}{f:>8.3f}{r['hidden']:>8.1%}{counts:>18}"
             f"{lat['median']:>8.0f}ms{lat['p95']:>8.0f}ms"
         )
     print(f"\n{'F1 by type':<15}{'gold':>6}" + "".join(f"{e:>17}" for e in table))
@@ -420,18 +519,18 @@ def main() -> None:
 
     p = sub.add_parser("predict", help="run one engine over a corpus")
     p.add_argument("--engine", required=True, choices=ENGINES)
-    p.add_argument("--corpus", required=True, choices=["en", "tr"])
+    p.add_argument("--corpus", required=True, choices=CORPORA)
     p.add_argument("--limit", type=int, default=0, help="only the first N samples")
     p.add_argument("--llm-model", default="qwen3:14b", help="Ollama model for wardcat-llm")
     p.add_argument("--every", type=int, default=100, help="progress interval")
     p.add_argument("--allow-warnings", action="store_true", help="score degraded scans anyway")
 
     s = sub.add_parser("score", help="score every engine that has predictions")
-    s.add_argument("--corpus", required=True, choices=["en", "tr"])
+    s.add_argument("--corpus", required=True, choices=CORPORA)
     s.add_argument("--limit", type=int, default=0)
 
     bs = sub.add_parser("bootstrap", help="confidence interval for a difference")
-    bs.add_argument("--corpus", required=True, choices=["en", "tr"])
+    bs.add_argument("--corpus", required=True, choices=CORPORA)
     bs.add_argument("--limit", type=int, default=0)
     bs.add_argument("--a", required=True, choices=ENGINES)
     bs.add_argument("--b", required=True, choices=ENGINES)
