@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and must not be a date; phrases that merely tend to precede a number ("messages
   to", "not answering at") are deliberately not cues.
 
+- **Troy cards.** Turkey's domestic card scheme (`9792 …`) was not in the card
+  pattern, so a Luhn-valid Troy number went undetected. It is matched now, and
+  still has to pass Luhn.
+
+- **A TC number written in groups, `111 654 670 34`.** Only the 3-3-3-2
+  grouping forms and printouts use, and the checksum still decides.
+
+- **An SSN without dashes, when it is labelled.** `social security number
+  412 76 9038` and `SSN: 412769038` are found at `0.90`. An unlabelled nine-digit
+  run is still refused.
+
 ### Security
 
 - **The ReDoS check on your own regex patterns now works.** `custom_patterns`
@@ -56,6 +67,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Dear`, `Sayın`, `dün`. Nothing outside the list is trimmed, since a word too
   few leaks part of a name; the Turkish `md` model's sentence-initial run-ons
   (`Raporu Ayşe Demir`) are therefore left as they are.
+
+- **The LLM layer's card, IBAN and TC numbers must pass their checksums.** A
+  model reads `4111 1111 1111 1112` as a card and `TR00 0000 …` as an IBAN as
+  readily as a real one; the regex layer refuses both, and the model's proposal
+  now gets the same test.
 
 - **Form-field labels and postal designators are no longer organisations.**
   `SSN`, `IBAN`, `Phone`, `P.O. Box`, `Suite` and `APO AP` next to a value were
