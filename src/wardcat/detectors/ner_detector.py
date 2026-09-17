@@ -152,7 +152,85 @@ _NER_STOPWORDS: frozenset[str] = frozenset(
         "dr",
         "herr",
         "frau",
+        # Form-field labels and postal designators. A model reads "SSN", "IBAN"
+        # or "APO AP" beside a value as an organisation; they name the field or
+        # the military post office, never a company or a person.
+        "ssn",
+        "iban",
+        "bic",
+        "swift",
+        "cvv",
+        "cvc",
+        "pin",
+        "dob",
+        "vat",
+        "atm",
+        "address",
+        "phone",
+        "email",
+        "e-mail",
+        "fax",
+        "mobile",
+        "tel",
+        "adres",
+        "telefon",
+        "e-posta",
+        "suite",
+        "apt",
+        "p.o",
+        "box",
+        "apo",
+        "fpo",
+        "dpo",
+        "psc",
+        "rr",
+        "aa",  # the armed-forces "state" codes that follow APO/FPO/DPO
+        "ae",
+        "ap",
     }
+)
+
+# Words a model sweeps into the front of a name: an article, a greeting, a
+# "Sayın" or a "dün" that happened to stand before it. They are trimmed only from
+# the front and only while they lead, so "de la Cruz" or "van der Berg" — whose
+# particles are not listed — stay whole. Anything uncertain stays in the span:
+# a word too many costs a consistent placeholder, a word too few leaks a name.
+# That is why "a", "an" and "cher" are absent: "A Smith", "An Nguyen", "Cher".
+_LEADING_NOISE: frozenset[str] = frozenset(
+    {
+        "the",
+        "dear",
+        "hi",
+        "hello",
+        "hey",
+        "attn",
+        "cc",
+        "sayın",
+        "sayin",
+        "merhaba",
+        "selam",
+        "dün",
+        "dun",
+        "bugün",
+        "bugun",
+        "yarın",
+        "yarin",
+        "liebe",
+        "lieber",
+        "sehr",
+        "geehrte",
+        "geehrter",
+        "bonjour",
+    }
+)
+
+# A street designator as the final word makes an "organisation" a street name —
+# "Pollen Crescent", "Koepenicker Str". Final word only: "Wall Street Journal"
+# keeps its place.
+_STREET_LAST_WORD = re.compile(
+    r"(?:street|st|str|straße|strasse|avenue|ave|road|rd|boulevard|blvd|lane|drive"
+    r"|crescent|caddesi|cad|sokak|sokağı|sok|mahallesi|mah|bulvarı|gasse|weg|allee)\.?",
+    re.IGNORECASE,
 )
 
 
@@ -163,6 +241,30 @@ def _trim_span(text: str, start: int, end: int) -> tuple[str, int, int]:
         return text, start, end
     offset = text.index(trimmed)
     return trimmed, start + offset, start + offset + len(trimmed)
+
+
+def _first_line(text: str, start: int, end: int) -> tuple[str, int, int]:
+    """Cut a span at its first line break.
+
+    A name does not continue onto the next line. In an address block or a
+    signature the model runs on into the following field — "Anna Josefsen\nAddress"
+    — which redacts a label and gives the same person a different value wherever
+    the next line differs.
+    """
+    cut = min((i for i in (text.find("\n"), text.find("\r")) if i != -1), default=-1)
+    if cut <= 0:
+        return text, start, end
+    return _trim_span(text[:cut], start, start + cut)
+
+
+def _drop_leading_noise(text: str, start: int, end: int) -> tuple[str, int, int]:
+    """Remove :data:`_LEADING_NOISE` words from the front, keeping at least one word."""
+    while True:
+        head, sep, rest = text.partition(" ")
+        if not sep or not rest.strip() or head.strip(".,:;").lower() not in _LEADING_NOISE:
+            return text, start, end
+        offset = len(head) + len(sep) + (len(rest) - len(rest.lstrip()))
+        text, start = text[offset:], start + offset
 
 
 def _has_case(text: str) -> bool:
@@ -263,6 +365,8 @@ class NERDetector(BaseDetector):
             if not mapped or mapped not in self.enabled_entities:
                 continue
             value, start, end = _trim_span(ent.text, ent.start_char, ent.end_char)
+            value, start, end = _first_line(value, start, end)
+            value, start, end = _drop_leading_noise(value, start, end)
             value, start, end = strip_name_suffix(value, start, end)
             # Multilingual gazetteer filter: drop spans that are entirely
             # job titles, HR terms, or abbreviations (never PII on their own).
@@ -279,6 +383,12 @@ class NERDetector(BaseDetector):
             # take "Wall Street Journal" with it.
             if mapped == "ORG" and _NON_PERSON_CHARS.search(value):
                 logger.debug("NER ORG filtered (digits/address punctuation): %r", value)
+                continue
+            if mapped == "ORG" and sum(c.isalpha() for c in value) < 2:
+                logger.debug("NER ORG filtered (fewer than two letters): %r", value)
+                continue
+            if mapped == "ORG" and _STREET_LAST_WORD.fullmatch(value.split()[-1]):
+                logger.debug("NER ORG filtered (ends in a street designator): %r", value)
                 continue
             spans.append(
                 DetectedSpan(
