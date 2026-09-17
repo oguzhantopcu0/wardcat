@@ -609,6 +609,72 @@ def _looks_like_a_secret(value: str) -> bool:
     return classes >= 2
 
 
+# ── Keyword-cued phone numbers ───────────────────────────────────────────────
+# The built-in PHONE pattern refuses a bare national number such as "905-674-3793"
+# or "0490 75 40 81": a digit run with separators is an order number as often as a
+# phone number. The word labelling it settles which — "Phone:", "Mobile:",
+# "call me at", or a trailing "office"/"fax" in a signature block — and needs no
+# numbering plan, so it reaches formats of any country without phone_regions.
+#
+# The cue lists are conventions, not phrasings: a label or a request to call.
+# Phrases that merely tend to precede a number ("messages to", "answering at")
+# are left out; they would catch account and ticket numbers just as readily.
+_PHONE_CUE_BEFORE = (
+    r"(?i:\b(?:"
+    r"telephone|phone|tel|mobile|cell(?:phone)?|fax|whats\s?app|sms"
+    r"|(?:call|text|reach|ring)\s+(?:me|us)\s+(?:at|on)"
+    # A signature line's label, only in label form ("Office: …").
+    r"|(?:office|home|work|direct|desk)\s*:"
+    r"|telefon[a-zçğıöşü]{0,6}|cep|gsm|faks"  # Turkish; Telefon is also German
+    r"|handy|mobil|t[ée]l[ée]phone|t[ée]l|portable|tel[ée]fono|m[óo]vil|celular"
+    r")(?![^\W\d_])"
+    # "number", "no.", "numaram", "is", "at" … between the cue and the value.
+    r"(?:[\s:.#\-–]{0,4}(?:number|no|nr|num[ée]ro|n[úu]mero|nummer"
+    r"|numaras[ıi]|numaram|is|at|on)\b){0,3}"
+    r"[\s:.#\-–]{0,4})"
+)
+_PHONE_CUE_AFTER = r"[ \t]{0,3}[\-(]?[ \t]{0,3}(?i:office|fax|mobile|cell|home)\b"
+# Groups of digits, each optionally led by a parenthesised area or trunk code,
+# joined by one or two separators; an optional extension. A separator is required
+# between groups, so a digit run has exactly one reading and the match stays
+# linear. Digit counts are checked afterwards by _is_phone_shaped.
+_PHONE_VALUE = (
+    r"(?P<phone>\+?"
+    r"(?:\(\d{1,5}\)[ ]?)?\d{1,15}"
+    r"(?:[ .\-/]{1,2}(?:\(\d{1,5}\)[ ]?)?\d{1,15}){0,7}"
+    r"(?:[ ]?(?:x|ext\.?)[ ]?\d{1,6})?"
+    r")(?![\w.\-/:]\d|\w)"
+)
+_CUED_PHONE_BEFORE: re.Pattern = re.compile(_PHONE_CUE_BEFORE + _PHONE_VALUE)
+_CUED_PHONE_AFTER: re.Pattern = re.compile(r"(?<![\w+.\-/])" + _PHONE_VALUE + _PHONE_CUE_AFTER)
+
+_EXTENSION = re.compile(r"(?:x|ext\.?)[ ]?\d{1,6}$")
+# A date or timestamp after "Phone:" is a form's other field, not a number. Only a
+# value that is, or starts with, a whole date counts: "28-64-66-98" is a Danish
+# number whose first three groups merely look like one.
+_DATE_PREFIX = re.compile(
+    r"(?:(?P<y>\d{4})[\-./](?P<m>\d{1,2})[\-./](?P<d>\d{1,2})"
+    r"|(?P<d2>\d{1,2})[\-./](?P<m2>\d{1,2})[\-./](?P<y2>\d{2}|\d{4}))(?:$|[ T])"
+)
+
+
+def _is_date(value: str) -> bool:
+    match = _DATE_PREFIX.match(value)
+    if match is None:
+        return False
+    day, month = (match["d"], match["m"]) if match["y"] else (match["d2"], match["m2"])
+    # Either order: 03/12 is a date in London and in New York.
+    a, b = int(day), int(month)
+    return 1 <= min(a, b) and (a <= 12 and b <= 31 or b <= 12 and a <= 31)
+
+
+def _is_phone_shaped(value: str) -> bool:
+    """Seven to fifteen digits (E.164's ceiling), not counting an extension; not a date."""
+    number = _EXTENSION.sub("", value).rstrip()
+    digits = sum(c.isdigit() for c in number)
+    return 7 <= digits <= 15 and not _is_date(number)
+
+
 _URI_CREDENTIAL: re.Pattern = re.compile(
     # Bounded quantifiers keep this linear; an unbounded run before the required
     # "://" backtracks quadratically on adversarial input. See _REDOS_GATE.
@@ -1176,6 +1242,37 @@ class RegexDetector(BaseDetector):
 
         # Appended after tiering: these carry their own confidence, which is lower
         # than the structural tier this loop would stamp on a PHONE span.
-        if self._phone_regions and "PHONE" in self.enabled_entities:
-            spans.extend(self._phone_spans(text))
+        if "PHONE" in self.enabled_entities:
+            if self._phone_regions:
+                spans.extend(self._phone_spans(text))
+            spans.extend(self._cued_phone_spans(text, scan_text, spans))
+        return spans
+
+    @staticmethod
+    def _cued_phone_spans(
+        text: str, scan_text: str, found: list[DetectedSpan]
+    ) -> list[DetectedSpan]:
+        """PHONE spans named by the word beside them, at :data:`CONF_FUZZY`.
+
+        The label is the only evidence, as with a keyword-cued password, so these
+        rank below the structural pattern; a number that pattern or libphonenumber
+        already reported at the same offsets is not reported twice.
+        """
+        taken = {(s.start, s.end) for s in found if s.entity_type == "PHONE"}
+        spans: list[DetectedSpan] = []
+        for pattern in (_CUED_PHONE_BEFORE, _CUED_PHONE_AFTER):
+            for match in pattern.finditer(scan_text):
+                start, end = match.span("phone")
+                if (start, end) in taken or not _is_phone_shaped(match.group("phone")):
+                    continue
+                taken.add((start, end))
+                spans.append(
+                    DetectedSpan(
+                        entity_type="PHONE",
+                        text=text[start:end],
+                        start=start,
+                        end=end,
+                        confidence=CONF_FUZZY,
+                    )
+                )
         return spans
