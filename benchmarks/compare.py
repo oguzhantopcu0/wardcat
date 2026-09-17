@@ -24,6 +24,9 @@ Corpora
           (``uv run --with pyarrow python benchmarks/compare.py download``).
   tr      20 hand-written Turkish samples (``corpus_tr.py``). Written by wardcat's
           side, which is home-field advantage; read those results as direction only.
+  hard    100 hard cases, 60 English and 40 Turkish (``corpus_hard.py``), each run
+          through the pipeline for its own language. Also written by wardcat's
+          side, before any engine was run on it.
 
 Scoring: a prediction is a true positive when it overlaps an unclaimed gold span
 whose type maps to it; each gold span is claimed at most once. Predictions of a
@@ -85,7 +88,7 @@ GRETEL_LABELS = {
     "ipv4": "IP_ADDRESS",
     "ipv6": "IP_ADDRESS",
 }
-CORPORA = ("en", "gretel", "tr")
+CORPORA = ("en", "gretel", "tr", "hard")
 
 # Gold type -> (wardcat entity, Presidio entity). Only types both engines offer.
 SCORED: dict[str, tuple[str, str]] = {
@@ -172,6 +175,11 @@ def load_corpus(name: str, limit: int = 0) -> list[dict]:
         if not path.exists():
             sys.exit(f"{path.name} missing: run `python benchmarks/compare.py download` first")
         data = json.loads(path.read_text(encoding="utf-8"))
+    elif name == "hard":
+        sys.path.insert(0, str(HERE))
+        from corpus_hard import as_dataset
+
+        data = as_dataset()
     else:
         sys.path.insert(0, str(HERE))
         from corpus_tr import as_dataset
@@ -324,11 +332,17 @@ def predict(args: argparse.Namespace) -> None:
     if not todo:
         return
 
-    run, info = build_engine(args.engine, args.corpus, args.llm_model)
+    # A mixed corpus names each sample's language; build one engine per language.
+    runners: dict[str, Runner] = {}
+    infos: dict[str, dict] = {}
+    for language in sorted({corpus[i].get("language", args.corpus) for i in todo}):
+        runners[language], infos[language] = build_engine(args.engine, language, args.llm_model)
+    info = infos[args.corpus] if list(infos) == [args.corpus] else infos
     (PREDS / f"{args.corpus}-{args.engine}.info.json").write_text(json.dumps(info, indent=2))
 
     with out.open("a") as fh:
         for n, i in enumerate(todo, 1):
+            run = runners[corpus[i].get("language", args.corpus)]
             started = time.perf_counter()
             preds, warnings = run(corpus[i]["full_text"])
             ms = (time.perf_counter() - started) * 1000
@@ -467,11 +481,36 @@ def score(args: argparse.Namespace) -> None:
     for engine, r in table.items():
         for gold_type, t in r["coverage"].items():
             print(f"coverage {engine} {gold_type}: {t['tp']}/{t['tp'] + t['fn']} found")
+    if "category" in corpus[0]:
+        _print_groups(corpus, table, args, "language")
+        _print_groups(corpus, table, args, "category")
 
     RESULTS.mkdir(exist_ok=True)
     out = RESULTS / f"{args.corpus}-{args.limit or 'all'}.json"
     out.write_text(json.dumps(table, indent=2))
     print(f"\nwrote {out}")
+
+
+def _print_groups(corpus: list[dict], table: dict, args: argparse.Namespace, key: str) -> None:
+    """F1 and false positives per value of ``key``; decoy groups have no gold, so FP only."""
+    groups = sorted({sample[key] for sample in corpus})
+    print(f"\n{key + ': F1 (FP)':<22}" + "".join(f"{e:>17}" for e in table))
+    for group in groups:
+        cells = ""
+        for engine in table:
+            rows = _load_preds(args.corpus, engine, len(corpus))
+            micro = _tally()
+            for i, sample in enumerate(corpus):
+                if sample[key] != group:
+                    continue
+                preds = [tuple(p) for p in rows[i]["pred"]]
+                for t in _sample_tallies(sample, preds, engine).values():
+                    for k in micro:
+                        micro[k] += t[k]
+                table[engine].setdefault(key, {})[group] = {**micro, "prf": _prf(micro)}
+            f1 = f"{_prf(micro)[2]:.3f}" if micro["tp"] + micro["fn"] else "  -  "
+            cells += f"{f1 + ' (' + str(micro['fp']) + ')':>17}"
+        print(f"{group:<22}{cells}")
 
 
 # ── bootstrap ─────────────────────────────────────────────────────────────────
