@@ -180,30 +180,32 @@ regex + NER 0.968, + LLM 0.989.
 | | Precision | Recall | F1 | hidden | Median latency |
 |---|---|---|---|---|---|
 | Presidio | 80.1% | 87.9% | 0.838 | 85.2% | 7 ms |
-| wardcat, regex only | 96.2% | 41.1% | 0.576 | 47.0% | <1 ms |
-| wardcat, regex + NER | 90.4% | 83.1% | 0.866 | 80.2% | 6 ms |
-| wardcat, + LLM | 89.8% | 91.9% | 0.908 | 89.2% | 6.7 s |
+| wardcat, regex only | 96.4% | 42.7% | 0.592 | 48.5% | <1 ms |
+| wardcat, regex + NER | 90.5% | 84.7% | 0.875 | 81.7% | 4 ms |
+| wardcat, + LLM | 91.3% | 92.7% | 0.920 | 89.8% | 8.0 s |
 
-Paired bootstrap against Presidio: regex + NER ΔF1 +0.027 [−0.009, +0.062],
-recall −0.048 [−0.090, −0.015]; + LLM ΔF1 +0.070 [+0.036, +0.108]. English F1:
-Presidio 0.862, regex + NER 0.882, + LLM 0.904. Turkish: 0.796, 0.837, 0.915.
+Paired bootstrap against Presidio: regex + NER ΔF1 +0.037 [+0.001, +0.070],
+recall −0.032 [−0.074, +0.000]; + LLM ΔF1 +0.082 [+0.046, +0.120]. English F1:
+Presidio 0.862, regex + NER 0.889, + LLM 0.917. Turkish: 0.796, 0.851, 0.925.
 Missed by every engine: spoken numbers, `[at]`/`(at)` e-mail obfuscation,
 lower-case `deniz aydın`, `Trendyol`. Missed by wardcat without the LLM:
-unlabelled national phone numbers, the Troy card `9792 …`, a spaced SSN and a
-spaced TC number. The LLM layer added two false positives that fail their
-checksums, a test card and `TR00 …`.
+unlabelled national phone numbers and some Turkish names.
+
+The first run of this set found four wardcat gaps, since fixed: Troy cards,
+labelled SSNs without dashes, grouped TC numbers, and LLM card and IBAN
+proposals that were not checked against their checksums. Before the fixes,
+regex + NER scored 0.866 and + LLM 0.908.
 
 ### is_sensitive(), 100 texts
 
 | | Accuracy | Precision | Recall | F1 | Median latency |
 |---|---|---|---|---|---|
 | Presidio, anything found | 63% | 64% | 60% | 0.619 | 7 ms |
-| wardcat regex + NER, anything found | 71% | 70% | 74% | 0.718 | 5 ms |
-| wardcat `is_sensitive()`, qwen3:14b | 88% | 82% | 98% | 0.891 | 1.6 s |
+| wardcat regex + NER, anything found | 72% | 70% | 76% | 0.731 | 4 ms |
+| wardcat `is_sensitive()`, qwen3:14b | 88% | 82% | 98% | 0.891 | 2.0 s |
 
 `is_sensitive()` missed one sensitive text (an unannounced acquisition, in German)
 and flagged eleven harmless ones, six of them templates and format examples
 (`name@example.com`, `XXX-XX-XXXX`) and two public customer-service numbers.
 Detector-based answers miss what has no entity — diagnoses, layoffs, lawsuits,
 unannounced deals — and flag public figures.
-
