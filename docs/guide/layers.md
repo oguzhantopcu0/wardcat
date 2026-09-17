@@ -27,7 +27,8 @@ Deterministic, exhaustive, and free — the backbone. 28 patterns, always on for
 any enabled regex-supported entity, with no extra dependency.
 
 **Checksum-validated, so a match is proof rather than a guess:** `TC_ID` (Nüfus
-İdaresi), `IBAN` (mod-97), `CREDIT_CARD` (Luhn), `CRYPTO_WALLET` (Base58Check for
+İdaresi, whole or grouped `111 654 670 34`), `IBAN` (mod-97), `CREDIT_CARD` (Luhn,
+Troy included), `CRYPTO_WALLET` (Base58Check for
 legacy Bitcoin addresses, the bech32/bech32m polymod for segwit), `NHS_NUMBER`
 (mod-11), `BANK_ROUTING` (ABA mod-10 over a Federal Reserve prefix), `IMEI`
 (Luhn), and every scheme inside `EU_NATIONAL_ID` — Spanish DNI/NIE check letters,
@@ -40,7 +41,8 @@ and more).
 
 **Cued by the word beside them,** because they have no shape of their own: a
 credential written into a sentence (`parolası ise …`, `password is …`),
-`USERNAME` (`kullanıcı adı ahmet.yilmaz`), and a phone number in any national
+`USERNAME` (`kullanıcı adı ahmet.yilmaz`), an SSN without dashes
+(`social security number 412 76 9038`), and a phone number in any national
 format once it is labelled — `Phone: 0490 75 40 81`, `call me at 905-674-3793`, or
 `781 1704 office` in a signature. Only the value is taken, never the keyword, so
 the redacted line still reads. A labelled number scores `0.90`, below the
@@ -130,8 +132,9 @@ The strongest context — detects semantic PII the others can't: GDPR Article 9
 special-category data (a stated health condition, religious or political
 affiliation, trade-union membership), contextual secrets (`password=…`),
 unlabeled passports. It is never trusted blindly: the model returns
-`{"type","text"}` JSON, which is filtered by structural validators and located
-back in the original text. If the backend is unreachable the whole layer is
+`{"type","text"}` JSON, which is filtered by structural validators — a card,
+IBAN or TC number must also pass the same checksum the regex layer applies — and
+located back in the original text. If the backend is unreachable the whole layer is
 skipped and recorded in `ScanResult.warnings`; a transient per-chunk error
 (timeout, malformed JSON) is logged and that chunk is skipped while the rest
 continue.

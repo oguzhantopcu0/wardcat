@@ -71,7 +71,7 @@ if guard.is_sensitive(text):
 - **Semantic sensitivity gate** — `is_sensitive(text) → bool`: a holistic yes/no on whether text is safe to send onward (LLM-only), catching confidential content the typed detectors miss (unreleased financials, deal terms, a confidential project); optional per-language prompt
 - **Ensemble adjudication** (optional) — the LLM verifies/relabels/drops regex & NER candidates and adds what they missed, in one call; deterministic regex results are always protected
 - **Five actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt; the default when `action` is omitted), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking), `tokenize` (`[TYPE_1]` — **reversible**, see [reversible masking](#reversible-masking-mask-on-the-way-out-restore-on-the-way-back))
-- **Checksum validation** — TC_ID (Nüfus İdaresi), IBAN (mod-97), CREDIT_CARD (Luhn), Bitcoin (Base58Check / bech32), NHS (mod-11), ABA routing (mod-10), IMEI (Luhn) and every EU national-ID scheme are verified before flagging — eliminates false positives
+- **Checksum validation** — TC_ID (Nüfus İdaresi), IBAN (mod-97), CREDIT_CARD (Luhn, including Troy), Bitcoin (Base58Check / bech32), NHS (mod-11), ABA routing (mod-10), IMEI (Luhn) and every EU national-ID scheme are verified before flagging — eliminates false positives
 - **Rainbow table protection** — user-defined salt for all hashes
 - **Two APIs** — method chaining (programmatic) and YAML (declarative)
 - **Async & batch** — `scan_async` / `scan_batch` / `is_sensitive_async`; concurrent requests overlap (native async LLM I/O), one shared guard is safe to reuse across scans
