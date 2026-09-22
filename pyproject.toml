@@ -67,6 +67,9 @@ all = [
 # (install with `uv sync --dev`), not as a project extra — there is a single
 # source of truth for dev dependencies.
 
+[project.scripts]
+wardcat = "wardcat.cli:main"
+
 [project.urls]
 "Homepage"    = "https://github.com/oguzhantopcu0/wardcat"
 "Bug Tracker" = "https://github.com/oguzhantopcu0/wardcat/issues"

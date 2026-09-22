@@ -117,6 +117,7 @@ _KNOWN_CONFIG_KEYS = frozenset(
         "phone_regions",
         "min_confidence",
         "strict",
+        "preset",
     }
 )
 
@@ -186,6 +187,12 @@ def validate_config(config: dict[str, Any]) -> None:
     _validate_min_confidence(config.get("min_confidence", 0.8))
     if not isinstance(config.get("strict", False), bool):
         raise ConfigError(f"'strict' must be true or false, got {config['strict']!r}.")
+    if "preset" in config:
+        from wardcat.presets import get_preset
+
+        if not isinstance(config["preset"], str):
+            raise ConfigError(f"'preset' must be a preset name, got {config['preset']!r}.")
+        get_preset(config["preset"])  # raises for an unknown name
     _validate_allowlist(config.get("allowlist", []))
     _validate_denylist(config.get("denylist", []))
     _validate_llm_detector(config.get("llm_detector", {}))

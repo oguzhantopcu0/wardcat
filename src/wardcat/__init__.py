@@ -41,6 +41,7 @@ from wardcat.guard import Wardcat
 from wardcat.llm.backends.base import Backend
 from wardcat.llm.circuit import CircuitOpen
 from wardcat.ner.spacy_catalog import Language, supported_languages
+from wardcat.presets import Preset, supported_presets
 
 try:
     __version__: str = version("wardcat")
@@ -61,6 +62,8 @@ __all__ = [
     "Layer",
     "Language",
     "supported_languages",
+    "Preset",
+    "supported_presets",
     "Backend",
     "register_action",
     "registered_actions",
