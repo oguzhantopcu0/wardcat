@@ -100,6 +100,7 @@ class LLMDetector(BaseDetector):
 
     # Marks this detector as the one the engine can route candidates to.
     can_adjudicate = True
+    layer = "llm"
 
     def __init__(
         self,

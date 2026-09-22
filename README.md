@@ -459,6 +459,13 @@ claim is resolved as `PHONE` at `0.97`, never dropped as a weak NHS match.
 Raising the floor works too: `with_min_confidence(0.95)` keeps only checksummed
 and high-precision structural matches and drops the fuzzy address heuristics.
 
+One entity can have its own floor, so a single weak-checksum type is let
+through while the rest keep the default:
+
+```python
+guard.add_entity(Entity.BANK_ROUTING, Action.HASH, min_confidence=0.6)
+```
+
 ### Catching every occurrence (value propagation)
 
 Model-based layers (SpaCy NER, the LLM) sometimes report a value that
@@ -926,6 +933,9 @@ class Violation:
     action:      Action       # WARN | HASH | REDACT | MASK
     replacement: str | None   # "[TYPE:16hex]" for hash, "[TYPE]" for redact, masked value for mask, None for warn
     confidence:  float        # checksum 1.0 · structural regex 0.97 · fuzzy regex 0.90 · NER/LLM 0.85
+    source:      str          # which layer found it: "regex" · "ner" · "llm" · "denylist" · "propagation"
+    sanitized_start: int      # where the replacement sits in sanitized_text
+    sanitized_end:   int
 ```
 
 > **Degraded scans — check `warnings`.** If a detector layer cannot run — the LLM

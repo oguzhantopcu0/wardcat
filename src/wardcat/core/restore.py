@@ -58,6 +58,8 @@ class Substitution:
     """How many times the placeholder appeared in the restored text."""
     confidence: float
     """Detection confidence of the underlying violation."""
+    source: str = ""
+    """The layer that found the value (``"regex"``, ``"ner"``, ``"llm"``, …)."""
 
 
 @dataclass(frozen=True)
@@ -269,6 +271,7 @@ def restore_text(text: str, violations: list[Violation], *, strict: bool = False
             original=restorable[placeholder].original,
             occurrences=counts[placeholder],
             confidence=restorable[placeholder].confidence,
+            source=restorable[placeholder].source,
         )
         for i, placeholder in enumerate(order, start=1)
     ]

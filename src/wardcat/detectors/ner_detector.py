@@ -352,6 +352,8 @@ def _load_model(model_name: str) -> Any:
 class NERDetector(BaseDetector):
     """SpaCy-based Named Entity Recognition detector."""
 
+    layer = "ner"
+
     def __init__(self, enabled_entities: set[str], model: str = "en_core_web_sm") -> None:
         self.nlp = _load_model(model)
         self.enabled_entities = enabled_entities
