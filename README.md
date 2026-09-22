@@ -214,6 +214,17 @@ guard.add_entity("EMAIL", action="redact", layers=["regex"])
 guard.add_entity("SPECIAL_CATEGORY", action="redact", layers=["llm"])
 ```
 
+A preset is a starting policy modelled on a data-protection regime — an
+entity → action mapping, no layer switched on and no compliance claimed:
+
+```python
+guard = Wardcat(salt="s").with_preset("kvkk").with_ner(language="tr")
+Wardcat.supported_presets()   # ("kvkk", "gdpr", "pci_dss", "hipaa_lite", "secrets_only")
+```
+
+The [presets guide](https://docs.wardcat.com/guide/presets/) lists what each one
+enables and what it leaves out.
+
 To turn on many filters at once, use `add_entities()`. It accepts a list,
 a `{name: action}` mapping, or a `{name: {...}}` mapping for per-entity control,
 and applies them in a single rebuild:

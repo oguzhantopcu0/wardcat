@@ -18,6 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exception carries the warnings and the partial result. For pipelines where a
   document stored with names in it is worse than no document.
 
+- **Presets.** `with_preset("kvkk")` (also `"gdpr"`, `"pci_dss"`,
+  `"hipaa_lite"`, `"secrets_only"`; YAML `preset:`) enables a starting policy
+  modelled on a data-protection regime — an entity → action mapping that
+  switches no layer on and claims no compliance. Each one documents what it
+  leaves out. `Wardcat.supported_presets()` lists them.
+
+- **A `wardcat` command.** `wardcat scan [file|-]` with `--preset`,
+  `--entity TYPE[=ACTION]`, `--config`, `--ner`, `--llm`, `--strict` and
+  `--json`; `wardcat check-config policy.yaml` runs every validation including
+  the ReDoS screen; `wardcat entities` lists the types. Exit codes say clean,
+  found, config error or degraded. The salt is read from an environment
+  variable named by `--salt-env`, never from an argument, and nothing found is
+  ever printed.
+
 - **Every violation names the layer that found it.** `Violation.source` (and
   `DetectedSpan.source`) is `"regex"`, `"ner"`, `"llm"`, `"denylist"`,
   `"propagation"` or `"custom"`, and is carried through `redacted()`,
