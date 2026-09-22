@@ -218,6 +218,8 @@ def _validate_entity_map(entities: dict[str, Any], label: str) -> None:
                 f"got {type(entity_cfg).__name__}."
             )
         _validate_action(entity_cfg.get("action", "warn"), f"{label}: {entity_name}")
+        if "min_confidence" in entity_cfg:
+            _validate_min_confidence(entity_cfg["min_confidence"])
 
 
 def _validate_custom_patterns(custom_patterns: dict[str, Any]) -> None:

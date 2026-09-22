@@ -1036,6 +1036,8 @@ def _regex_confidence(entity_type: str, matched: str = "") -> float:
 class RegexDetector(BaseDetector):
     """Detects structural PII patterns using regex (CC, IBAN, TC_ID, email, …)."""
 
+    layer = "regex"
+
     def __init__(
         self,
         enabled_entities: set[str],

@@ -21,6 +21,9 @@ class RedactedViolation(TypedDict):
     action: str
     replacement: str | None
     confidence: float
+    source: str
+    sanitized_start: int
+    sanitized_end: int
 
 
 class RedactedResult(TypedDict):
@@ -57,6 +60,18 @@ class Action(str, Enum):
     the real values back into whatever comes out the other side — an LLM's answer,
     typically. Unlike ``hash``/``redact``/``mask`` this keeps the originals in
     memory: the result object is as sensitive as the input."""
+
+
+class Layer(str, Enum):
+    """A detector layer, as named in ``add_entity(..., layers=[...])`` and in
+    :attr:`Violation.source`."""
+
+    REGEX = "regex"
+    """Deterministic patterns and checksums."""
+    NER = "ner"
+    """SpaCy named-entity recognition."""
+    LLM = "llm"
+    """The on-prem language model."""
 
 
 class Entity(str, Enum):
@@ -173,6 +188,17 @@ class Violation:
 
         certain = [v for v in result.violations if v.confidence >= 1.0]  # checksum only
     """
+    source: str = ""
+    """Which layer found it: ``"regex"``, ``"ner"``, ``"llm"``, ``"denylist"``,
+    ``"propagation"`` (a copy of a value another layer found), or ``"custom"``
+    for a third-party detector that did not name itself. Where two layers found
+    the same span, the one that won the overlap."""
+    sanitized_start: int = -1
+    """Start index of :attr:`replacement` in ``sanitized_text``; equals
+    :attr:`start` shifted by the replacements before it. ``-1`` when unknown."""
+    sanitized_end: int = -1
+    """End index (exclusive) of :attr:`replacement` in ``sanitized_text``. For
+    ``warn``, which replaces nothing, the original value's position there."""
 
 
 @dataclass
@@ -230,7 +256,8 @@ class ScanResult:
         Returns:
             A :class:`RedactedResult` (``TypedDict``) containing ``sanitized_text``,
             ``is_clean``, ``scan_error``, and violation metadata (entity_type,
-            start, end, action, replacement, confidence). Raw PII is not included.
+            start, end, action, replacement, confidence, source, and the
+            sanitized-text offsets). Raw PII is not included.
         """
         return {
             "is_clean": self.is_clean,
@@ -245,6 +272,9 @@ class ScanResult:
                     "action": v.action,
                     "replacement": v.replacement,
                     "confidence": v.confidence,
+                    "source": v.source,
+                    "sanitized_start": v.sanitized_start,
+                    "sanitized_end": v.sanitized_end,
                 }
                 for v in self.violations
             ],
@@ -371,7 +401,7 @@ class ScanResult:
             violations = [v for v in violations if v.entity_type in keep]
 
         spans = [
-            DetectedSpan(v.entity_type, v.original, v.start, v.end, v.confidence)
+            DetectedSpan(v.entity_type, v.original, v.start, v.end, v.confidence, v.source)
             for v in violations
         ]
         config = {v.entity_type: {"action": name} for v in violations}

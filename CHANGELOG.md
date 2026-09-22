@@ -18,6 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exception carries the warnings and the partial result. For pipelines where a
   document stored with names in it is worse than no document.
 
+- **Every violation names the layer that found it.** `Violation.source` (and
+  `DetectedSpan.source`) is `"regex"`, `"ner"`, `"llm"`, `"denylist"`,
+  `"propagation"` or `"custom"`, and is carried through `redacted()`,
+  `reapply()` and the restore report. A `Layer` enum is accepted wherever a
+  layer name was (`add_entity(..., layers=[Layer.LLM])`,
+  `supported_entities(Layer.NER)`). The benchmark now breaks TP/FP down by layer.
+
+- **Where a replacement sits in the output.** `Violation.sanitized_start` and
+  `sanitized_end` locate the replacement in `sanitized_text`, for highlighting
+  in a UI; `start`/`end` keep pointing at the original.
+
+- **A confidence floor per entity.** `add_entity(..., min_confidence=0.6)`,
+  the `add_entities` spec form, and `entities.X.min_confidence` in YAML let one
+  weak-checksum type through while the rest keep the global floor.
+  `entity_policy(detailed=True)` reports it.
+
 - **A circuit breaker on the LLM backend.** After `circuit_failures`
   consecutive failures (default 3) the layer is skipped without a call for
   `circuit_cooldown` seconds (default 30), then tried once. A backend outage no
@@ -44,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An SSN without dashes, when it is labelled.** `social security number
   412 76 9038` and `SSN: 412769038` are found at `0.90`. An unlabelled nine-digit
   run is still refused.
+
+### Changed
+
+- **Literal denylist values are matched in one pass.** Ten thousand names
+  cost one scan of the text rather than ten thousand; the spans found are
+  the same as before (a test keeps the old search as the oracle). A value
+  listed under two entity types keeps the first and logs a warning.
 
 ### Security
 

@@ -51,11 +51,16 @@ class Anonymizer:
             action_name = self._entity_config.get(span.entity_type, {}).get("action", "warn")
             replacement = get_action(action_name)(span, ctx)
 
+            # Where this span sits in the output: shifted by every replacement
+            # before it, and as wide as what now stands there.
+            adj_start = span.start + offset
             if replacement is not None:
-                adj_start = span.start + offset
                 adj_end = span.end + offset
                 sanitized = sanitized[:adj_start] + replacement + sanitized[adj_end:]
                 offset += len(replacement) - (span.end - span.start)
+                sanitized_end = adj_start + len(replacement)
+            else:
+                sanitized_end = adj_start + (span.end - span.start)
 
             violations.append(
                 Violation(
@@ -66,6 +71,9 @@ class Anonymizer:
                     action=action_name,
                     replacement=replacement,
                     confidence=span.confidence,
+                    source=span.source,
+                    sanitized_start=adj_start,
+                    sanitized_end=sanitized_end,
                 )
             )
 

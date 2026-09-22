@@ -20,6 +20,9 @@ class DetectedSpan:
     confidence: float = 1.0
     """Detection confidence in [0.0, 1.0]. Regex/checksum detections are 1.0;
     NER and LLM detections are 0.85 (model-based, not fully deterministic)."""
+    source: str = ""
+    """The layer that produced the span. A detector may leave it empty; the
+    engine then stamps :attr:`BaseDetector.layer`."""
 
 
 class BaseDetector(ABC):
@@ -38,6 +41,11 @@ class BaseDetector(ABC):
     #: Set ``True`` on a detector that can verify/relabel/drop other detectors'
     #: candidate spans (currently the LLM detector). The engine reads this flag.
     can_adjudicate: bool = False
+
+    #: The name this detector's spans carry in ``Violation.source``. Built-in
+    #: detectors use their layer name; a third-party detector that does not set
+    #: it is reported as ``"custom"``.
+    layer: str = "custom"
 
     #: Problems found while building the detector that leave it covering less
     #: than was configured — an optional package that is missing, say. The engine

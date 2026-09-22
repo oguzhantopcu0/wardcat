@@ -75,7 +75,17 @@ class DetectionEngine:
         # Denylist entries, in configured order, as (entity_type, value or compiled
         # pattern). Compiled once here rather than on every scan. Patterns were
         # screened for catastrophic backtracking when they were configured.
-        self._denylist: list[tuple[str, str | re.Pattern[str]]] = []
+        self._denylist: list[tuple[str, re.Pattern[str]]] = []
+        # Literal entries are matched in one pass, whatever their number: a
+        # customer list of ten thousand names would otherwise be ten thousand
+        # passes over every text. One alternation, longest value first so the
+        # longest literal at a position wins, wrapped in a lookahead so every
+        # start position is reported — exactly what the entry-by-entry search
+        # found, and what overlap resolution expects. Regex entries stay
+        # separate: merging them would renumber their groups and let one
+        # entry's backtracking reach into another's.
+        self._denylist_literals: dict[str, str] = {}
+        self._denylist_literal_re: re.Pattern[str] | None = None
         denylist_warnings: list[str] = []
         for entry in config.get("denylist", []):
             entity_type = entry.get("entity_type", "CUSTOM")
@@ -88,7 +98,32 @@ class DetectionEngine:
                         f"skipped: {exc}"
                     )
             elif entry.get("value"):
-                self._denylist.append((entity_type, entry["value"]))
+                value = entry["value"]
+                first_type = self._denylist_literals.get(value)
+                if first_type is not None:
+                    if first_type != entity_type:
+                        logger.warning(
+                            "Denylist value listed under two entity types (%s and %s); "
+                            "the first one is used.",
+                            first_type,
+                            entity_type,
+                        )
+                    continue
+                self._denylist_literals[value] = entity_type
+        # Every literal that matches at a position is a prefix of the longest one
+        # matching there, so the shorter ones are recovered from a prefix table
+        # rather than searched for. Overlap resolution then sees the same
+        # candidates the entry-by-entry search produced.
+        self._denylist_prefixes: dict[str, list[str]] = {}
+        if self._denylist_literals:
+            ordered = sorted(self._denylist_literals, key=len, reverse=True)
+            self._denylist_literal_re = re.compile(
+                "(?=(" + "|".join(re.escape(v) for v in ordered) + "))"
+            )
+            for value in ordered:
+                self._denylist_prefixes[value] = [
+                    value[:k] for k in range(1, len(value)) if value[:k] in self._denylist_literals
+                ]
         # Problems found while the guard was built that leave every scan covering
         # less than was configured — an NER model that did not load, say. A log
         # line is read once if at all; the result is what a caller checks, so each
@@ -248,13 +283,23 @@ class DetectionEngine:
         """
         try:
             if candidates is None:
-                return detector.detect(text)
-            return detector.detect(text, candidates=candidates)
+                spans = detector.detect(text)
+            else:
+                spans = detector.detect(text, candidates=candidates)
         except Exception as exc:
             msg = f"{type(detector).__name__} did not run: {exc}"
             logger.warning("scan: detector layer skipped — %s", msg)
             warnings.append(msg)
             return []
+        return self._stamp_source(spans, detector)
+
+    @staticmethod
+    def _stamp_source(spans: list[DetectedSpan], detector: BaseDetector) -> list[DetectedSpan]:
+        """Name the layer on every span that did not name it itself."""
+        for span in spans:
+            if not span.source:
+                span.source = detector.layer
+        return spans
 
     async def _safe_detect_async(
         self,
@@ -265,8 +310,10 @@ class DetectionEngine:
         """Async :meth:`_safe_detect` — returns ``(spans, warning_or_None)``."""
         try:
             if candidates is None:
-                return await detector.detect_async(text), None
-            return await detector.detect_async(text, candidates=candidates), None
+                spans = await detector.detect_async(text)
+            else:
+                spans = await detector.detect_async(text, candidates=candidates)
+            return self._stamp_source(spans, detector), None
         except Exception as exc:
             msg = f"{type(detector).__name__} did not run: {exc}"
             logger.warning("scan_async: detector layer skipped — %s", msg)
@@ -291,13 +338,17 @@ class DetectionEngine:
         checksum is resolved as PHONE, not dropped as a weak NHS match.
         """
         spans = self._resolve_overlaps(raw_spans)
-        if self._min_confidence > 0:
-            spans = [s for s in spans if s.confidence >= self._min_confidence]
+        spans = [s for s in spans if s.confidence >= self._threshold_for(s.entity_type)]
         if self._allowlist:
             spans = [s for s in spans if s.text not in self._allowlist]
         if self._propagate:
             spans = self._propagate_values(spans, text)
         return spans
+
+    def _threshold_for(self, entity_type: str) -> float:
+        """The confidence floor for one entity: its own, or the global one."""
+        own = self.entity_config.get(entity_type, {}).get("min_confidence")
+        return float(own) if own is not None else self._min_confidence
 
     def _propagate_values(self, spans: list[DetectedSpan], text: str) -> list[DetectedSpan]:
         """Add a span for every other whole-token occurrence of each detected value.
@@ -336,6 +387,7 @@ class DetectionEngine:
                         start=start,
                         end=end,
                         confidence=template.confidence,
+                        source="propagation",
                     )
                 )
         if not extra:
@@ -352,37 +404,32 @@ class DetectionEngine:
     def _collect_denylist_spans(self, text: str) -> list[DetectedSpan]:
         """Match denylist entries (exact value or regex pattern) against *text*."""
         spans: list[DetectedSpan] = []
-        for entity_type, matcher in self._denylist:
-            if isinstance(matcher, re.Pattern):
-                for m in matcher.finditer(text):
-                    spans.append(
-                        DetectedSpan(
-                            entity_type=entity_type,
-                            text=m.group(),
-                            start=m.start(),
-                            end=m.end(),
-                            confidence=1.0,
-                        )
+        for entity_type, pattern in self._denylist:
+            for m in pattern.finditer(text):
+                spans.append(
+                    DetectedSpan(
+                        entity_type=entity_type,
+                        text=m.group(),
+                        start=m.start(),
+                        end=m.end(),
+                        confidence=1.0,
+                        source="denylist",
                     )
-            else:
-                # Exact-match denylist entry
-                value = matcher
-                start = 0
-                while True:
-                    pos = text.find(value, start)
-                    if pos == -1:
-                        break
+                )
+        if self._denylist_literal_re is not None:
+            for m in self._denylist_literal_re.finditer(text):
+                longest = m.group(1)
+                for value in (longest, *self._denylist_prefixes[longest]):
                     spans.append(
                         DetectedSpan(
-                            entity_type=entity_type,
+                            entity_type=self._denylist_literals[value],
                             text=value,
-                            start=pos,
-                            end=pos + len(value),
+                            start=m.start(),
+                            end=m.start() + len(value),
                             confidence=1.0,
+                            source="denylist",
                         )
                     )
-                    start = pos + 1
-
         return spans
 
     def _resolve_overlaps(self, spans: list[DetectedSpan]) -> list[DetectedSpan]:
