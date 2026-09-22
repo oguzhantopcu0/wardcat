@@ -293,7 +293,10 @@ the `categories` present (`pii`, `credentials`, `financial`, `health`,
 `special_category`, `business_confidential`, or `unknown` when the model said
 sensitive but its answer could not be read in full) and the model's one-line
 `reason`. Route on the kind — block health data, allow business data inside the
-company. Placeholders and format examples, a company's public customer-service
-number and order or version numbers are named in the prompt as not sensitive.
+company. It is a separate prompt: asked for structure the model is more precise
+but misses more, chiefly confidential business plans, and answers several times
+slower, so `is_sensitive()` stays the gate. Its prompt names placeholders and
+format examples, a company's public customer-service number and order or version
+numbers as not sensitive; the `is_sensitive()` prompt is unchanged.
 
 See the full API on the [Wardcat reference page](../reference/wardcat.md).
