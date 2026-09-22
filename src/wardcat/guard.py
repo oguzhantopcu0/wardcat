@@ -202,6 +202,10 @@ class Wardcat(EntityPolicyMixin):
         # in _rebuild() too, since entities are opt-in and usually added after init.
         self._salt_warned = False
         self._default_action_warned = False
+        # A YAML `preset:` is the base; the file's own `entities:` win over it.
+        preset_name = self._config.pop("preset", None)
+        if preset_name:
+            self._apply_preset(preset_name, keep_existing=True)
         self._rebuild()
 
     # ------------------------------------------------------------------
@@ -691,6 +695,44 @@ class Wardcat(EntityPolicyMixin):
         self._config.setdefault("denylist", []).extend(entries)
         self._rebuild()
         return self
+
+    @staticmethod
+    def supported_presets() -> tuple[str, ...]:
+        """The names :meth:`with_preset` accepts."""
+        from wardcat.presets import supported_presets
+
+        return supported_presets()
+
+    def with_preset(self, name: str) -> Wardcat:
+        """Enable the entities of a starting policy, with the actions it names.
+
+        A preset is an entity → action mapping modelled on a data-protection
+        regime (``"kvkk"``, ``"gdpr"``, ``"pci_dss"``, ``"hipaa_lite"``,
+        ``"secrets_only"``). It switches no layer on: names need
+        :meth:`with_ner` or :meth:`with_llm`, special-category data needs
+        :meth:`with_llm`, and an entity left without its layer is reported as
+        uncovered at the first scan, as always. Adjust afterwards with
+        :meth:`change_entity_action` and :meth:`remove_entity`. YAML: ``preset: kvkk``,
+        with the file's own ``entities`` taking precedence.
+
+        See the presets guide for what each one enables and, as importantly,
+        what it does not cover.
+
+        :raises ConfigError: for an unknown preset name.
+        """
+        self._apply_preset(name, keep_existing=False)
+        self._rebuild()
+        return self
+
+    def _apply_preset(self, name: str, *, keep_existing: bool) -> None:
+        from wardcat.presets import get_preset
+
+        preset = get_preset(name)
+        configured = self._config.get("entities", {})
+        for entity, action in preset.entities.items():
+            if keep_existing and entity in configured:
+                continue
+            self._set_entity(entity, enabled=True, action=action, layers=None)
 
     def with_strict(self, enabled: bool = True) -> Wardcat:
         """Refuse any scan that covers less than was configured.
