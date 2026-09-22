@@ -55,3 +55,26 @@ class ModelDownloadError(WardcatError, RuntimeError):
 
 class UnsupportedLanguageError(ConfigError):
     """The requested NER language (or size tier) has no compatible model."""
+
+
+class DegradedScanError(WardcatError):
+    """A strict guard refused to return a scan that covered less than configured.
+
+    Raised only when the guard was built with ``with_strict()`` (or ``strict:
+    true`` in YAML). Without strict mode the same condition is reported on
+    :attr:`ScanResult.warnings` and the partial result is returned.
+
+    ``warnings`` lists what did not run — a SpaCy model that failed to load, an
+    LLM backend that was unreachable. ``result`` carries the partial
+    :class:`~wardcat.ScanResult` when the scan ran and failed only its coverage
+    check; it is ``None`` when the guard refused at build time.
+    """
+
+    def __init__(self, warnings: list[str], result: object | None = None) -> None:
+        self.warnings = list(warnings)
+        self.result = result
+        detail = "; ".join(self.warnings)
+        super().__init__(
+            f"strict mode: the scan covered less than configured, {len(self.warnings)} "
+            f"layer problem(s): {detail}"
+        )

@@ -11,6 +11,7 @@ from wardcat.core.actions import new_context_id
 from wardcat.core.anonymizer import Anonymizer
 from wardcat.core.models import ScanResult
 from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.exceptions import DegradedScanError
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,10 @@ class DetectionEngine:
         # other tier, so lowering it trades precision for recall and nothing
         # else changes.
         self._min_confidence: float = float(config.get("min_confidence", 0.8))
+        # Strict: a scan that covered less than was configured is an error, not a
+        # result with warnings. The guard already refuses to build in that state;
+        # this catches what only shows up per scan (an LLM backend going down).
+        self._strict: bool = bool(config.get("strict", False))
         # Denylist entries, in configured order, as (entity_type, value or compiled
         # pattern). Compiled once here rather than on every scan. Patterns were
         # screened for catastrophic backtracking when they were configured.
@@ -150,7 +155,7 @@ class DetectionEngine:
             len(text),
             elapsed_ms,
         )
-        return ScanResult(
+        result = ScanResult(
             original_text=text,
             sanitized_text=sanitized,
             violations=violations,
@@ -158,6 +163,9 @@ class DetectionEngine:
             context_id=context_id,
             _salt=self.salt,
         )
+        if self._strict and warnings:
+            raise DegradedScanError(warnings, result)
+        return result
 
     async def scan_async(self, text: str) -> ScanResult:
         """Async variant — uses native async for I/O-bound detectors (LLM backend).
@@ -209,7 +217,7 @@ class DetectionEngine:
             len(text),
             elapsed_ms,
         )
-        return ScanResult(
+        result = ScanResult(
             original_text=text,
             sanitized_text=sanitized,
             violations=violations,
@@ -217,6 +225,9 @@ class DetectionEngine:
             context_id=context_id,
             _salt=self.salt,
         )
+        if self._strict and warnings:
+            raise DegradedScanError(warnings, result)
+        return result
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -6,6 +6,7 @@ import re
 from collections.abc import Callable
 
 from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.utils.logsafe import describe
 from wardcat.utils.normalize import fold_confusables, has_confusables
 
 logger = logging.getLogger(__name__)
@@ -1225,10 +1226,10 @@ class RegexDetector(BaseDetector):
                                 )
                             continue
                     logger.debug(
-                        "%s format match rejected (failed validation): %r — "
+                        "%s format match rejected (failed validation, %s) — "
                         "if this is real PII, the value may be incorrectly formatted.",
                         entity_type,
-                        folded_value,
+                        describe(folded_value),
                     )
                     continue
                 spans.append(

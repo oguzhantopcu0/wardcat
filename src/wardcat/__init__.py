@@ -31,12 +31,14 @@ from wardcat.entity_groups import (
 from wardcat.exceptions import (
     ConfigError,
     ContextMismatch,
+    DegradedScanError,
     ModelDownloadError,
     UnsupportedLanguageError,
     WardcatError,
 )
 from wardcat.guard import Wardcat
 from wardcat.llm.backends.base import Backend
+from wardcat.llm.circuit import CircuitOpen
 from wardcat.ner.spacy_catalog import Language, supported_languages
 
 try:
@@ -69,6 +71,8 @@ __all__ = [
     "WardcatError",
     "ConfigError",
     "ContextMismatch",
+    "DegradedScanError",
+    "CircuitOpen",
     "ModelDownloadError",
     "UnsupportedLanguageError",
     # Entity group helpers

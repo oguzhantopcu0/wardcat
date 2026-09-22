@@ -72,6 +72,18 @@ needs_ollama = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(scope="module", autouse=True)
+def warm_model() -> None:
+    """Load the model once before the first test.
+
+    Ollama unloads a model after a few idle minutes; the next request pays the
+    load time (measured: 118 s for qwen3:14b), which is more than the per-call
+    timeout the tests use and made the first test fail on a cold server.
+    """
+    if _MODEL is not None:
+        OllamaBackend(model=_MODEL, base_url=_OLLAMA_URL).complete("ok", timeout=600)
+
+
 @pytest.fixture(scope="module")
 def llm_guard() -> Wardcat:
     """LLM-only guard (NER off) — so PERSON detection proves the LLM ran."""

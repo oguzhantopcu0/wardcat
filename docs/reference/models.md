@@ -30,6 +30,10 @@ replaced (`ValueError` / `RuntimeError`), so existing handlers keep working.
 
 ::: wardcat.UnsupportedLanguageError
 
+::: wardcat.DegradedScanError
+
+::: wardcat.CircuitOpen
+
 ## Constants
 
 ::: wardcat.Entity

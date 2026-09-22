@@ -21,7 +21,7 @@ from wardcat.core.registry import (
 )
 from wardcat.detectors.base import BaseDetector
 from wardcat.detectors.regex_detector import RegexDetector
-from wardcat.exceptions import ConfigError, UnsupportedLanguageError
+from wardcat.exceptions import ConfigError, DegradedScanError, UnsupportedLanguageError
 from wardcat.llm.backends.base import Backend
 from wardcat.llm.prompt import build_sensitivity_messages, parse_sensitivity
 from wardcat.ner.spacy_catalog import Language
@@ -244,7 +244,7 @@ class Wardcat(EntityPolicyMixin):
 
         :raises ConfigError: if the LLM layer is not configured.
         """
-        backend, timeout = self._require_llm("is_sensitive")
+        detector = self._require_llm("is_sensitive")
         self._check_text_size(text)
         if not text.strip():
             return False
@@ -254,16 +254,14 @@ class Wardcat(EntityPolicyMixin):
         for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
             if not chunk.strip():
                 continue
-            reply = backend.complete_messages(
-                build_sensitivity_messages(chunk, language), timeout=timeout
-            )
+            reply = detector.complete_messages(build_sensitivity_messages(chunk, language))
             if parse_sensitivity(reply):
                 return True
         return False
 
     async def is_sensitive_async(self, text: str) -> bool:
         """Async variant of :meth:`is_sensitive` (native async LLM I/O when available)."""
-        backend, timeout = self._require_llm("is_sensitive_async")
+        detector = self._require_llm("is_sensitive_async")
         self._check_text_size(text)
         if not text.strip():
             return False
@@ -271,8 +269,8 @@ class Wardcat(EntityPolicyMixin):
         for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
             if not chunk.strip():
                 continue
-            reply = await backend.complete_messages_async(
-                build_sensitivity_messages(chunk, language), timeout=timeout
+            reply = await detector.complete_messages_async(
+                build_sensitivity_messages(chunk, language)
             )
             if parse_sensitivity(reply):
                 return True
@@ -288,15 +286,15 @@ class Wardcat(EntityPolicyMixin):
                 "Split the text into smaller chunks."
             )
 
-    def _require_llm(self, feature: str) -> tuple[Any, int]:
-        """Return the configured LLM (backend, timeout) or raise if none is set."""
+    def _require_llm(self, feature: str) -> LLMDetector:
+        """Return the configured LLM detector or raise if none is set."""
         detector = self._llm_detector
         if detector is None:
             raise ConfigError(
                 f"{feature}() needs the LLM layer — configure it with "
                 "with_llm(...) (e.g. Wardcat().with_llm(model='llama3.1:8b'))."
             )
-        return detector.backend, detector.timeout
+        return detector
 
     def scan_batch(self, texts: list[str], *, max_workers: int | None = None) -> list[ScanResult]:
         """
@@ -324,6 +322,10 @@ class Wardcat(EntityPolicyMixin):
         def _scan_one(idx: int, text: str) -> tuple[int, ScanResult]:
             try:
                 return idx, self._engine.scan(text)
+            # Strict mode means no degraded result may come back, from a batch
+            # either; the item is not turned into a scan_error entry.
+            except DegradedScanError:
+                raise
             except Exception as exc:
                 logger.error(
                     "scan_batch item %d failed (%s: %s), returning original text.",
@@ -362,6 +364,8 @@ class Wardcat(EntityPolicyMixin):
         async def _one(idx: int, text: str) -> tuple[int, ScanResult]:
             try:
                 return idx, await self.scan_async(text)
+            except DegradedScanError:
+                raise
             except Exception as exc:
                 logger.error(
                     "scan_batch_async item %d failed (%s: %s), returning original text.",
@@ -469,6 +473,8 @@ class Wardcat(EntityPolicyMixin):
         load_in_4bit: bool = False,
         dtype: str | None = None,
         language: str | Language | None = None,
+        circuit_failures: int = 3,
+        circuit_cooldown: float = 30.0,
     ) -> Wardcat:
         """
         Enable the on-prem LLM detector. Supports chaining, like :meth:`with_ner`.
@@ -517,6 +523,12 @@ class Wardcat(EntityPolicyMixin):
             (``tr``/``de``/``fr``; anything else uses the English, multilingual-aware
             prompt). It does not change the entity-detection prompt used by
             :meth:`scan`, which is multilingual by design.
+        :param circuit_failures: consecutive backend failures after which the
+            LLM layer is skipped without being called, so an outage does not make
+            every scan wait the full ``timeout``. ``0`` disables the breaker.
+        :param circuit_cooldown: seconds the layer stays skipped before one call
+            is tried again. While skipped, each scan carries a warning naming
+            the open circuit; :meth:`is_sensitive` raises instead.
         """
         lang_code = language.value if isinstance(language, Language) else language
         llm_cfg = self._config.setdefault("llm_detector", {})
@@ -535,6 +547,8 @@ class Wardcat(EntityPolicyMixin):
                 "load_in_4bit": load_in_4bit,
                 "dtype": dtype,
                 "language": lang_code,
+                "circuit_failures": circuit_failures,
+                "circuit_cooldown": circuit_cooldown,
             }
         )
         # Only pin base_url when the caller gave one; otherwise leave it out so
@@ -673,6 +687,25 @@ class Wardcat(EntityPolicyMixin):
         """
         _validate_denylist(entries)
         self._config.setdefault("denylist", []).extend(entries)
+        self._rebuild()
+        return self
+
+    def with_strict(self, enabled: bool = True) -> Wardcat:
+        """Refuse any scan that covers less than was configured.
+
+        By default a layer that cannot run — a SpaCy model that failed to load,
+        an LLM backend that is down — is reported on :attr:`ScanResult.warnings`
+        and the partial result is returned, which is right for a chat guard
+        that must answer. A pipeline that indexes documents wants the opposite:
+        better no result than a document stored with names in it. With strict
+        on, such a condition raises :class:`~wardcat.DegradedScanError` — at
+        build time for problems known then, at scan time for the rest, and
+        from :meth:`scan_batch` too, which otherwise turns errors into
+        ``scan_error`` entries.
+
+        YAML: ``strict: true``.
+        """
+        self._config["strict"] = bool(enabled)
         self._rebuild()
         return self
 
@@ -929,6 +962,8 @@ class Wardcat(EntityPolicyMixin):
             self._detectors.append(self._llm_detector)
 
         self._engine = DetectionEngine(self._config, self._detectors, build_warnings=build_warnings)
+        if self._config.get("strict") and self._engine.build_warnings:
+            raise DegradedScanError(list(self._engine.build_warnings))
 
     def _build_llm_detector(self, llm_cfg: dict[str, Any]) -> LLMDetector:
         """Build the LLM detector according to configuration."""
@@ -951,6 +986,15 @@ class Wardcat(EntityPolicyMixin):
             )
 
         cache_ttl = llm_cfg.get("cache_ttl", 0)
+        from wardcat.llm.circuit import CircuitBreaker
+
+        breaker = CircuitBreaker(
+            llm_cfg.get("circuit_failures", 3), llm_cfg.get("circuit_cooldown", 30.0)
+        )
         return LLMDetector(
-            backend=backend, enabled_entities=enabled, timeout=timeout, cache_ttl=cache_ttl
+            backend=backend,
+            enabled_entities=enabled,
+            timeout=timeout,
+            cache_ttl=cache_ttl,
+            breaker=breaker,
         )

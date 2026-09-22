@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Strict mode.** `with_strict()` (YAML `strict: true`) turns a degraded scan
+  into a `DegradedScanError` instead of a result with warnings — at build time
+  for a model that did not load, at scan time for a backend that went down, and
+  from `scan_batch`, which otherwise files the error under `scan_error`. The
+  exception carries the warnings and the partial result. For pipelines where a
+  document stored with names in it is worse than no document.
+
+- **A circuit breaker on the LLM backend.** After `circuit_failures`
+  consecutive failures (default 3) the layer is skipped without a call for
+  `circuit_cooldown` seconds (default 30), then tried once. A backend outage no
+  longer costs every scan the full request timeout. Skipped scans carry a
+  warning naming the open circuit; `is_sensitive()` raises `CircuitOpen`.
+  `circuit_failures=0` disables it.
+
 - **A labelled phone number is found in any national format, with no
   `phone_regions`.** The built-in pattern refuses a bare `905-674-3793` or
   `0490 75 40 81`, rightly: a digit run is an order number as often as a phone
@@ -32,6 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   run is still refused.
 
 ### Security
+
+- **No log line carries a value from the scanned text.** The NER filters
+  logged the span they dropped, the regex layer logged a match that failed its
+  checksum, and the LLM layer logged the model's raw reply — all at `DEBUG`,
+  all containing the PII being scanned. Values are now logged as their entity
+  type and length only. A test scans PII at `DEBUG` and asserts none of it
+  reached the log, and a static check walks every `logger` call for a
+  text-bearing argument.
 
 - **The ReDoS check on your own regex patterns now works.** `custom_patterns`
   were run against one pathological input in a thread with a 0.5 s timeout.
