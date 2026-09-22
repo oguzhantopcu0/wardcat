@@ -116,6 +116,7 @@ _KNOWN_CONFIG_KEYS = frozenset(
         "normalize_confusables",
         "phone_regions",
         "min_confidence",
+        "strict",
     }
 )
 
@@ -183,6 +184,8 @@ def validate_config(config: dict[str, Any]) -> None:
     _validate_entity_map(config.get("entities", {}), "entity")
     _validate_custom_patterns(config.get("custom_patterns", {}))
     _validate_min_confidence(config.get("min_confidence", 0.8))
+    if not isinstance(config.get("strict", False), bool):
+        raise ConfigError(f"'strict' must be true or false, got {config['strict']!r}.")
     _validate_allowlist(config.get("allowlist", []))
     _validate_denylist(config.get("denylist", []))
     _validate_llm_detector(config.get("llm_detector", {}))
@@ -308,6 +311,18 @@ def _validate_llm_detector(llm_cfg: dict[str, Any]) -> None:
     timeout = llm_cfg.get("timeout", 60)
     if not isinstance(timeout, (int, float)) or timeout <= 0:
         raise ConfigError(f"Invalid llm_detector.timeout: {timeout!r} (must be a positive number)")
+
+    failures = llm_cfg.get("circuit_failures", 3)
+    if not isinstance(failures, int) or isinstance(failures, bool) or failures < 0:
+        raise ConfigError(
+            f"Invalid llm_detector.circuit_failures: {failures!r} (must be an integer >= 0; "
+            "0 disables the circuit breaker)"
+        )
+    cooldown = llm_cfg.get("circuit_cooldown", 30)
+    if not isinstance(cooldown, (int, float)) or isinstance(cooldown, bool) or cooldown < 0:
+        raise ConfigError(
+            f"Invalid llm_detector.circuit_cooldown: {cooldown!r} (must be a number of seconds >= 0)"
+        )
 
     _validate_entity_map(llm_cfg.get("entities", {}), "llm_detector.entities")
 

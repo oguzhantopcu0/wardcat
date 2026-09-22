@@ -101,6 +101,7 @@ class TestOrphanEntityWarning:
             guard.scan("John Smith called.")
         assert any("PERSON" in r.message and "no active layer" in r.message for r in caplog.records)
 
+    @pytest.mark.ner
     def test_person_covered_once_ner_is_added(self, caplog):
         import logging
 

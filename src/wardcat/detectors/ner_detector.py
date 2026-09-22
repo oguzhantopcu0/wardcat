@@ -6,6 +6,7 @@ import threading
 from typing import Any
 
 from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.utils.logsafe import describe
 from wardcat.utils.text import strip_name_suffix
 
 logger = logging.getLogger(__name__)
@@ -311,18 +312,18 @@ def _is_valid_person(text: str, *, document_has_case: bool = True) -> bool:
     """
     stripped = text.strip()
     if len(stripped) <= 2:
-        logger.debug("NER PERSON filtered (too short): %r", text)
+        logger.debug("NER PERSON filtered (too short): %s", describe(text))
         return False
     if _NON_PERSON_CHARS.search(stripped):
-        logger.debug("NER PERSON filtered (contains digits/punct): %r", text)
+        logger.debug("NER PERSON filtered (contains digits/punct): %s", describe(text))
         return False
     if _ADDRESS_KW.search(stripped):
-        logger.debug("NER PERSON filtered (address keyword): %r", text)
+        logger.debug("NER PERSON filtered (address keyword): %s", describe(text))
         return False
     # At least one word must start with an uppercase letter — but only where the
     # document capitalizes at all.
     if document_has_case and not any(word[:1].isupper() for word in stripped.split()):
-        logger.debug("NER PERSON filtered (no uppercase word): %r", text)
+        logger.debug("NER PERSON filtered (no uppercase word): %s", describe(text))
         return False
     return True
 
@@ -371,7 +372,7 @@ class NERDetector(BaseDetector):
             # Multilingual gazetteer filter: drop spans that are entirely
             # job titles, HR terms, or abbreviations (never PII on their own).
             if _is_all_stopwords(value):
-                logger.debug("NER %s filtered (all stopwords): %r", mapped, value)
+                logger.debug("NER %s filtered (all stopwords): %s", mapped, describe(value))
                 continue
             if mapped == "PERSON" and not _is_valid_person(
                 value, document_has_case=document_has_case
@@ -382,13 +383,13 @@ class NERDetector(BaseDetector):
             # The street-keyword list is deliberately *not* applied here — it would
             # take "Wall Street Journal" with it.
             if mapped == "ORG" and _NON_PERSON_CHARS.search(value):
-                logger.debug("NER ORG filtered (digits/address punctuation): %r", value)
+                logger.debug("NER ORG filtered (digits/address punctuation): %s", describe(value))
                 continue
             if mapped == "ORG" and sum(c.isalpha() for c in value) < 2:
-                logger.debug("NER ORG filtered (fewer than two letters): %r", value)
+                logger.debug("NER ORG filtered (fewer than two letters): %s", describe(value))
                 continue
             if mapped == "ORG" and _STREET_LAST_WORD.fullmatch(value.split()[-1]):
-                logger.debug("NER ORG filtered (ends in a street designator): %r", value)
+                logger.debug("NER ORG filtered (ends in a street designator): %s", describe(value))
                 continue
             spans.append(
                 DetectedSpan(

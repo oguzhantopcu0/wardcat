@@ -25,7 +25,9 @@ from dataclasses import dataclass
 from wardcat.detectors.base import BaseDetector, DetectedSpan
 from wardcat.detectors.regex_detector import CHECKSUM_VALIDATORS
 from wardcat.llm.backends.base import BaseLLMBackend
+from wardcat.llm.circuit import CircuitBreaker
 from wardcat.llm.prompt import build_messages, strip_reasoning
+from wardcat.utils.logsafe import describe
 from wardcat.utils.text import chunk_by_paragraph, strip_name_suffix
 
 logger = logging.getLogger(__name__)
@@ -107,10 +109,14 @@ class LLMDetector(BaseDetector):
         timeout: int = 60,
         cache_ttl: int = 0,
         chunk_chars: int = 800,
+        breaker: CircuitBreaker | None = None,
     ) -> None:
         self.backend = backend
         self.enabled_entities = enabled_entities
         self.timeout = timeout
+        # Shared by every call on this detector, including is_sensitive(): a
+        # backend that is down is down for all of them.
+        self.breaker = breaker if breaker is not None else CircuitBreaker(0)
         self._cache_ttl = cache_ttl  # seconds; 0 = disabled
         self._chunk_chars = chunk_chars  # max chars per LLM call; 0 = disabled
         self._cache: dict[str, _CacheEntry] = {}
@@ -143,7 +149,7 @@ class LLMDetector(BaseDetector):
             chunk_cands = self._candidates_for_chunk(candidates, offset, len(chunk_text))
             messages = build_messages(chunk_text, self.enabled_entities, chunk_cands)
             try:
-                raw = self.backend.complete_messages(messages, timeout=self.timeout)
+                raw = self.complete_messages(messages)
                 entities = self._parse_llm_response(raw)
                 chunk_spans = self._locate_spans(chunk_text, entities)
                 spans.extend(self._offset_spans(chunk_spans, offset))
@@ -199,7 +205,7 @@ class LLMDetector(BaseDetector):
             chunk_cands = self._candidates_for_chunk(candidates, offset, len(chunk_text))
             messages = build_messages(chunk_text, self.enabled_entities, chunk_cands)
             try:
-                raw = await self.backend.complete_messages_async(messages, timeout=self.timeout)
+                raw = await self.complete_messages_async(messages)
                 entities = self._parse_llm_response(raw)
                 return self._offset_spans(self._locate_spans(chunk_text, entities), offset)
             # ConnectionError propagates (the whole layer is unavailable); the
@@ -224,6 +230,38 @@ class LLMDetector(BaseDetector):
                 )
 
         return spans
+
+    # ------------------------------------------------------------------
+    # Backend calls, through the circuit breaker
+    # ------------------------------------------------------------------
+
+    def complete_messages(self, messages: list[dict]) -> str:
+        """One chat call to the backend, counted by the breaker.
+
+        Raises :class:`~wardcat.llm.circuit.CircuitOpen` without calling the
+        backend while the circuit is open. Any exception the backend raises —
+        a refused connection, an HTTP timeout — counts as a failure and is
+        re-raised unchanged, so the callers' error handling is unaffected.
+        """
+        self.breaker.check()
+        try:
+            reply = self.backend.complete_messages(messages, timeout=self.timeout)
+        except Exception:
+            self.breaker.record_failure()
+            raise
+        self.breaker.record_success()
+        return reply
+
+    async def complete_messages_async(self, messages: list[dict]) -> str:
+        """Async twin of :meth:`complete_messages`."""
+        self.breaker.check()
+        try:
+            reply = await self.backend.complete_messages_async(messages, timeout=self.timeout)
+        except Exception:
+            self.breaker.record_failure()
+            raise
+        self.breaker.record_success()
+        return reply
 
     # ------------------------------------------------------------------
 
@@ -289,7 +327,7 @@ class LLMDetector(BaseDetector):
 
         match = _JSON_RE.search(raw)
         if not match:
-            logger.debug("No JSON array found in LLM response. Raw response: %.200r", raw)
+            logger.debug("No JSON array found in LLM response (%s)", describe(raw))
             return []
 
         try:
@@ -299,7 +337,7 @@ class LLMDetector(BaseDetector):
                 return []
             return data
         except json.JSONDecodeError as exc:
-            logger.debug("LLM response JSON parse error: %s — raw: %.200r", exc, raw)
+            logger.debug("LLM response JSON parse error: %s (%s)", exc, describe(raw))
             return []
 
     def _locate_spans(self, text: str, entities: list[dict]) -> list[DetectedSpan]:
@@ -326,9 +364,9 @@ class LLMDetector(BaseDetector):
             validator = _STRUCTURAL_VALIDATORS.get(entity_type)
             if validator and not validator.search(entity_text):
                 logger.debug(
-                    "Hallucination filter: %s %r failed format validation",
+                    "Hallucination filter: %s (%s) failed format validation",
                     entity_type,
-                    entity_text,
+                    describe(entity_text),
                 )
                 continue
             # A model reads "4111 1111 1111 1112" as a card and "TR00 0000 …" as an
@@ -337,7 +375,9 @@ class LLMDetector(BaseDetector):
             checksum = CHECKSUM_VALIDATORS.get(entity_type)
             if checksum is not None and not checksum(entity_text):
                 logger.debug(
-                    "Hallucination filter: %s %r failed its checksum", entity_type, entity_text
+                    "Hallucination filter: %s (%s) failed its checksum",
+                    entity_type,
+                    describe(entity_text),
                 )
                 continue
 
