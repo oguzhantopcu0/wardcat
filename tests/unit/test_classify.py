@@ -110,9 +110,11 @@ class TestThroughTheGuard:
         verdict = guard_with(reply).classify("card 4111 1111 1111 1111")
         assert verdict == SensitivityVerdict(True, ("financial",), "a card")
 
-    def test_is_sensitive_is_the_boolean_of_classify(self) -> None:
-        reply = json.dumps({"sensitive": False, "categories": []})
-        assert guard_with(reply).is_sensitive("nothing") is False
+    def test_is_sensitive_keeps_its_own_one_word_prompt(self) -> None:
+        guard = guard_with("false")
+        assert guard.is_sensitive("nothing") is False
+        user = guard._llm_detector.backend.messages[0][1]["content"]  # type: ignore[union-attr]
+        assert user.endswith("Answer (true or false):")
 
     def test_empty_text_is_not_sensitive_and_calls_nothing(self) -> None:
         guard = guard_with('{"sensitive": true}')

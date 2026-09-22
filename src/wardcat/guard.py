@@ -23,7 +23,12 @@ from wardcat.detectors.base import BaseDetector
 from wardcat.detectors.regex_detector import RegexDetector
 from wardcat.exceptions import ConfigError, DegradedScanError, UnsupportedLanguageError
 from wardcat.llm.backends.base import Backend
-from wardcat.llm.prompt import build_classification_messages, parse_classification
+from wardcat.llm.prompt import (
+    build_classification_messages,
+    build_sensitivity_messages,
+    parse_classification,
+    parse_sensitivity,
+)
 from wardcat.ner.spacy_catalog import Language
 from wardcat.utils.text import chunk_by_paragraph
 
@@ -243,11 +248,14 @@ class Wardcat(EntityPolicyMixin):
     def is_sensitive(self, text: str) -> bool:
         """Return whether *text* contains sensitive information, judged semantically.
 
-        The boolean of :meth:`classify`: a general, holistic LLM decision — *not*
-        the per-entity detection of :meth:`scan`. It asks the configured LLM
-        whether the text as a whole contains sensitive information (PII,
-        credentials, financial, health, or confidential business data). Useful as
-        a lightweight guardrail before sending text to an external service.
+        A general, holistic LLM decision — *not* the per-entity detection of
+        :meth:`scan`. It asks the configured LLM whether the text as a whole
+        contains sensitive information (PII, credentials, financial, health, or
+        confidential business data) and returns a single ``True``/``False`` flag.
+        Useful as a lightweight guardrail before sending text to an external
+        service. :meth:`classify` asks the same question but for the kinds
+        present; it is measured to be stricter, so for a yes/no gate this is
+        the method to use.
 
         Requires the LLM layer (:meth:`with_llm`); no entities need to be enabled
         and no regex/NER runs. Empty text is ``False``. Fail-closed: if the LLM
@@ -257,12 +265,37 @@ class Wardcat(EntityPolicyMixin):
 
         :raises ConfigError: if the LLM layer is not configured.
         """
-        # Only the boolean is wanted, so the first sensitive chunk settles it.
-        return self._classify(text, stop_at_first=True).sensitive
+        detector = self._require_llm("is_sensitive")
+        self._check_text_size(text)
+        if not text.strip():
+            return False
+        language = self._config.get("llm_detector", {}).get("language")
+        # Long inputs are chunked; a single sensitive chunk makes the whole
+        # text sensitive, and we short-circuit on the first hit.
+        for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
+            if not chunk.strip():
+                continue
+            reply = detector.complete_messages(build_sensitivity_messages(chunk, language))
+            if parse_sensitivity(reply):
+                return True
+        return False
 
     async def is_sensitive_async(self, text: str) -> bool:
         """Async variant of :meth:`is_sensitive` (native async LLM I/O when available)."""
-        return (await self._classify_async(text, stop_at_first=True)).sensitive
+        detector = self._require_llm("is_sensitive_async")
+        self._check_text_size(text)
+        if not text.strip():
+            return False
+        language = self._config.get("llm_detector", {}).get("language")
+        for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
+            if not chunk.strip():
+                continue
+            reply = await detector.complete_messages_async(
+                build_sensitivity_messages(chunk, language)
+            )
+            if parse_sensitivity(reply):
+                return True
+        return False
 
     def classify(self, text: str) -> SensitivityVerdict:
         """Decide whether *text* is sensitive, and of what kind.
@@ -275,19 +308,19 @@ class Wardcat(EntityPolicyMixin):
         inside the company, log the rest. Long texts are judged in chunks and the
         categories merged; the reason is the first sensitive chunk's.
 
+        It is a separate call with its own prompt, not the source of
+        :meth:`is_sensitive`: asked for structure, the model was measured to be
+        more precise and less sensitive (on the benchmark, one false alarm in a
+        hundred texts against eleven, but eight misses against one, mostly
+        confidential business plans), and several times slower. Use
+        :meth:`is_sensitive` as the gate and this for routing what it stops.
+
         An answer that cannot be read is *sensitive* with the category
         ``"unknown"`` — the guardrail fails closed. ``reason`` may quote the
         text and is as sensitive as the input.
 
         :raises ConfigError: if the LLM layer is not configured.
         """
-        return self._classify(text, stop_at_first=False)
-
-    async def classify_async(self, text: str) -> SensitivityVerdict:
-        """Async variant of :meth:`classify`."""
-        return await self._classify_async(text, stop_at_first=False)
-
-    def _classify(self, text: str, *, stop_at_first: bool) -> SensitivityVerdict:
         detector = self._require_llm("classify")
         self._check_text_size(text)
         if not text.strip():
@@ -299,11 +332,10 @@ class Wardcat(EntityPolicyMixin):
                 continue
             reply = detector.complete_messages(build_classification_messages(chunk, language))
             verdicts.append(parse_classification(reply))
-            if stop_at_first and verdicts[-1].sensitive:
-                break
         return _merge_verdicts(verdicts)
 
-    async def _classify_async(self, text: str, *, stop_at_first: bool) -> SensitivityVerdict:
+    async def classify_async(self, text: str) -> SensitivityVerdict:
+        """Async variant of :meth:`classify`."""
         detector = self._require_llm("classify_async")
         self._check_text_size(text)
         if not text.strip():
@@ -317,8 +349,6 @@ class Wardcat(EntityPolicyMixin):
                 build_classification_messages(chunk, language)
             )
             verdicts.append(parse_classification(reply))
-            if stop_at_first and verdicts[-1].sensitive:
-                break
         return _merge_verdicts(verdicts)
 
     def _check_text_size(self, text: str) -> None:

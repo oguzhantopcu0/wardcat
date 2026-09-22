@@ -789,9 +789,12 @@ verdict.reason        # the model's sentence; may quote the text
 
 Categories are `pii`, `credentials`, `financial`, `health`, `special_category`,
 `business_confidential`, plus `unknown` when the model said sensitive but its
-answer could not be read in full. `is_sensitive()` is `classify(text).sensitive`
-and stops at the first sensitive chunk; `classify()` reads every chunk and
-merges the categories.
+answer could not be read in full. `classify()` reads every chunk and merges the
+categories. It is a separate prompt, not the source of `is_sensitive()`: asked
+for structure, the model is measurably more precise and less sensitive (on the
+100-text benchmark with qwen3:14b, 1 false alarm against 11 but 8 misses against
+1, mostly confidential business plans) and several times slower — use
+`is_sensitive()` as the gate and `classify()` to route what it stops.
 
 ---
 

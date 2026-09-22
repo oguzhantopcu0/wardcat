@@ -22,9 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Wardcat.classify(text)` returns a `SensitivityVerdict` — `sensitive`, the
   `categories` found (`pii`, `credentials`, `financial`, `health`,
   `special_category`, `business_confidential`) and the model's one-line
-  `reason` — so a policy can route on the kind. `is_sensitive()` is now its
-  boolean and still stops at the first sensitive chunk. An answer that cannot
-  be read is sensitive with the category `unknown`.
+  `reason` — so a policy can route on the kind. An answer that cannot be read
+  is sensitive with the category `unknown`. It is its own prompt, not the
+  source of `is_sensitive()`: on the 100-text sensitivity benchmark with
+  qwen3:14b it makes 1 false alarm against `is_sensitive()`'s 11 and names the
+  right category every time, but misses 8 sensitive texts against 1 (mostly
+  confidential business plans) and takes 17 s a text against 2 s. Use it to
+  route what the gate stops, not as the gate. Its prompt names placeholders,
+  format examples, public service numbers and reference numbers as not
+  sensitive; the `is_sensitive()` prompt is unchanged, since a change to the
+  gate ships only with its own measurement.
 
 - **Presets.** `with_preset("kvkk")` (also `"gdpr"`, `"pci_dss"`,
   `"hipaa_lite"`, `"secrets_only"`; YAML `preset:`) enables a starting policy
@@ -84,11 +91,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   run is still refused.
 
 ### Changed
-
-- **The sensitivity prompt names what is not sensitive.** Placeholders and
-  format examples (`name@example.com`, `XXX-XX-XXXX`, an all-zero IBAN), a
-  company's public customer-service number, and order, ticket or version
-  numbers are listed as not sensitive in all four prompt languages.
 
 - **Literal denylist values are matched in one pass.** Ten thousand names
   cost one scan of the text rather than ten thousand; the spans found are
