@@ -74,7 +74,7 @@ if guard.is_sensitive(text):
 - **Checksum validation** — TC_ID (Nüfus İdaresi), IBAN (mod-97), CREDIT_CARD (Luhn, including Troy), Bitcoin (Base58Check / bech32), NHS (mod-11), ABA routing (mod-10), IMEI (Luhn) and every EU national-ID scheme are verified before flagging — eliminates false positives
 - **Rainbow table protection** — user-defined salt for all hashes
 - **Two APIs** — method chaining (programmatic) and YAML (declarative)
-- **Async & batch** — `scan_async` / `scan_batch` / `is_sensitive_async`; concurrent requests overlap (native async LLM I/O), one shared guard is safe to reuse across scans
+- **Async & batch** — `scan_async` / `scan_batch` / `is_sensitive_async`; `scan_batch` runs SpaCy over the whole list in one `nlp.pipe` pass and bounds LLM requests in flight; one shared guard is safe to reuse across scans
 - **Multilingual support** — Turkish, English, German, and French for names, addresses, birth dates, and phone numbers; plus Spanish, Italian, Dutch address patterns; TC_ID, IBAN, SSN, NIN, DNI/NIE, UK postcodes, US ZIP+4, EU VAT numbers and more
 - **Secret detection** — API keys and tokens (OpenAI, Anthropic, Stripe, AWS, Google, GitHub incl. fine-grained PATs, GitLab, Slack, Twilio, SendGrid, npm, Hugging Face, Shopify, DigitalOcean), Azure storage keys, Sentry DSNs, connection-string passwords and PEM private keys
 - **Passport detection** — contextual passport number detection (regex keyword-based + LLM) for any country
@@ -133,8 +133,13 @@ Or download a model yourself with SpaCy's own CLI:
 
 ```bash
 uv run python -m spacy download en_core_web_sm     # English (recommended)
-uv run python -m spacy download tr_core_news_md    # Turkish (recommended)
+uv run python -m spacy download tr_core_news_md    # Turkish
 ```
+
+For Turkish, prefer `tr_core_news_lg` where its size is acceptable: on the
+consistency benchmark it gives one name one value across grammatical cases in
+7 of 9 entities (1.2 distinct values per name), where `tr_core_news_md` runs
+sentence-initial words into the name (2.9 distinct values per name).
 
 > If a requested SpaCy model is not installed, wardcat automatically falls back to any installed model of the same language and logs a warning. SpaCy is not required if you only need regex-based detection.
 

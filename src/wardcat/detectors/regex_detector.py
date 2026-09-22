@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import re
 from collections.abc import Callable
 
@@ -143,6 +144,17 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         r"(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}"
         r"(?:25[0-5]|2[0-4]\d|[01]?\d\d?)"
         r"(?!\.?\d)",
+        0,
+    ),
+    # ── High-entropy string ───────────────────────────────────────────
+    # A secret with no known prefix and no cue word: a run of base64-shaped
+    # characters long enough to be a key, validated on its entropy by
+    # _validate_high_entropy. "/" is left out of the class on purpose: keys in
+    # the wild use the URL-safe alphabet, and with "/" every path segment of a
+    # long URL became a candidate. Bounded on both sides so a slice of a longer
+    # run is never taken. The quantifier is a single bounded run: linear.
+    "HIGH_ENTROPY_STRING": (
+        r"(?<![A-Za-z0-9+/=_\-])[A-Za-z0-9+=_\-]{32,512}(?![A-Za-z0-9+/=_\-])",
         0,
     ),
     # ── Turkish National ID (TC Kimlik No) ────────────────────────────
@@ -981,6 +993,41 @@ def _validate_eu_national_id(value: str) -> bool:
     return False
 
 
+_LOWER_WORD_RUN = re.compile(r"[a-z]{4,}")
+
+
+def _shannon_bits(value: str) -> float:
+    """Shannon entropy of *value* in bits per character."""
+    counts: dict[str, int] = {}
+    for ch in value:
+        counts[ch] = counts.get(ch, 0) + 1
+    n = len(value)
+    return -sum(c / n * math.log2(c / n) for c in counts.values())
+
+
+def _validate_high_entropy(value: str) -> bool:
+    """Does a long token carry the entropy of a generated secret?
+
+    Base64-shaped text (mixed case, digits, symbols) of a random key runs at
+    about 5.5 bits per character and is accepted from 4.0 up. A pure hex digest
+    tops out near 4.0, so it is judged on its own scale, and only past 40
+    characters: git commit hashes and MD5/SHA-1 digests are everywhere in logs
+    and are not secrets. A token with no digit, or no letter, is a word or a
+    number, whatever its length.
+    """
+    if not any(c.isdigit() for c in value) or not any(c.isalpha() for c in value):
+        return False
+    # Three or more word-length runs of lower-case letters make an identifier —
+    # "MessageReferenceNumber1234567890", "us-gaap_instance_investment_2023" —
+    # whatever the entropy of the whole. A random key has such runs rarely.
+    if len(_LOWER_WORD_RUN.findall(value)) >= 3:
+        return False
+    stripped = value.rstrip("=")
+    if all(c in "0123456789abcdefABCDEF" for c in stripped):
+        return len(stripped) > 40 and _shannon_bits(stripped) >= 3.2
+    return _shannon_bits(stripped) >= 4.0
+
+
 # Entity-type → checksum/structural validator. A regex match is only accepted
 # as a violation when its validator (if any) returns True. Adding a new
 # validated entity is a one-line registry entry — no changes to detect().
@@ -993,6 +1040,7 @@ _VALIDATORS: dict[str, Callable[[str], bool]] = {
     "BANK_ROUTING": _validate_aba_routing,
     "NHS_NUMBER": _validate_nhs_number,
     "EU_NATIONAL_ID": _validate_eu_national_id,
+    "HIGH_ENTROPY_STRING": _validate_high_entropy,
 }
 
 # The checksums a value from another layer must pass too. Only schemes whose
@@ -1024,6 +1072,8 @@ _CUED_ENTITIES: frozenset[str] = frozenset({"IMEI", "BANK_ROUTING", "NHS_NUMBER"
 
 
 def _regex_confidence(entity_type: str, matched: str = "") -> float:
+    if entity_type == "HIGH_ENTROPY_STRING":
+        return CONF_UNCUED  # a guess from shape alone; under the default floor
     if entity_type in _CUED_ENTITIES:
         return CONF_CHECKSUM if any(c.isalpha() for c in matched) else CONF_UNCUED
     if entity_type in _VALIDATORS:

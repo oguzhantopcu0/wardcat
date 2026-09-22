@@ -33,6 +33,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sensitive; the `is_sensitive()` prompt is unchanged, since a change to the
   gate ships only with its own measurement.
 
+- **`scan_batch` runs batched layers in one pass.** SpaCy NER sees the whole
+  list through `nlp.pipe`; the LLM layer runs per text in the worker pool,
+  bounded at the backend by `with_llm(max_concurrency=4)` — across
+  `scan_batch` threads and async chunk fan-out alike, where the async batch
+  previously fanned out one request per item. Results are unchanged, per-item
+  errors still land in `scan_error`, and strict mode still raises. A detector
+  that batches implements `BaseDetector.detect_many`. Measured on 200 samples
+  of the Presidio corpus with regex + `en_core_web_lg`: 1.43× the throughput
+  of a loop over `scan()`, identical output.
+
+- **An opt-in `HIGH_ENTROPY_STRING` detector.** A long base64-shaped run with
+  the entropy of a generated key, or a hex digest longer than a git SHA, with
+  no prefix and no keyword to go on. Off unless enabled and scored `0.70`,
+  under the default floor, so it acts only with its own `min_confidence`.
+  Measured with it on: no hit on the 100 hard cases, none on the 1,500-sample
+  Presidio corpus, 117 on the 2,891 Gretel finance documents — 18 of them
+  API keys Gretel labels as such, most of the rest unlabelled wallet
+  addresses and UUIDs, a few EDI segments. Base64 with `/` is not matched, so
+  URL paths are not candidates.
+
 - **A `surrogate` action.** A realistic stand-in of the same shape instead of
   a placeholder: a name from the guard's locale (`with_locale("tr")`, YAML
   `locale`), an e-mail on a reserved domain, a phone number keeping its country
@@ -144,12 +164,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **NER spans are cut at the edges where models run over.** A span now stops at
-  a line break (`Anna Josefsen\nAddress` in an address block), and a short fixed
-  list of leading words is trimmed — articles, greetings, salutations: `The`,
-  `Dear`, `Sayın`, `dün`. Nothing outside the list is trimmed, since a word too
-  few leaks part of a name; the Turkish `md` model's sentence-initial run-ons
-  (`Raporu Ayşe Demir`) are therefore left as they are.
+- **NER spans are cut at the edges where models run over.** Of a span that
+  crosses a line break — into the next field in an address block
+  (`Anna Josefsen\nAddress`), back over a heading (`Renewals Team\nDalton Inc.`)
+  — the line with the most capitalised words is kept, a legal form winning for
+  an organisation. A person's name that runs into markup or a record delimiter
+  (`Carolyn Hill</name`, `Dawn Perkins|560=726`) is recovered as the longest
+  delimiter-free fragment instead of being dropped for its digits; the same
+  rule on organisations kept field labels as companies and was not adopted.
+  A short fixed list of leading words is trimmed — articles, greetings,
+  salutations: `The`, `Dear`, `Sayın`, `dün`. Nothing outside the list is
+  trimmed, since a word too few leaks part of a name; the Turkish `md` model's
+  sentence-initial run-ons (`Raporu Ayşe Demir`) are therefore left as they
+  are. Tuned on the Presidio corpus, validated on the held-out Gretel corpus:
+  there F1 0.504 → 0.508, recall 72.1 % → 73.1 %, PII characters removed
+  74.7 % → 75.8 %; on the Presidio corpus F1 0.759 → 0.758.
 
 - **The LLM layer's card, IBAN and TC numbers must pass their checksums.** A
   model reads `4111 1111 1111 1112` as a card and `TR00 0000 …` as an IBAN as

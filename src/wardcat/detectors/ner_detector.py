@@ -244,18 +244,71 @@ def _trim_span(text: str, start: int, end: int) -> tuple[str, int, int]:
     return trimmed, start + offset, start + offset + len(trimmed)
 
 
-def _first_line(text: str, start: int, end: int) -> tuple[str, int, int]:
-    """Cut a span at its first line break.
+# A legal form at the end of a line marks the line that names an organisation.
+_LEGAL_FORM = re.compile(
+    r"\b(?:Inc|Ltd|LLC|PLC|Corp|Co|GmbH|AG|KG|SA|SAS|SARL|A\.Ş|Ltd\. Şti|Holding|Group|Grup)\.?$",
+    re.IGNORECASE,
+)
+
+
+def _best_line(text: str, start: int, end: int) -> tuple[str, int, int]:
+    """Keep the one line of a multi-line span that names the entity.
 
     A name does not continue onto the next line. In an address block or a
     signature the model runs on into the following field — "Anna Josefsen\nAddress"
-    — which redacts a label and gives the same person a different value wherever
-    the next line differs.
+    — and in a document with headings it runs back over the heading above —
+    "Renewals Team\nDalton Inc.". The line with the most capitalised words is
+    the name; a line ending in a legal form wins for an organisation; ties go
+    to the first line.
     """
-    cut = min((i for i in (text.find("\n"), text.find("\r")) if i != -1), default=-1)
-    if cut <= 0:
+    if "\n" not in text and "\r" not in text:
         return text, start, end
-    return _trim_span(text[:cut], start, start + cut)
+    best: tuple[int, int, str] | None = None  # (score, -position, line)
+    pos = 0
+    for line in re.split(r"\r?\n", text):
+        stripped = line.strip(_EDGE_PUNCT)
+        if stripped:
+            score = sum(1 for w in stripped.split() if w[:1].isupper())
+            if _LEGAL_FORM.search(stripped):
+                score += 2
+            if best is None or score > best[0]:
+                best = (score, -pos, line)
+        pos += len(line) + 1
+    if best is None:
+        return text, start, end
+    line_start = start - best[1]
+    return _trim_span(best[2], line_start, line_start + len(best[2]))
+
+
+# Where a model's span runs into markup or a record delimiter — "Carolyn
+# Hill</name", "Dawn Perkins|560=726", 'BkCode=1290:::ABC Bank' — the name is one
+# fragment between delimiters. A comma counts only before a number, so
+# "Marshall, Hernandez and Simpson" stays whole.
+_STRUCTURAL_DELIMITER = re.compile(r"""[<>|/\\="`\[\]{}*;:]+|,(?=\s*\d)|\s-\s""")
+
+
+def _name_fragment(text: str, start: int, end: int) -> tuple[str, int, int]:
+    """Keep the longest delimiter-free fragment that carries no digit.
+
+    Only applies when the span holds a structural delimiter; a span with none
+    is returned as it is. A span whose every fragment has a digit is returned
+    unchanged too, for the digit filter to reject.
+    """
+    if not _STRUCTURAL_DELIMITER.search(text):
+        return text, start, end
+    best: tuple[int, int, str] | None = None
+    pos = 0
+    for piece in _STRUCTURAL_DELIMITER.split(text):
+        at = text.find(piece, pos)
+        stripped = piece.strip(_EDGE_PUNCT)
+        if stripped and not any(c.isdigit() for c in stripped):
+            if best is None or len(stripped) > best[0]:
+                best = (len(stripped), at, piece)
+        pos = at + len(piece)
+    if best is None:
+        return text, start, end
+    frag_start = start + best[1]
+    return _trim_span(best[2], frag_start, frag_start + len(best[2]))
 
 
 def _drop_leading_noise(text: str, start: int, end: int) -> tuple[str, int, int]:
@@ -360,7 +413,17 @@ class NERDetector(BaseDetector):
 
     def detect(self, text: str, candidates: list[DetectedSpan] | None = None) -> list[DetectedSpan]:
         """Return person, organization, and location spans detected by SpaCy NER."""
-        doc = self.nlp(text)
+        return self._spans_from_doc(self.nlp(text), text)
+
+    def detect_many(self, texts: list[str]) -> list[list[DetectedSpan]]:
+        """One ``nlp.pipe`` pass over the batch — the model's own batching, which
+        is several times faster than a call per text."""
+        return [
+            self._spans_from_doc(doc, text)
+            for doc, text in zip(self.nlp.pipe(texts, batch_size=32), texts, strict=True)
+        ]
+
+    def _spans_from_doc(self, doc: Any, text: str) -> list[DetectedSpan]:
         document_has_case = _has_case(text)
         spans: list[DetectedSpan] = []
         for ent in doc.ents:
@@ -368,7 +431,12 @@ class NERDetector(BaseDetector):
             if not mapped or mapped not in self.enabled_entities:
                 continue
             value, start, end = _trim_span(ent.text, ent.start_char, ent.end_char)
-            value, start, end = _first_line(value, start, end)
+            value, start, end = _best_line(value, start, end)
+            if mapped == "PERSON":
+                # Measured on the held-out corpus: recovering a name from markup
+                # adds people at little cost, but applied to organisations it
+                # keeps field labels ("BkName") as companies — more noise than gain.
+                value, start, end = _name_fragment(value, start, end)
             value, start, end = _drop_leading_noise(value, start, end)
             value, start, end = strip_name_suffix(value, start, end)
             # Multilingual gazetteer filter: drop spans that are entirely
