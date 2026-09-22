@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exception carries the warnings and the partial result. For pipelines where a
   document stored with names in it is worse than no document.
 
+- **`classify()`: the sensitivity judgement with its categories.**
+  `Wardcat.classify(text)` returns a `SensitivityVerdict` — `sensitive`, the
+  `categories` found (`pii`, `credentials`, `financial`, `health`,
+  `special_category`, `business_confidential`) and the model's one-line
+  `reason` — so a policy can route on the kind. `is_sensitive()` is now its
+  boolean and still stops at the first sensitive chunk. An answer that cannot
+  be read is sensitive with the category `unknown`.
+
 - **Presets.** `with_preset("kvkk")` (also `"gdpr"`, `"pci_dss"`,
   `"hipaa_lite"`, `"secrets_only"`; YAML `preset:`) enables a starting policy
   modelled on a data-protection regime — an entity → action mapping that
@@ -76,6 +84,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   run is still refused.
 
 ### Changed
+
+- **The sensitivity prompt names what is not sensitive.** Placeholders and
+  format examples (`name@example.com`, `XXX-XX-XXXX`, an all-zero IBAN), a
+  company's public customer-service number, and order, ticket or version
+  numbers are listed as not sensitive in all four prompt languages.
 
 - **Literal denylist values are matched in one pass.** Ten thousand names
   cost one scan of the text rather than ten thousand; the spans found are

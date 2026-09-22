@@ -23,5 +23,6 @@ site/
 
 # Benchmark downloads and outputs (benchmarks/README.md)
 benchmarks/data/
+.DS_Store
 benchmarks/preds/
 benchmarks/results/

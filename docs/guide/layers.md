@@ -288,4 +288,12 @@ if guard.is_sensitive(user_text):   # or: await guard.is_sensitive_async(...)
 LLM-only (no entities to enable); requires `with_llm(...)`; empty text is `False`.
 Fail-closed — a backend error propagates rather than returning a misleading `False`.
 
+`classify(text)` gives the same judgement as a `SensitivityVerdict`: `sensitive`,
+the `categories` present (`pii`, `credentials`, `financial`, `health`,
+`special_category`, `business_confidential`, or `unknown` when the model said
+sensitive but its answer could not be read in full) and the model's one-line
+`reason`. Route on the kind — block health data, allow business data inside the
+company. Placeholders and format examples, a company's public customer-service
+number and order or version numbers are named in the prompt as not sensitive.
+
 See the full API on the [Wardcat reference page](../reference/wardcat.md).

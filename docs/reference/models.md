@@ -14,6 +14,8 @@
 
 ::: wardcat.UnrestoredValue
 
+::: wardcat.SensitivityVerdict
+
 ## Exceptions
 
 Everything wardcat raises derives from `WardcatError`, so one `except` catches

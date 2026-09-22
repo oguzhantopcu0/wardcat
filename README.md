@@ -775,6 +775,24 @@ if guard.is_sensitive(user_text):
 - **Long inputs** are chunked at paragraph boundaries — any sensitive chunk makes the whole text sensitive — and oversized input is rejected (`max_text_bytes`).
 - Async: `await guard.is_sensitive_async(text)`.
 
+When a yes/no is not enough, `classify()` returns the same judgement with the
+kinds of sensitive information it found and the model's one-line reason, so a
+policy can route on the kind — block health data, allow business data inside
+the company, log the rest:
+
+```python
+verdict = guard.classify("Tom from accounting is in rehab, keep it quiet.")
+verdict.sensitive     # True
+verdict.categories    # ("health", "pii")  — from SENSITIVITY_CATEGORIES
+verdict.reason        # the model's sentence; may quote the text
+```
+
+Categories are `pii`, `credentials`, `financial`, `health`, `special_category`,
+`business_confidential`, plus `unknown` when the model said sensitive but its
+answer could not be read in full. `is_sensitive()` is `classify(text).sensitive`
+and stops at the first sensitive chunk; `classify()` reads every chunk and
+merges the categories.
+
 ---
 
 ### Examples
