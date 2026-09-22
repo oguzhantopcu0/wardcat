@@ -142,7 +142,8 @@ class DetectionEngine:
         self._propagate_min_len: int = config.get("propagate_min_length", 3)
         # Detection (this class) is kept separate from anonymization (applying the
         # configured action to each span); the Anonymizer owns that stage.
-        self._anonymizer = Anonymizer(self.entity_config, self.salt)
+        self._locale: str = config.get("locale", "en")
+        self._anonymizer = Anonymizer(self.entity_config, self.salt, self._locale)
 
         if not self.salt:
             logger.debug(
@@ -197,6 +198,7 @@ class DetectionEngine:
             warnings=warnings,
             context_id=context_id,
             _salt=self.salt,
+            _locale=self._locale,
         )
         if self._strict and warnings:
             raise DegradedScanError(warnings, result)
@@ -259,6 +261,7 @@ class DetectionEngine:
             warnings=warnings,
             context_id=context_id,
             _salt=self.salt,
+            _locale=self._locale,
         )
         if self._strict and warnings:
             raise DegradedScanError(warnings, result)

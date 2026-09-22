@@ -805,6 +805,26 @@ class Wardcat(EntityPolicyMixin):
                 continue
             self._set_entity(entity, enabled=True, action=action, layers=None)
 
+    def with_locale(self, locale: str | Language) -> Wardcat:
+        """Choose the language the ``surrogate`` action draws its stand-ins from.
+
+        ``"en"``, ``"tr"``, ``"de"`` or ``"fr"``; the default is ``"en"``. It is
+        deliberately not inferred from the NER or LLM language — a multilingual
+        guard has no single one. YAML: ``locale: tr``.
+
+        :raises ConfigError: for a locale without name pools.
+        """
+        from wardcat.surrogates import SUPPORTED_LOCALES
+
+        code = (locale.value if isinstance(locale, Language) else str(locale)).lower()
+        if code not in SUPPORTED_LOCALES:
+            raise ConfigError(
+                f"Unsupported surrogate locale {code!r}. Supported: {', '.join(SUPPORTED_LOCALES)}."
+            )
+        self._config["locale"] = code
+        self._rebuild()
+        return self
+
     def with_strict(self, enabled: bool = True) -> Wardcat:
         """Refuse any scan that covers less than was configured.
 

@@ -118,6 +118,7 @@ _KNOWN_CONFIG_KEYS = frozenset(
         "min_confidence",
         "strict",
         "preset",
+        "locale",
     }
 )
 
@@ -187,6 +188,13 @@ def validate_config(config: dict[str, Any]) -> None:
     _validate_min_confidence(config.get("min_confidence", 0.8))
     if not isinstance(config.get("strict", False), bool):
         raise ConfigError(f"'strict' must be true or false, got {config['strict']!r}.")
+    if "locale" in config:
+        from wardcat.surrogates import SUPPORTED_LOCALES
+
+        if config["locale"] not in SUPPORTED_LOCALES:
+            raise ConfigError(
+                f"'locale' must be one of {', '.join(SUPPORTED_LOCALES)}, got {config['locale']!r}."
+            )
     if "preset" in config:
         from wardcat.presets import get_preset
 

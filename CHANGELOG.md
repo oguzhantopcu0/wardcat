@@ -33,6 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sensitive; the `is_sensitive()` prompt is unchanged, since a change to the
   gate ships only with its own measurement.
 
+- **A `surrogate` action.** A realistic stand-in of the same shape instead of
+  a placeholder: a name from the guard's locale (`with_locale("tr")`, YAML
+  `locale`), an e-mail on a reserved domain, a phone number keeping its country
+  and area code, a Luhn-valid card, a mod-97-valid IBAN, a checksum-valid TC
+  number, a TEST-NET IP. Deterministic per salt, unique within a scan, and
+  reversible through `restore()`. A type without a generator falls back to
+  `tokenize` and the violation says so. Surrogates look real; the security
+  guide says what that costs.
+
 - **Presets.** `with_preset("kvkk")` (also `"gdpr"`, `"pci_dss"`,
   `"hipaa_lite"`, `"secrets_only"`; YAML `preset:`) enables a starting policy
   modelled on a data-protection regime — an entity → action mapping that

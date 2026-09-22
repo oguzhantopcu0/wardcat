@@ -56,6 +56,18 @@ validators reject hallucinations, and the regex/NER layers run independently. Fo
 high-security deployments, treat the LLM layer as a **best-effort supplement** to
 regex/NER, not the primary mechanism.
 
+## Surrogates
+
+The `surrogate` action produces values that look real by design. Three things
+follow. A reader downstream — a person, a system, a later scan — cannot tell a
+surrogate from a value, so an output that mixes surrogates with untouched text
+carries no signal about which is which. A generated name will sometimes be a
+real person's; the pools are ordinary names, and there is no name nobody has.
+And because surrogates are deterministic per salt, the salt links a surrogate
+to its value across scans as surely as a hash does: keep it as secret as the
+hash salt, which it is. `tokenize` remains the action whose output announces
+itself as anonymized.
+
 ## Input size limit
 
 Inputs exceeding **500 KB** raise a `ValueError`. Split large documents into

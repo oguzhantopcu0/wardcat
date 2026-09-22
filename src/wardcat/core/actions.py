@@ -17,10 +17,14 @@ import re
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from wardcat.detectors.base import DetectedSpan
 from wardcat.exceptions import ConfigError
 from wardcat.utils.hashing import sha256_hash
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from wardcat.surrogates import SurrogateAllocator
 
 #: Hex characters in a context id. Twelve is 48 bits: with a hundred thousand
 #: results alive at once the chance that any two share an id is about 1.8e-5,
@@ -81,6 +85,24 @@ class TokenAllocator:
         return token
 
 
+class ActionFallback(Exception):
+    """Raised by an action that cannot handle a span, naming the action to use instead.
+
+    The anonymizer applies the named action and records *its* name on the
+    violation, so a result never claims an action that did not happen.
+    """
+
+    def __init__(self, action: str) -> None:
+        self.action = action
+        super().__init__(action)
+
+
+def _default_surrogates() -> SurrogateAllocator:
+    from wardcat.surrogates import SurrogateAllocator
+
+    return SurrogateAllocator()
+
+
 @dataclass(frozen=True)
 class ActionContext:
     """Extra context an action may need beyond the span (e.g. the hash salt)."""
@@ -90,6 +112,12 @@ class ActionContext:
     """Placeholder vault for reversible actions, scoped to a single scan — its
     ``context_id`` is the one stamped into this scan's tokens. Excluded from
     ``repr``/equality so two contexts with the same salt still compare equal."""
+    locale: str = "en"
+    """Locale the ``surrogate`` action draws names and formats from."""
+    surrogates: SurrogateAllocator = field(
+        default_factory=_default_surrogates, repr=False, compare=False
+    )
+    """Surrogate vault for the ``surrogate`` action, scoped to a single scan."""
 
 
 #: An action maps ``(span, context)`` to a replacement string, or ``None`` to
@@ -144,11 +172,20 @@ def _act_tokenize(span: DetectedSpan, ctx: ActionContext) -> str | None:
     return ctx.tokens.token_for(span.entity_type, span.text)
 
 
+def _act_surrogate(span: DetectedSpan, ctx: ActionContext) -> str | None:
+    replacement = ctx.surrogates.surrogate_for(span.entity_type, span.text)
+    if replacement is None:
+        # No generator for this type: a placeholder, recorded as such.
+        raise ActionFallback("tokenize")
+    return replacement
+
+
 register_action("warn", _act_warn)
 register_action("hash", _act_hash)
 register_action("redact", _act_redact)
 register_action("mask", _act_mask)
 register_action("tokenize", _act_tokenize)
+register_action("surrogate", _act_surrogate)
 
 
 def _mask_value(entity_type: str, text: str) -> str:
