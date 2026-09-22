@@ -34,7 +34,9 @@ from corpus_sensitivity import SAMPLES  # noqa: E402
 
 PREDS = HERE / "preds"
 RESULTS = HERE / "results"
-ENGINES = ("presidio", "wardcat", "wardcat-llm")
+ENGINES = ("presidio", "wardcat", "wardcat-llm", "wardcat-classify")
+# Corpus category → the category name classify() uses.
+GOLD_TO_VERDICT = {"special": "special_category", "business": "business_confidential"}
 NER_MODEL = {"en": "en_core_web_lg", "tr": "tr_core_news_md"}
 PIPELINE = {"en": "en", "tr": "tr", "de": "en", "fr": "en"}
 PRESIDIO_IGNORED = {"ORGANIZATION", "LOCATION", "NRP", "DATE_TIME", "URL"}
@@ -113,6 +115,19 @@ def wardcat_llm_classifier(model: str):
     return classify, {"wardcat": version("wardcat"), "llm": {"backend": "ollama", "model": model}}
 
 
+def wardcat_classify_classifier(model: str):
+    """classify(): the boolean is scored like the others, the categories on their own."""
+    from wardcat import Backend, Wardcat
+
+    guard = Wardcat(salt="benchmark").with_llm(backend=Backend.OLLAMA, model=model, timeout=600)
+
+    def classify(text: str, language: str) -> tuple[bool, list]:
+        verdict = guard.classify(text)
+        return verdict.sensitive, list(verdict.categories)
+
+    return classify, {"wardcat": version("wardcat"), "llm": {"backend": "ollama", "model": model}}
+
+
 def predict(args: argparse.Namespace) -> None:
     PREDS.mkdir(exist_ok=True)
     out = PREDS / f"sens-{args.engine}.jsonl"
@@ -127,6 +142,8 @@ def predict(args: argparse.Namespace) -> None:
         classify, info = presidio_classifier()
     elif args.engine == "wardcat":
         classify, info = wardcat_classifier()
+    elif args.engine == "wardcat-classify":
+        classify, info = wardcat_classify_classifier(args.llm_model)
     else:
         classify, info = wardcat_llm_classifier(args.llm_model)
     (PREDS / f"sens-{args.engine}.info.json").write_text(json.dumps(info, indent=2))
@@ -177,7 +194,19 @@ def score(_: argparse.Namespace) -> None:
         for i, (label, category, language, _) in enumerate(SAMPLES):
             by_language[language].append(pairs[i])
             by_category[f"{'sensitive' if label else 'harmless'}/{category}"].append(pairs[i])
+        # Category accuracy, for engines that name categories: a sensitive text
+        # is right when its gold category is among the ones the verdict names.
+        category_hits = [
+            GOLD_TO_VERDICT.get(cat, cat) in rows[i]["why"]
+            for i, (label, cat, _, _) in enumerate(SAMPLES)
+            if label and rows[i]["sensitive"]
+        ]
         table[engine] = {
+            "category_accuracy": (
+                sum(category_hits) / len(category_hits)
+                if engine == "wardcat-classify" and category_hits
+                else None
+            ),
             "all": _metrics(pairs),
             "language": {k: _metrics(v) for k, v in by_language.items()},
             "category": {
@@ -200,6 +229,9 @@ def score(_: argparse.Namespace) -> None:
             f"{engine:<13}{m['accuracy']:>7.0%}{m['precision']:>7.0%}{m['recall']:>7.0%}"
             f"{m['f1']:>7.3f}{counts:>16}{r['median_ms']:>8.0f}ms"
         )
+    for engine, r in table.items():
+        if r["category_accuracy"] is not None:
+            print(f"category accuracy {engine}: {r['category_accuracy']:.0%} of true positives")
     print(f"\n{'accuracy by language':<22}" + "".join(f"{e:>13}" for e in table))
     for language in ("en", "tr", "de", "fr"):
         cells = "".join(f"{r['language'][language]['accuracy']:>13.0%}" for r in table.values())
