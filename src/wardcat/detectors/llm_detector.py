@@ -111,10 +111,17 @@ class LLMDetector(BaseDetector):
         cache_ttl: int = 0,
         chunk_chars: int = 800,
         breaker: CircuitBreaker | None = None,
+        max_concurrency: int = 4,
     ) -> None:
         self.backend = backend
         self.enabled_entities = enabled_entities
         self.timeout = timeout
+        # How many requests may be in flight at the backend at once, across
+        # scan_batch threads and async chunk fan-out alike. A local model
+        # server queues what it cannot run; flooding it only adds latency.
+        self.max_concurrency = max(1, int(max_concurrency))
+        self._sync_gate = threading.BoundedSemaphore(self.max_concurrency)
+        self._async_gate: asyncio.Semaphore | None = None
         # Shared by every call on this detector, including is_sensitive(): a
         # backend that is down is down for all of them.
         self.breaker = breaker if breaker is not None else CircuitBreaker(0)
@@ -245,22 +252,26 @@ class LLMDetector(BaseDetector):
         re-raised unchanged, so the callers' error handling is unaffected.
         """
         self.breaker.check()
-        try:
-            reply = self.backend.complete_messages(messages, timeout=self.timeout)
-        except Exception:
-            self.breaker.record_failure()
-            raise
+        with self._sync_gate:
+            try:
+                reply = self.backend.complete_messages(messages, timeout=self.timeout)
+            except Exception:
+                self.breaker.record_failure()
+                raise
         self.breaker.record_success()
         return reply
 
     async def complete_messages_async(self, messages: list[dict]) -> str:
         """Async twin of :meth:`complete_messages`."""
         self.breaker.check()
-        try:
-            reply = await self.backend.complete_messages_async(messages, timeout=self.timeout)
-        except Exception:
-            self.breaker.record_failure()
-            raise
+        if self._async_gate is None:
+            self._async_gate = asyncio.Semaphore(self.max_concurrency)
+        async with self._async_gate:
+            try:
+                reply = await self.backend.complete_messages_async(messages, timeout=self.timeout)
+            except Exception:
+                self.breaker.record_failure()
+                raise
         self.breaker.record_success()
         return reply
 

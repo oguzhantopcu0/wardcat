@@ -165,6 +165,10 @@ than answering. `circuit_failures=0` turns the breaker off.
 guard.with_llm(model="qwen3:14b", circuit_failures=3, circuit_cooldown=30)
 ```
 
+`max_concurrency` (default 4) bounds how many requests are in flight at the
+backend at once, across `scan_batch` threads and async chunk fan-out; a local
+model server queues what it cannot run, so more only adds latency.
+
 ## YAML reference
 
 ```yaml

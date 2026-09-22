@@ -335,6 +335,11 @@ def _validate_llm_detector(llm_cfg: dict[str, Any]) -> None:
             f"Invalid llm_detector.circuit_failures: {failures!r} (must be an integer >= 0; "
             "0 disables the circuit breaker)"
         )
+    concurrency = llm_cfg.get("max_concurrency", 4)
+    if not isinstance(concurrency, int) or isinstance(concurrency, bool) or concurrency < 1:
+        raise ConfigError(
+            f"Invalid llm_detector.max_concurrency: {concurrency!r} (must be an integer >= 1)"
+        )
     cooldown = llm_cfg.get("circuit_cooldown", 30)
     if not isinstance(cooldown, (int, float)) or isinstance(cooldown, bool) or cooldown < 0:
         raise ConfigError(

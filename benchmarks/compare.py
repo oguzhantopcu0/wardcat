@@ -109,7 +109,17 @@ NER_MODEL = {"en": "en_core_web_lg", "gretel": "en_core_web_lg", "tr": "tr_core_
 LANGUAGE = {"en": "en", "gretel": "en", "tr": "tr"}
 # The countries whose phone formats occur in the English corpus.
 PHONE_REGIONS = ("US", "GB", "BE", "ES", "FR", "DE")
-ENGINES = ("presidio", "wardcat-regex", "wardcat", "wardcat-regions", "wardcat-llm")
+ENGINES = (
+    "presidio",
+    "wardcat-regex",
+    "wardcat",
+    "wardcat-regions",
+    "wardcat-llm",
+    "wardcat-entropy",
+)
+# Predicted types outside the shared score, counted per engine as a false-positive
+# budget: nothing in any corpus is labelled as one, so every hit is a miss.
+UNSCORED_BUDGET = ("HIGH_ENTROPY_STRING",)
 
 Prediction = tuple[str, int, int]
 Runner = Callable[[str], tuple[list[Prediction], list[str]]]
@@ -262,6 +272,7 @@ def wardcat_engine(
     ner: bool = True,
     phone_regions: tuple[str, ...] = (),
     llm_model: str | None = None,
+    entropy: bool = False,
 ) -> tuple[Runner, dict]:
     from wardcat import Action, Backend, Entity, Wardcat
 
@@ -290,12 +301,17 @@ def wardcat_engine(
         layers = {entity: [*lyr, "llm"] for entity, lyr in layers.items()}
     for entity, lyr in layers.items():
         guard.add_entity(entity, Action.REDACT, layers=lyr)
+    if entropy:
+        # Opt-in and under the floor by design; the benchmark enables it the way
+        # a user would, to count what it would flag.
+        guard.add_entity(Entity.HIGH_ENTROPY_STRING, Action.REDACT, min_confidence=0.7)
 
     info = {
         "wardcat": version("wardcat"),
         "ner_model": NER_MODEL[corpus] if ner else None,
         "phone_regions": list(phone_regions),
         "llm": {"backend": "ollama", "model": llm_model} if llm_model else None,
+        "entropy": entropy,
     }
 
     def run(text: str) -> tuple[list[Prediction], list[str]]:
@@ -317,6 +333,8 @@ def build_engine(engine: str, corpus: str, llm_model: str) -> tuple[Runner, dict
         return wardcat_engine(corpus, phone_regions=PHONE_REGIONS)
     if engine == "wardcat-llm":
         return wardcat_engine(corpus, llm_model=llm_model)
+    if engine == "wardcat-entropy":
+        return wardcat_engine(corpus, entropy=True)
     return wardcat_engine(corpus)
 
 
@@ -408,8 +426,8 @@ def _load_preds(corpus: str, engine: str, n: int) -> dict[int, dict]:
 def _hidden_chars(sample: dict, preds: list[Prediction]) -> tuple[int, int]:
     """Gold characters of the scored types, and how many of them some prediction covers."""
     covered = set()
-    for _, start, end in preds:
-        covered.update(range(start, end))
+    for pred in preds:
+        covered.update(range(pred[1], pred[2]))
     total = hidden = 0
     for span in sample["spans"]:
         if span["entity_type"] in SCORED:
@@ -460,6 +478,9 @@ def score(args: argparse.Namespace) -> None:
                     gold = [s for s in sample["spans"] if s["entity_type"] == gold_type]
                     if gold:
                         _match(gold, preds, wanted, coverage[gold_type])
+        unscored = {
+            t: sum(1 for i in rows for p in rows[i]["pred"] if p[0] == t) for t in UNSCORED_BUDGET
+        }
         micro = _tally()
         by_source: dict[str, dict[str, int]] = {}
         for t in per_type.values():
@@ -473,6 +494,7 @@ def score(args: argparse.Namespace) -> None:
         table[engine] = {
             "micro": micro,
             "by_source": by_source,
+            "unscored": unscored,
             "micro_prf": _prf(micro),
             "hidden": hidden_chars / gold_chars if gold_chars else 0.0,
             "per_type": {k: {**v, "prf": _prf(v)} for k, v in per_type.items()},
@@ -507,6 +529,13 @@ def score(args: argparse.Namespace) -> None:
     for engine, r in table.items():
         for gold_type, t in r["coverage"].items():
             print(f"coverage {engine} {gold_type}: {t['tp']}/{t['tp'] + t['fn']} found")
+    for engine, r in table.items():
+        for t, n in r["unscored"].items():
+            if n or "entropy" in engine:
+                print(
+                    f"unscored {engine} {t}: {n} prediction(s) of a type no corpus labels — "
+                    "false positives, unless the corpus labels them under another name"
+                )
     for engine, r in table.items():
         if r["by_source"]:
             parts = ", ".join(

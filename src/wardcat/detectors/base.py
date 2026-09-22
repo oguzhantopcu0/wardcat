@@ -62,6 +62,14 @@ class BaseDetector(ABC):
         """
         ...
 
+    def detect_many(self, texts: list[str]) -> list[list[DetectedSpan]]:
+        """Scan several texts; the default is one :meth:`detect` per text.
+
+        A detector whose model runs faster over a batch — SpaCy's ``nlp.pipe``,
+        say — overrides this. The result has one span list per input, in order.
+        """
+        return [self.detect(text) for text in texts]
+
     async def detect_async(
         self, text: str, candidates: list[DetectedSpan] | None = None
     ) -> list[DetectedSpan]:
