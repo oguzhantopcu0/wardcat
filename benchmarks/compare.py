@@ -300,7 +300,10 @@ def wardcat_engine(
 
     def run(text: str) -> tuple[list[Prediction], list[str]]:
         result = guard.scan(text)
-        return [(v.entity_type, v.start, v.end) for v in result.violations], list(result.warnings)
+        # A fourth element, the layer that found the span, so the score can be
+        # broken down by layer. Presidio predictions stay three-tuples.
+        preds = [(v.entity_type, v.start, v.end, v.source) for v in result.violations]
+        return preds, list(result.warnings)  # type: ignore[return-value]
 
     return run, info
 
@@ -373,15 +376,27 @@ def _match(gold: list[dict], preds: list[Prediction], wanted: str, tally: dict[s
     """``wanted`` is one entity type, or several joined with ``|``."""
     types = set(wanted.split("|"))
     claimed: set[int] = set()
-    for _, start, end in (p for p in preds if p[0] in types):
+    for pred in (p for p in preds if p[0] in types):
+        start, end = pred[1], pred[2]
+        source = pred[3] if len(pred) > 3 else ""
         for k, span in enumerate(gold):
             if k not in claimed and start < span["end_position"] and span["start_position"] < end:
                 claimed.add(k)
                 tally["tp"] += 1
+                _count_source(tally, source, "tp")
                 break
         else:
             tally["fp"] += 1
+            _count_source(tally, source, "fp")
     tally["fn"] += len(gold) - len(claimed)
+
+
+def _count_source(tally: dict, source: str, key: str) -> None:
+    """Per-layer TP/FP inside a tally, kept under a nested key."""
+    if not source:
+        return
+    per = tally.setdefault("by_source", {})
+    per.setdefault(source, {"tp": 0, "fp": 0})[key] += 1
 
 
 def _load_preds(corpus: str, engine: str, n: int) -> dict[int, dict]:
@@ -433,20 +448,31 @@ def score(args: argparse.Namespace) -> None:
             gold_chars += total
             hidden_chars += hidden
             for gold_type, t in _sample_tallies(sample, preds, engine).items():
-                for key in t:
+                for key in ("tp", "fp", "fn"):
                     per_type[gold_type][key] += t[key]
+                for source, counts in t.get("by_source", {}).items():
+                    acc = per_type[gold_type].setdefault("by_source", {})
+                    acc.setdefault(source, {"tp": 0, "fp": 0})
+                    acc[source]["tp"] += counts["tp"]
+                    acc[source]["fp"] += counts["fp"]
             if engine.startswith("wardcat"):
                 for gold_type, wanted in WARDCAT_ONLY.items():
                     gold = [s for s in sample["spans"] if s["entity_type"] == gold_type]
                     if gold:
                         _match(gold, preds, wanted, coverage[gold_type])
         micro = _tally()
+        by_source: dict[str, dict[str, int]] = {}
         for t in per_type.values():
             for key in micro:
                 micro[key] += t[key]
+            for source, counts in t.get("by_source", {}).items():
+                acc = by_source.setdefault(source, {"tp": 0, "fp": 0})
+                acc["tp"] += counts["tp"]
+                acc["fp"] += counts["fp"]
         latencies = sorted(row["ms"] for row in rows.values())
         table[engine] = {
             "micro": micro,
+            "by_source": by_source,
             "micro_prf": _prf(micro),
             "hidden": hidden_chars / gold_chars if gold_chars else 0.0,
             "per_type": {k: {**v, "prf": _prf(v)} for k, v in per_type.items()},
@@ -481,6 +507,12 @@ def score(args: argparse.Namespace) -> None:
     for engine, r in table.items():
         for gold_type, t in r["coverage"].items():
             print(f"coverage {engine} {gold_type}: {t['tp']}/{t['tp'] + t['fn']} found")
+    for engine, r in table.items():
+        if r["by_source"]:
+            parts = ", ".join(
+                f"{src} TP {c['tp']} FP {c['fp']}" for src, c in sorted(r["by_source"].items())
+            )
+            print(f"by layer {engine}: {parts}")
     if "category" in corpus[0]:
         _print_groups(corpus, table, args, "language")
         _print_groups(corpus, table, args, "category")

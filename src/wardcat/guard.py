@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 from wardcat._entity_policy import EntityPolicyMixin
 from wardcat.config.loader import _validate_denylist, load_config
 from wardcat.core.engine import DetectionEngine
-from wardcat.core.models import KNOWN_ENTITY_TYPES, ScanResult
+from wardcat.core.models import KNOWN_ENTITY_TYPES, Layer, ScanResult
 from wardcat.core.registry import (
     LAYER_ENTITIES,
     NER_ENTITIES,
@@ -392,7 +392,7 @@ class Wardcat(EntityPolicyMixin):
     # (entity add/remove/change + introspection live in EntityPolicyMixin)
     # ------------------------------------------------------------------
     @staticmethod
-    def supported_entities(layer: str | None = None) -> frozenset[str]:
+    def supported_entities(layer: str | Layer | None = None) -> frozenset[str]:
         """Return the entity types wardcat can detect (discoverability helper).
 
         ::
@@ -408,6 +408,8 @@ class Wardcat(EntityPolicyMixin):
         """
         if layer is None:
             return frozenset(KNOWN_ENTITY_TYPES)
+        if isinstance(layer, Layer):
+            layer = layer.value
         if layer not in LAYER_ENTITIES:
             raise ConfigError(f"Unknown layer {layer!r}. Valid layers: {sorted(VALID_LAYERS)}")
         return LAYER_ENTITIES[layer]

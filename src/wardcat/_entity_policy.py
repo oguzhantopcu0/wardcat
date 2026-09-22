@@ -13,7 +13,7 @@ import logging
 from collections.abc import Iterable, Mapping
 from typing import Any, Self
 
-from wardcat.core.models import KNOWN_ENTITY_TYPES, Action, Entity, warn_unknown_entity
+from wardcat.core.models import KNOWN_ENTITY_TYPES, Action, Entity, Layer, warn_unknown_entity
 from wardcat.core.registry import LAYER_ENTITIES, VALID_LAYERS
 from wardcat.exceptions import ConfigError
 
@@ -44,7 +44,9 @@ class EntityPolicyMixin:
         self,
         entity_type: str | Entity,
         action: str | Action | None = None,
-        layers: list[str] | None = None,
+        layers: list[str | Layer] | None = None,
+        *,
+        min_confidence: float | None = None,
     ) -> Self:
         """
         Enable a single entity type (or every type via :attr:`Entity.ALL`).
@@ -61,17 +63,31 @@ class EntityPolicyMixin:
                             form. **When omitted, defaults to** ``"hash"`` and a
                             warning is logged (once per guard).
         :param layers:      Which detector layers should look for this entity —
-                            any of ``"regex"``, ``"ner"``, ``"llm"``. ``None``
-                            (default) uses every layer that supports the entity.
+                            any of :class:`~wardcat.Layer` or ``"regex"``,
+                            ``"ner"``, ``"llm"``. ``None`` (default) uses every
+                            layer that supports the entity.
+        :param min_confidence: a confidence floor for this entity alone,
+                            overriding :meth:`~wardcat.Wardcat.with_min_confidence`.
+                            Lets one weak-checksum type through at ``0.7`` while
+                            the rest keep the default ``0.8``. ``None`` keeps the
+                            entity's current setting, if any.
         :raises ConfigError: if ``entity_type`` is not a ``str``/``Entity``, the
                             ``action`` is invalid, or a ``layer`` is unknown.
         """
         action = self._action_or_default(action)
         if self._is_all(entity_type):
             for name in sorted(KNOWN_ENTITY_TYPES):
-                self._set_entity(name, enabled=True, action=action, layers=layers)
+                self._set_entity(
+                    name, enabled=True, action=action, layers=layers, min_confidence=min_confidence
+                )
         else:
-            self._set_entity(entity_type, enabled=True, action=action, layers=layers)
+            self._set_entity(
+                entity_type,
+                enabled=True,
+                action=action,
+                layers=layers,
+                min_confidence=min_confidence,
+            )
         self._rebuild()
         return self
 
@@ -80,14 +96,14 @@ class EntityPolicyMixin:
         entities: Iterable[str | Entity] | Mapping[str | Entity, Any],
         *,
         action: str | Action | None = None,
-        layers: list[str] | None = None,
+        layers: list[str | Layer] | None = None,
     ) -> Self:
         """
         Enable many entity types at once (single rebuild). Supports chaining.
 
         ``entities`` may be an iterable of names, a ``{name: action}`` mapping, or
-        a ``{name: {"action": ..., "layers": ...}}`` mapping for per-entity
-        control. :attr:`Entity.ALL` may appear as an entry. Any entity left
+        a ``{name: {"action": ..., "layers": ..., "min_confidence": ...}}`` mapping
+        for per-entity control. :attr:`Entity.ALL` may appear as an entry. Any entity left
         without an action defaults to ``"hash"`` (warned once per guard).
 
         :raises ConfigError: if ``entities`` is not a mapping or iterable, or any
@@ -122,9 +138,16 @@ class EntityPolicyMixin:
                 )
             entity_action = self._action_or_default(spec.get("action", action))
             entity_layers = spec.get("layers", layers)
+            entity_floor = spec.get("min_confidence")
             names = sorted(KNOWN_ENTITY_TYPES) if self._is_all(name) else [name]
             for n in names:
-                self._set_entity(n, enabled=True, action=entity_action, layers=entity_layers)
+                self._set_entity(
+                    n,
+                    enabled=True,
+                    action=entity_action,
+                    layers=entity_layers,
+                    min_confidence=entity_floor,
+                )
         self._rebuild()
         return self
 
@@ -232,13 +255,26 @@ class EntityPolicyMixin:
             return None
         return self._entity_action(name)
 
-    def entity_policy(self) -> dict[str, str]:
-        """Return a ``{entity_type: action}`` mapping of every enabled entity."""
-        policy: dict[str, str] = {}
+    def entity_policy(self, *, detailed: bool = False) -> dict[str, Any]:
+        """Return a ``{entity_type: action}`` mapping of every enabled entity.
+
+        With ``detailed=True`` each value is a dict instead — ``{"action": ...}``
+        plus ``"min_confidence"`` where the entity has its own floor.
+        """
+        policy: dict[str, Any] = {}
+        entities = self._config.get("entities", {})
         for name in sorted(self._active_entities()):
             action = self._entity_action(name)
-            if action is not None:
+            if action is None:
+                continue
+            if not detailed:
                 policy[name] = action
+                continue
+            spec: dict[str, Any] = {"action": action}
+            floor = entities.get(name, {}).get("min_confidence")
+            if floor is not None:
+                spec["min_confidence"] = floor
+            policy[name] = spec
         return policy
 
     # ------------------------------------------------------------------
@@ -357,7 +393,8 @@ class EntityPolicyMixin:
         *,
         enabled: bool,
         action: str | Action,
-        layers: list[str] | None,
+        layers: list[str | Layer] | None,
+        min_confidence: float | None = None,
     ) -> None:
         """Mutate config for one entity across the chosen layers (no rebuild)."""
         # (Entity.ALL must be expanded by the caller, never reach here.)
@@ -378,21 +415,36 @@ class EntityPolicyMixin:
             if not target:  # unknown / custom entity → default to regex
                 target = ["regex"]
         else:
-            invalid = set(layers) - VALID_LAYERS
+            names = [lyr.value if isinstance(lyr, Layer) else lyr for lyr in layers]
+            invalid = set(names) - VALID_LAYERS
             if invalid:
                 raise ConfigError(
                     f"Invalid layer(s) {sorted(invalid)}. Valid: {sorted(VALID_LAYERS)}"
                 )
-            target = list(layers)
+            target = names
 
+        if min_confidence is not None and not (
+            isinstance(min_confidence, int | float) and 0 <= min_confidence <= 1
+        ):
+            raise ConfigError(
+                f"min_confidence for {entity_type!r} must be a number between 0 and 1, "
+                f"got {min_confidence!r}."
+            )
+        entities = self._config.setdefault("entities", {})
+        # An entity's own floor survives a re-add that does not mention one.
+        floor = (
+            min_confidence
+            if min_confidence is not None
+            else entities.get(entity_type, {}).get("min_confidence")
+        )
         # config["entities"] holds the action (always, so the engine can apply
         # it) and the shared enabled flag for the regex/NER layers (each
         # of which only fires when its own layer switch is on).
         uses_shared_map = ("regex" in target) or ("ner" in target)
-        self._config.setdefault("entities", {})[entity_type] = {
-            "enabled": enabled and uses_shared_map,
-            "action": action,
-        }
+        spec: dict[str, Any] = {"enabled": enabled and uses_shared_map, "action": action}
+        if floor is not None:
+            spec["min_confidence"] = float(floor)
+        entities[entity_type] = spec
         # The LLM layer keeps its own enabled set.
         if "llm" in target:
             llm_entities = self._config.setdefault("llm_detector", {}).setdefault("entities", {})

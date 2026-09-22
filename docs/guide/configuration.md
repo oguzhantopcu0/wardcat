@@ -84,7 +84,12 @@ other one, so those uncued matches are found but left alone:
 ```python
 guard.with_min_confidence(0.6)    # act on uncued matches too
 guard.with_min_confidence(0.95)   # checksummed and structural only
+guard.add_entity(Entity.BANK_ROUTING, Action.HASH, min_confidence=0.6)  # this one alone
 ```
+
+An entity's own floor (also `entities.X.min_confidence` in YAML) overrides the
+global one for that entity and survives a later `add_entity` that does not
+mention it; `entity_policy(detailed=True)` shows it.
 
 The floor is applied **after** overlap resolution, so a stronger span still wins
 its overlap first: a phone number that also satisfies the NHS checksum resolves
@@ -109,6 +114,11 @@ overlaps.
 guard.add_allowlist(["no-reply@example.com"])                 # never flag
 guard.add_denylist([{"value": "ProjectX", "entity_type": "CUSTOM_SECRET"}])  # always flag
 ```
+
+Literal denylist values are matched in a single pass however many there are, so
+a customer list of ten thousand names costs one scan of the text, not ten
+thousand. Regex entries (`{"pattern": ...}`) each run on their own. A value
+listed under two entity types keeps the first, with a warning.
 
 ## Degraded scans
 

@@ -40,6 +40,8 @@ replaced (`ValueError` / `RuntimeError`), so existing handlers keep working.
 
 ::: wardcat.Action
 
+::: wardcat.Layer
+
 ::: wardcat.Backend
 
 ::: wardcat.Language
