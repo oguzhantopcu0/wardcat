@@ -60,6 +60,14 @@ class Action(str, Enum):
     the real values back into whatever comes out the other side — an LLM's answer,
     typically. Unlike ``hash``/``redact``/``mask`` this keeps the originals in
     memory: the result object is as sensitive as the input."""
+    SURROGATE = "surrogate"
+    """**Reversible** replacement with a realistic stand-in of the same shape — a
+    name from the guard's locale for a name, an address on a reserved domain for
+    an e-mail, a Luhn-valid number for a card. The same value gets the same
+    surrogate under the same salt, and no two values share one within a scan.
+    A type without a generator falls back to ``tokenize`` and the violation says
+    so. Surrogates look real, which is the point and the risk: see the security
+    guide."""
 
 
 class Layer(str, Enum):
@@ -265,6 +273,8 @@ class ScanResult:
     """Hashing salt inherited from the originating ``Wardcat``, so :meth:`reapply`
     can produce ``hash`` output consistent with the guard. Internal; not exposed
     by :meth:`redacted`."""
+    _locale: str = field(default="en", repr=False)
+    """Surrogate locale inherited from the guard, for :meth:`reapply`. Internal."""
 
     @property
     def is_clean(self) -> bool:
@@ -435,7 +445,7 @@ class ScanResult:
         # A new pass produces new placeholders, so it gets its own context id —
         # the derived result must not answer for the one it came from.
         context_id = new_context_id()
-        sanitized, new_violations = Anonymizer(config, salt=self._salt).apply(
+        sanitized, new_violations = Anonymizer(config, salt=self._salt, locale=self._locale).apply(
             self.original_text, spans, context_id=context_id
         )
         return ScanResult(
@@ -446,6 +456,7 @@ class ScanResult:
             warnings=list(self.warnings),
             context_id=context_id,
             _salt=self._salt,
+            _locale=self._locale,
         )
 
     def __repr__(self) -> str:

@@ -165,6 +165,7 @@ if restored.unrestored:
 | Action | Reversible | Why |
 |---|---|---|
 | `tokenize` | always | one placeholder per distinct value, by construction |
+| `surrogate` | always | one stand-in per distinct value within a scan, by construction |
 | `hash` | in practice | a salted digest differs per distinct value |
 | `redact` | only if unique | every value of a type collapses onto `[TYPE]` |
 | `mask` | only if unique | two values can mask to the same string |
@@ -207,6 +208,43 @@ uniform : [PERSON_1_0c29…], [EMAIL_1_0c29…], tel [PHONE_1_0c29…]
 
 Restore through the object you sent — `payload`, not `result`: the placeholders in
 the answer are the ones `reapply` produced.
+
+## Surrogates: realistic stand-ins
+
+A model reasons better over `Mehmet Kaya` than over `[PERSON_1_9f3a…]`, and a
+system that expects an e-mail address in a field wants something shaped like
+one. The `surrogate` action replaces a value with a stand-in of the same shape:
+a name from the guard's locale for a name, an address on a reserved domain for
+an e-mail, a phone number that keeps its country and area code, a card number
+that passes Luhn, an IBAN that passes mod-97, a TC number that passes its check
+digits, an address in a TEST-NET range for an IP.
+
+```python
+guard = (
+    Wardcat(salt="s")
+    .with_ner(language="tr")
+    .with_locale("tr")                      # names and formats; YAML: locale: tr
+    .add_entities([Entity.PERSON, Entity.EMAIL, Entity.CREDIT_CARD], action=Action.SURROGATE)
+)
+result = guard.scan("Ahmet Yılmaz, ahmet@firma.com, kart 4111 1111 1111 1111")
+result.sanitized_text   # "Selin Kaya, ruby.hayes@example.net, kart 4532 8811 0093 4166"
+result.restore(answer)  # the same round trip as tokenize
+```
+
+Two rules make them usable. The same value gets the same surrogate under the
+same salt in every scan, so a person keeps one name across documents and a
+record can be linked on it; a different salt gives unrelated surrogates. And no
+two values share a surrogate within one scan, so `restore()` is never ambiguous.
+A type with no generator (`DATE_OF_BIRTH`, `ADDRESS`, …) falls back to
+`tokenize`, and the violation's `action` says `tokenize` — a result never
+claims a substitution that did not happen. `supports()` in `wardcat.surrogates`
+lists what has a generator.
+
+Surrogates look real, and nothing in the text marks them as substitutes. That
+is the point and the risk: a downstream reader may take them for real data, and
+a generated name will sometimes be a real person's. Use them where a model or
+a system needs the shape, and keep `tokenize` where the reader must be able to
+tell a placeholder from a value. See the [security guide](security.md#surrogates).
 
 ## Handing the map to another process
 
