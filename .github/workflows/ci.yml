@@ -46,6 +46,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         python-version: ["3.11", "3.12", "3.13"]
+        include:
+          # One Windows job: the ReDoS probe cannot kill itself there (no
+          # setitimer) and falls back to the parent's subprocess timeout, and
+          # nothing else in the library is platform-specific — one version is
+          # enough to keep it honest.
+          - os: windows-latest
+            python-version: "3.12"
 
     steps:
       - uses: actions/checkout@v7

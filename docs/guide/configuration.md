@@ -121,6 +121,40 @@ if res.warnings:
     logger.warning("PII scan degraded: %s", res.warnings)
 ```
 
+### Strict mode: refuse a degraded scan
+
+A pipeline that stores what it scans — an indexer, an ETL job — wants the
+opposite of a partial result. `with_strict()` (YAML: `strict: true`) makes any
+such condition raise `DegradedScanError` instead: at build time for what is
+known then (a SpaCy model that did not load, a missing `phonenumbers`), at scan
+time for the rest (an LLM backend that went down), and from `scan_batch` too,
+which otherwise files errors under `scan_error`.
+
+```python
+from wardcat import DegradedScanError
+
+guard = Wardcat(salt="s").with_ner(language="tr").with_strict()
+try:
+    result = guard.scan(chunk)
+except DegradedScanError as exc:
+    exc.warnings   # what did not run
+    exc.result     # the partial ScanResult, or None when the guard refused to build
+```
+
+### The LLM circuit breaker
+
+An unreachable backend would otherwise cost every scan the full `timeout`
+before the layer is skipped. After `circuit_failures` consecutive backend
+failures (default 3) the layer is skipped without a call for `circuit_cooldown`
+seconds (default 30), then one call is tried. Each skipped scan carries a
+warning naming the open circuit — it is a degraded scan like any other, and
+strict mode raises on it — and `is_sensitive()` raises `CircuitOpen` rather
+than answering. `circuit_failures=0` turns the breaker off.
+
+```python
+guard.with_llm(model="qwen3:14b", circuit_failures=3, circuit_cooldown=30)
+```
+
 ## YAML reference
 
 ```yaml

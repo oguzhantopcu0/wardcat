@@ -30,6 +30,14 @@ guard = Wardcat(salt=os.environ["WARDCAT_SALT"]).add_entity("CREDIT_CARD", "hash
 `original_text` and `violations[].original` contain raw PII. Use
 `result.redacted()` for logs and API responses.
 
+The library's own log lines never carry a value, at any level. A rejected match,
+a span a filter dropped, a model reply that did not parse — each is logged as
+its entity type and length (`len=19`), never its text, so `DEBUG` logging in
+production writes no PII. `ScanResult.warnings` carries no values either. A
+test (`tests/unit/test_no_pii_in_logs.py`) scans PII-laden text at `DEBUG` and
+asserts nothing from it reached the log, and walks every `logger.*` call in the
+source for a text-bearing argument.
+
 ## Transport
 
 Loopback HTTP (`localhost` / `127.0.0.1` / `::1`) is allowed with no warning — it

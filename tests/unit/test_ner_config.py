@@ -171,6 +171,7 @@ def test_with_llm_enables_llm():
     assert cfg["adjudicate"] is True
 
 
+@pytest.mark.ner
 def test_builders_chain_back_to_back():
     from wardcat import Backend, Entity, Language, Wardcat
 

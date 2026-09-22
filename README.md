@@ -942,6 +942,13 @@ class Violation:
 > if result.warnings:
 >     logger.warning("PII scan degraded: %s", result.warnings)
 > ```
+>
+> When a partial result is worse than none — an indexer, an ETL job —
+> `with_strict()` (YAML `strict: true`) raises `DegradedScanError` in every one
+> of these cases instead, `scan_batch` included. And a backend that is down does
+> not cost every scan its full timeout: after three consecutive failures the LLM
+> layer is skipped for thirty seconds, with a warning that says so
+> (`with_llm(..., circuit_failures=3, circuit_cooldown=30)`).
 
 ---
 
