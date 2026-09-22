@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 from wardcat._entity_policy import EntityPolicyMixin
 from wardcat.config.loader import _validate_denylist, load_config
 from wardcat.core.engine import DetectionEngine
-from wardcat.core.models import KNOWN_ENTITY_TYPES, Layer, ScanResult
+from wardcat.core.models import KNOWN_ENTITY_TYPES, Layer, ScanResult, SensitivityVerdict
 from wardcat.core.registry import (
     LAYER_ENTITIES,
     NER_ENTITIES,
@@ -23,7 +23,7 @@ from wardcat.detectors.base import BaseDetector
 from wardcat.detectors.regex_detector import RegexDetector
 from wardcat.exceptions import ConfigError, DegradedScanError, UnsupportedLanguageError
 from wardcat.llm.backends.base import Backend
-from wardcat.llm.prompt import build_sensitivity_messages, parse_sensitivity
+from wardcat.llm.prompt import build_classification_messages, parse_classification
 from wardcat.ner.spacy_catalog import Language
 from wardcat.utils.text import chunk_by_paragraph
 
@@ -83,6 +83,15 @@ def _resolve_spacy_model(model: str) -> str:
         model,
     )
     return fallback
+
+
+def _merge_verdicts(verdicts: list[SensitivityVerdict]) -> SensitivityVerdict:
+    """One verdict for a text judged in chunks: sensitive if any chunk is."""
+    sensitive = [v for v in verdicts if v.sensitive]
+    if not sensitive:
+        return SensitivityVerdict(False)
+    categories = tuple(dict.fromkeys(c for v in sensitive for c in v.categories))
+    return SensitivityVerdict(True, categories, sensitive[0].reason)
 
 
 def _ner_fallback_warning(requested: str, used: str) -> str:
@@ -234,51 +243,83 @@ class Wardcat(EntityPolicyMixin):
     def is_sensitive(self, text: str) -> bool:
         """Return whether *text* contains sensitive information, judged semantically.
 
-        A general, holistic LLM decision — *not* the per-entity detection of
-        :meth:`scan`. It asks the configured LLM whether the text as a whole
-        contains sensitive information (PII, credentials, financial, health, or
-        confidential business data) and returns a single ``True``/``False`` flag.
-        Useful as a lightweight guardrail before sending text to an external
-        service.
+        The boolean of :meth:`classify`: a general, holistic LLM decision — *not*
+        the per-entity detection of :meth:`scan`. It asks the configured LLM
+        whether the text as a whole contains sensitive information (PII,
+        credentials, financial, health, or confidential business data). Useful as
+        a lightweight guardrail before sending text to an external service.
 
         Requires the LLM layer (:meth:`with_llm`); no entities need to be enabled
         and no regex/NER runs. Empty text is ``False``. Fail-closed: if the LLM
-        backend is unreachable the underlying error propagates, so a guardrail
-        never silently treats sensitive text as safe.
+        backend is unreachable the underlying error propagates, and an answer
+        that cannot be read counts as sensitive, so a guardrail never silently
+        treats sensitive text as safe.
 
         :raises ConfigError: if the LLM layer is not configured.
         """
-        detector = self._require_llm("is_sensitive")
-        self._check_text_size(text)
-        if not text.strip():
-            return False
-        language = self._config.get("llm_detector", {}).get("language")
-        # Long inputs are chunked; a single sensitive chunk makes the whole
-        # text sensitive, and we short-circuit on the first hit.
-        for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
-            if not chunk.strip():
-                continue
-            reply = detector.complete_messages(build_sensitivity_messages(chunk, language))
-            if parse_sensitivity(reply):
-                return True
-        return False
+        # Only the boolean is wanted, so the first sensitive chunk settles it.
+        return self._classify(text, stop_at_first=True).sensitive
 
     async def is_sensitive_async(self, text: str) -> bool:
         """Async variant of :meth:`is_sensitive` (native async LLM I/O when available)."""
-        detector = self._require_llm("is_sensitive_async")
+        return (await self._classify_async(text, stop_at_first=True)).sensitive
+
+    def classify(self, text: str) -> SensitivityVerdict:
+        """Decide whether *text* is sensitive, and of what kind.
+
+        Like :meth:`is_sensitive`, one holistic LLM judgement over the whole
+        text — but the answer names the categories present (``pii``,
+        ``credentials``, ``financial``, ``health``, ``special_category``,
+        ``business_confidential``) and carries the model's one-line reason, so a
+        caller can route on the kind: block health data, allow business data
+        inside the company, log the rest. Long texts are judged in chunks and the
+        categories merged; the reason is the first sensitive chunk's.
+
+        An answer that cannot be read is *sensitive* with the category
+        ``"unknown"`` — the guardrail fails closed. ``reason`` may quote the
+        text and is as sensitive as the input.
+
+        :raises ConfigError: if the LLM layer is not configured.
+        """
+        return self._classify(text, stop_at_first=False)
+
+    async def classify_async(self, text: str) -> SensitivityVerdict:
+        """Async variant of :meth:`classify`."""
+        return await self._classify_async(text, stop_at_first=False)
+
+    def _classify(self, text: str, *, stop_at_first: bool) -> SensitivityVerdict:
+        detector = self._require_llm("classify")
         self._check_text_size(text)
         if not text.strip():
-            return False
+            return SensitivityVerdict(False)
         language = self._config.get("llm_detector", {}).get("language")
+        verdicts = []
+        for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
+            if not chunk.strip():
+                continue
+            reply = detector.complete_messages(build_classification_messages(chunk, language))
+            verdicts.append(parse_classification(reply))
+            if stop_at_first and verdicts[-1].sensitive:
+                break
+        return _merge_verdicts(verdicts)
+
+    async def _classify_async(self, text: str, *, stop_at_first: bool) -> SensitivityVerdict:
+        detector = self._require_llm("classify_async")
+        self._check_text_size(text)
+        if not text.strip():
+            return SensitivityVerdict(False)
+        language = self._config.get("llm_detector", {}).get("language")
+        verdicts = []
         for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
             if not chunk.strip():
                 continue
             reply = await detector.complete_messages_async(
-                build_sensitivity_messages(chunk, language)
+                build_classification_messages(chunk, language)
             )
-            if parse_sensitivity(reply):
-                return True
-        return False
+            verdicts.append(parse_classification(reply))
+            if stop_at_first and verdicts[-1].sensitive:
+                break
+        return _merge_verdicts(verdicts)
 
     def _check_text_size(self, text: str) -> None:
         """Reject oversized input (mirrors the engine's DoS guard for scan())."""

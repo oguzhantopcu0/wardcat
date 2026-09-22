@@ -9,12 +9,14 @@ from wardcat.core.actions import (
 )
 from wardcat.core.models import (
     KNOWN_ENTITY_TYPES,
+    SENSITIVITY_CATEGORIES,
     Action,
     Entity,
     Layer,
     RedactedResult,
     RedactedViolation,
     ScanResult,
+    SensitivityVerdict,
     Violation,
 )
 from wardcat.core.restore import RestoredText, Substitution, UnrestoredValue
@@ -60,6 +62,8 @@ __all__ = [
     "Action",
     "Entity",
     "Layer",
+    "SensitivityVerdict",
+    "SENSITIVITY_CATEGORIES",
     "Language",
     "supported_languages",
     "Preset",

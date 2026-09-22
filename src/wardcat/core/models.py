@@ -201,6 +201,33 @@ class Violation:
     ``warn``, which replaces nothing, the original value's position there."""
 
 
+#: The categories :meth:`~wardcat.Wardcat.classify` can name.
+SENSITIVITY_CATEGORIES: tuple[str, ...] = (
+    "pii",
+    "credentials",
+    "financial",
+    "health",
+    "special_category",
+    "business_confidential",
+)
+
+
+@dataclass(frozen=True)
+class SensitivityVerdict:
+    """What :meth:`~wardcat.Wardcat.classify` decided about a text.
+
+    ``categories`` draws from :data:`SENSITIVITY_CATEGORIES`, plus ``"unknown"``
+    when the model said the text is sensitive but its answer could not be read
+    in full — the verdict fails closed rather than clean. ``reason`` is the
+    model's own one-line justification and may quote the text: treat it as
+    sensitive as the input.
+    """
+
+    sensitive: bool
+    categories: tuple[str, ...] = ()
+    reason: str = ""
+
+
 @dataclass
 class ScanResult:
     """Result of a single ``guard.scan()`` call.
