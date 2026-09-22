@@ -194,15 +194,15 @@ class TestScanBatchIsolation:
         """
         guard = make_legacy_guard(use_ner=False)
 
-        original_scan = guard._engine.scan
+        original_apply = guard._engine._anonymizer.apply
 
-        def flaky_scan(text):
-            # Fail on the credit card text so the error is deterministic regardless of thread order
+        def flaky_apply(text, spans, **kw):
+            # Fail on the credit card text so the error is deterministic regardless of order
             if "4111111111111111" in text:
                 raise RuntimeError("Simulated error")
-            return original_scan(text)
+            return original_apply(text, spans, **kw)
 
-        guard._engine.scan = flaky_scan
+        guard._engine._anonymizer.apply = flaky_apply
 
         texts = ["a@b.com", "4111111111111111", "c@d.com"]
         results = guard.scan_batch(texts)

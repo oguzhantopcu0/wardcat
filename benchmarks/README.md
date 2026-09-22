@@ -52,8 +52,10 @@ Only the eight types both engines offer are scored: `PERSON`, `ORGANIZATION`,
 Turkish ID numbers are a wardcat-only type and are reported separately as coverage.
 
 Both engines use the same spaCy model: `en_core_web_lg` for English (the model
-Presidio's documentation recommends) and `tr_core_news_md` for Turkish. Neither is
-tuned. Presidio runs its default `AnalyzerEngine`; for Turkish its card, IBAN,
+Presidio's documentation recommends) and `tr_core_news_md` for Turkish. Neither
+model is tuned. wardcat's span cleanup rules were written while reading errors on
+the English (Presidio) corpus and on the hard cases; the Gretel corpus is held
+out — no rule was written against it, and it is where a change is validated. Presidio runs its default `AnalyzerEngine`; for Turkish its card, IBAN,
 e-mail, IP, SSN and phone recognizers are registered for the language, since
 Presidio registers them for English only.
 

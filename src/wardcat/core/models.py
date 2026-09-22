@@ -142,6 +142,12 @@ class Entity(str, Enum):
     LOCATION = "LOCATION"
     NRP = "NRP"
     USERNAME = "USERNAME"
+    HIGH_ENTROPY_STRING = "HIGH_ENTROPY_STRING"
+    """A long token that looks like a secret with no known prefix and no keyword
+    beside it: 32+ base64-shaped characters with high Shannon entropy, or a hex
+    digest longer than a git SHA. Scored ``0.70``, under the default floor, so it
+    only acts when enabled with its own ``min_confidence``: it is a guess by
+    construction, and long tokens of many innocent kinds look the same."""
 
 
 # Known entity types — for typo checking and IDE support.

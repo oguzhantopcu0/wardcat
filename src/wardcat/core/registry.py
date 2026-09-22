@@ -41,6 +41,7 @@ REGEX_ENTITIES: frozenset[str] = frozenset(
         "BANK_ROUTING",
         "NHS_NUMBER",
         "USERNAME",
+        "HIGH_ENTROPY_STRING",
     }
 )
 NER_ENTITIES: frozenset[str] = frozenset({"PERSON", "ORG", "ADDRESS", "LOCATION", "NRP"})

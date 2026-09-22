@@ -96,7 +96,7 @@ class TestNERModelThatDoesNotLoad:
 
     def test_a_batch_item_that_fails_keeps_the_warning(self, ner_fails):
         guard = _ner_guard()
-        guard._engine.scan = MagicMock(side_effect=RuntimeError("boom"))
+        guard._engine._anonymizer.apply = MagicMock(side_effect=RuntimeError("boom"))
         (result,) = guard.scan_batch(["John"])
         assert result.scan_error == "RuntimeError: boom"
         assert any("did not run" in w for w in result.warnings)

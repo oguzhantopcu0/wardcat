@@ -8,9 +8,10 @@ import pytest
 
 from wardcat.detectors.ner_detector import (
     NERDetector,
+    _best_line,
     _drop_leading_noise,
-    _first_line,
     _is_all_stopwords,
+    _name_fragment,
 )
 
 
@@ -42,10 +43,54 @@ class TestLineBreaks:
         assert reported(text, ("PERSON", "Anna Josefsen\nAddress")) == [("PERSON", "Anna Josefsen")]
 
     def test_offsets_follow_the_cut(self) -> None:
-        assert _first_line("Lena Wirth\r\nAddress", 7, 26) == ("Lena Wirth", 7, 17)
+        assert _best_line("Lena Wirth\r\nAddress", 7, 26) == ("Lena Wirth", 7, 17)
 
     def test_a_single_line_span_is_untouched(self) -> None:
-        assert _first_line("Lena Wirth", 0, 10) == ("Lena Wirth", 0, 10)
+        assert _best_line("Lena Wirth", 0, 10) == ("Lena Wirth", 0, 10)
+
+
+class TestMultiLineSpans:
+    @pytest.mark.parametrize(
+        ("span", "kept"),
+        [
+            ("Renewals Team\nDalton Inc.", "Dalton Inc"),  # the legal form marks the org
+            ("Leanne\n\nFrançois A. Bousquet", "François A. Bousquet"),  # more capitals
+            ("Social and Environmental Impact\nThe Global Impact Fund", "Global Impact Fund"),
+            ("Fritz-Armstrong\nĐoko", "Fritz-Armstrong"),  # a tie goes to the first line
+            ("Sam\n\nSam", "Sam"),
+        ],
+    )
+    def test_the_line_that_names_the_entity_is_kept(self, span: str, kept: str) -> None:
+        text = f"x {span} y"
+        assert reported(text, ("ORG", span)) == [("ORG", kept)]
+
+
+class TestMarkupAndDelimiters:
+    @pytest.mark.parametrize(
+        ("span", "kept"),
+        [
+            ("Carolyn Hill</name", "Carolyn Hill"),
+            ("Dawn Perkins|560=726", "Dawn Perkins"),
+            ("Hunter L. Barton/1234567890", "Hunter L. Barton"),
+            ("BkCode=1290:::ABC Bank", "ABC Bank"),
+            ('Marisa S. Cervantes",976,"2289 Compton Common', "Marisa S. Cervantes"),
+            ("Acme Corp - FY2023 Financial", "Acme Corp"),
+            ("IT Support Team:**", "IT Support Team"),
+        ],
+    )
+    def test_the_name_fragment_survives_the_markup(self, span: str, kept: str) -> None:
+        value, start, end = _name_fragment(span, 10, 10 + len(span))
+        assert value == kept
+        assert ("." * 10 + span)[start:end] == kept
+
+    def test_a_comma_inside_a_name_is_not_a_delimiter(self) -> None:
+        span = "Marshall, Hernandez and Simpson"
+        assert _name_fragment(span, 0, len(span))[0] == span
+
+    def test_a_span_that_is_all_digits_and_markup_is_left_for_the_filter(self) -> None:
+        span = "Groceries4U/12"
+        assert _name_fragment(span, 0, len(span))[0] == span
+        assert reported("x Groceries4U/12 y", ("PERSON", span)) == []
 
 
 class TestLeadingWords:

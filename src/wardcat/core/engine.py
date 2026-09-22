@@ -204,6 +204,125 @@ class DetectionEngine:
             raise DegradedScanError(warnings, result)
         return result
 
+    def scan_many(self, texts: list[str], *, workers: int = 4) -> list[ScanResult]:
+        """Scan a batch: batched layers in one pass each, the rest in threads.
+
+        The result list matches *texts* in order and equals what :meth:`scan`
+        would return for each, apart from context ids. A detector that batches
+        (:meth:`~wardcat.detectors.base.BaseDetector.detect_many`, which SpaCy
+        NER implements with ``nlp.pipe``) sees the whole batch at once; the
+        others — the LLM layer — run per text in a pool of *workers* threads.
+        A layer that fails is skipped for the whole batch and recorded on every
+        result. A text that cannot be scanned at all (too large) gets a result
+        with ``scan_error`` set and its text unchanged. Adjudication is not
+        batched: with it on, each text goes through :meth:`scan`.
+        """
+        if not texts:
+            return []
+        if self._use_adjudication:
+            return [self._scan_or_error(text) for text in texts]
+
+        results: list[ScanResult | None] = [None] * len(texts)
+        todo: list[int] = []
+        for i, text in enumerate(texts):
+            try:
+                self._check_size(text)
+            except ValueError as exc:
+                results[i] = self._error_result(text, exc)
+                continue
+            todo.append(i)
+        if not todo:
+            return results  # type: ignore[return-value]
+
+        warnings: list[str] = list(self.build_warnings)
+        batch = [texts[i] for i in todo]
+        per_text: list[list[DetectedSpan]] = [[] for _ in todo]
+        pooled: list[BaseDetector] = []
+        for detector in self.detectors:
+            if type(detector).detect_many is BaseDetector.detect_many:
+                pooled.append(detector)
+                continue
+            try:
+                found = detector.detect_many(batch)
+            except Exception as exc:
+                msg = f"{type(detector).__name__} did not run: {exc}"
+                logger.warning("scan_many: detector layer skipped — %s", msg)
+                warnings.append(msg)
+                continue
+            for spans, acc in zip(found, per_text, strict=True):
+                acc.extend(self._stamp_source(spans, detector))
+
+        # Detectors without a batch path — the LLM layer — still run per text,
+        # but in parallel; its own gate bounds what reaches the backend.
+        if pooled:
+            from concurrent.futures import ThreadPoolExecutor
+
+            failed: dict[int, list[str]] = {}
+
+            def one(k: int) -> list[DetectedSpan]:
+                local: list[str] = []
+                spans: list[DetectedSpan] = []
+                for detector in pooled:
+                    spans.extend(self._safe_detect(detector, batch[k], local))
+                if local:
+                    failed[k] = local
+                return spans
+
+            with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+                for k, spans in enumerate(pool.map(one, range(len(batch)))):
+                    per_text[k].extend(spans)
+        else:
+            failed = {}
+
+        for k, i in enumerate(todo):
+            text = texts[i]
+            item_warnings = warnings + failed.get(k, [])
+            # The per-item tail is isolated as scan_batch always was: an error
+            # here files that item under scan_error and the rest go on.
+            try:
+                raw = per_text[k] + self._collect_denylist_spans(text)
+                spans = self._filter_spans(raw, text)
+                context_id = new_context_id()
+                sanitized, violations = self._anonymizer.apply(text, spans, context_id=context_id)
+            except Exception as exc:
+                result = self._error_result(text, exc)
+                result.warnings = item_warnings
+                results[i] = result
+                continue
+            result = ScanResult(
+                original_text=text,
+                sanitized_text=sanitized,
+                violations=violations,
+                warnings=item_warnings,
+                context_id=context_id,
+                _salt=self.salt,
+                _locale=self._locale,
+            )
+            if self._strict and item_warnings:
+                raise DegradedScanError(item_warnings, result)
+            results[i] = result
+        return results  # type: ignore[return-value]
+
+    def _scan_or_error(self, text: str) -> ScanResult:
+        try:
+            return self.scan(text)
+        except DegradedScanError:
+            raise
+        except Exception as exc:
+            return self._error_result(text, exc)
+
+    def _error_result(self, text: str, exc: Exception) -> ScanResult:
+        logger.error("scan failed (%s: %s), returning original text.", type(exc).__name__, exc)
+        return ScanResult(
+            original_text=text,
+            sanitized_text=text,
+            violations=[],
+            scan_error=f"{type(exc).__name__}: {exc}",
+            warnings=list(self.build_warnings),
+            _salt=self.salt,
+            _locale=self._locale,
+        )
+
     async def scan_async(self, text: str) -> ScanResult:
         """Async variant — uses native async for I/O-bound detectors (LLM backend).
 

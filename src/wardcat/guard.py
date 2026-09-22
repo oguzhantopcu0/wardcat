@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -387,42 +386,15 @@ class Wardcat(EntityPolicyMixin):
         if not texts:
             return []
 
-        # Workers call the engine directly, so the one-time configuration warnings
+        # The engine is called directly, so the one-time configuration warnings
         # that scan() logs have to be raised here, once for the whole batch.
         self._warn_about_configuration()
         workers = max_workers or self._config.get("scan_batch_workers", 4)
-
-        results: list[ScanResult | None] = [None] * len(texts)
-
-        def _scan_one(idx: int, text: str) -> tuple[int, ScanResult]:
-            try:
-                return idx, self._engine.scan(text)
-            # Strict mode means no degraded result may come back, from a batch
-            # either; the item is not turned into a scan_error entry.
-            except DegradedScanError:
-                raise
-            except Exception as exc:
-                logger.error(
-                    "scan_batch item %d failed (%s: %s), returning original text.",
-                    idx,
-                    type(exc).__name__,
-                    exc,
-                )
-                return idx, ScanResult(
-                    original_text=text,
-                    sanitized_text=text,
-                    violations=[],
-                    scan_error=f"{type(exc).__name__}: {exc}",
-                    warnings=list(self._engine.build_warnings),
-                )
-
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(_scan_one, i, text): i for i, text in enumerate(texts)}
-            for future in as_completed(futures):
-                idx, result = future.result()
-                results[idx] = result
-
-        return results  # type: ignore[return-value]
+        # Batched layers (SpaCy NER via nlp.pipe) see the whole list in one
+        # pass; the LLM layer runs per text in `workers` threads, bounded at the
+        # backend by its own max_concurrency. Strict mode propagates from here
+        # too: no degraded result is filed under scan_error.
+        return self._engine.scan_many(texts, workers=workers)
 
     async def scan_batch_async(
         self, texts: list[str], *, max_workers: int | None = None
@@ -435,10 +407,14 @@ class Wardcat(EntityPolicyMixin):
         """
         if not texts:
             return []
+        # Bounded like the sync batch: `scan_batch_workers` texts in flight at
+        # once, so a large list does not fan out into one request per item.
+        gate = asyncio.Semaphore(max_workers or self._config.get("scan_batch_workers", 4))
 
         async def _one(idx: int, text: str) -> tuple[int, ScanResult]:
             try:
-                return idx, await self.scan_async(text)
+                async with gate:
+                    return idx, await self.scan_async(text)
             except DegradedScanError:
                 raise
             except Exception as exc:
@@ -552,6 +528,7 @@ class Wardcat(EntityPolicyMixin):
         language: str | Language | None = None,
         circuit_failures: int = 3,
         circuit_cooldown: float = 30.0,
+        max_concurrency: int = 4,
     ) -> Wardcat:
         """
         Enable the on-prem LLM detector. Supports chaining, like :meth:`with_ner`.
@@ -606,6 +583,9 @@ class Wardcat(EntityPolicyMixin):
         :param circuit_cooldown: seconds the layer stays skipped before one call
             is tried again. While skipped, each scan carries a warning naming
             the open circuit; :meth:`is_sensitive` raises instead.
+        :param max_concurrency: requests in flight at the backend at once,
+            across :meth:`scan_batch` threads and async chunk fan-out. A local
+            model server queues what it cannot run, so more only adds latency.
         """
         lang_code = language.value if isinstance(language, Language) else language
         llm_cfg = self._config.setdefault("llm_detector", {})
@@ -626,6 +606,7 @@ class Wardcat(EntityPolicyMixin):
                 "language": lang_code,
                 "circuit_failures": circuit_failures,
                 "circuit_cooldown": circuit_cooldown,
+                "max_concurrency": max_concurrency,
             }
         )
         # Only pin base_url when the caller gave one; otherwise leave it out so
@@ -1132,4 +1113,5 @@ class Wardcat(EntityPolicyMixin):
             timeout=timeout,
             cache_ttl=cache_ttl,
             breaker=breaker,
+            max_concurrency=llm_cfg.get("max_concurrency", 4),
         )

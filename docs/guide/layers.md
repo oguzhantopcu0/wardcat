@@ -48,6 +48,15 @@ format once it is labelled — `Phone: 0490 75 40 81`, `call me at 905-674-3793`
 the redacted line still reads. A labelled number scores `0.90`, below the
 structural pattern's `0.97`.
 
+**Guessed from shape alone:** `HIGH_ENTROPY_STRING`, a run of 32+ base64-shaped
+characters with the Shannon entropy of a generated key, or a hex digest longer
+than a git SHA. A secret with no known prefix and no keyword beside it has no
+other signature, and many innocent tokens share this one, so it is off unless
+enabled and scores `0.70`, under the default floor: turn it on with
+`add_entity(Entity.HIGH_ENTROPY_STRING, Action.REDACT, min_confidence=0.7)` and
+measure it on your own logs first. Known secret shapes (a JWT, a UUID, a prefixed
+API key) win the overlap.
+
 Three of those checksums are weak enough that a bare digit run passes about one
 time in ten — the ABA, NHS and IMEI checks. Both the cued and the bare form are
 matched, and the bare one is scored at `0.70` instead, under the
@@ -85,8 +94,13 @@ models commonly mislabel as names or organisations. An organisation whose last
 word is a street designator (`Pollen Crescent`) is dropped as a street name.
 
 Span edges are cleaned before a value is replaced, so one name keeps one
-placeholder. A span stops at a line break — in an address block the model runs on
-into the next field (`Anna Josefsen\nAddress`). A short, fixed list of words is
+placeholder. Of a span that crosses a line break — in an address block the model
+runs on into the next field (`Anna Josefsen\nAddress`), under a heading it runs
+back over the heading (`Renewals Team\nDalton Inc.`) — the line with the most
+capitalised words is kept, a line ending in a legal form winning for an
+organisation. Where a span runs into markup or a record delimiter
+(`Carolyn Hill</name`, `Dawn Perkins|560=726`, `BkCode=1290:::ABC Bank`) the
+longest delimiter-free fragment without a digit is kept. A short, fixed list of words is
 trimmed from the front: articles, greetings and salutations (`The`, `Dear`,
 `Sayın`, `dün`). Nothing outside that list is trimmed, because a word too many
 costs consistency and a word too few leaks part of a name. That is why the
