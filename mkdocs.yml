@@ -59,6 +59,9 @@ extra:
       note: national formats beyond TR/FR/DE
       link: guide/configuration/#phone-regions
 
+validation:
+  anchors: warn
+
 extra_css:
   - stylesheets/extra.css
 
@@ -110,8 +113,10 @@ nav:
       - Extending: guide/extending.md
       - MCP server: guide/mcp-server.md
       - Security: guide/security.md
+      - Known limitations: guide/limitations.md
   - API reference:
       - Wardcat: reference/wardcat.md
       - Results & constants: reference/models.md
       - Detectors & backends: reference/internals.md
+      - Entity types: reference/entities.md
   - Changelog: changelog.md

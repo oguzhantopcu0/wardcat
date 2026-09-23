@@ -16,20 +16,30 @@ Configuration is **explicit** — pass constructor arguments or a YAML
 Read API: `enabled_entities()`, `get_entity_action(entity)`, `entity_policy()`,
 and the static `Wardcat.supported_entities(layer=None)`.
 
+`change_entity_action(Entity.ALL, Action.REDACT)` retargets every enabled entity
+at once. `change_entity_action()` never silently re-enables an entity: changing the action
+of a removed or never-added entity raises `ConfigError` — add it first with
+`add_entity()`. Removing an entity that was never enabled is a no-op (an unknown
+*name* logs a warning, to catch typos). Passing a bare string to `add_entities()`
+/ `remove_entities()` instead of a list raises `ConfigError` — use the singular
+`add_entity()` / `remove_entity()` for one entity. `Entity.All` is a deprecated
+alias of `Entity.ALL`.
+
 ## Actions
 
 `warn` (keep text, report only) · `hash` (`[TYPE:16hex]`, salted SHA-256) ·
 `redact` (`[TYPE]`) · `mask` (entity-aware partial masking) · `tokenize`
-(`[TYPE_1]`, [reversible](reversible.md)). When `action` is omitted it defaults
-to `hash` (with a one-time warning). Actions are
+(`[TYPE_1]`, [reversible](reversible.md)) · `surrogate` (a realistic stand-in
+of the same shape, [reversible](reversible.md#surrogates-realistic-stand-ins)).
+When `action` is omitted it defaults to `hash` (with a one-time warning). Actions are
 [pluggable](extending.md#custom-actions).
 
 ## The LLM layer's own entity policy
 
 `with_ner()` enables no entity by itself — you opt in with `add_entity`. **`with_llm()`
-does not work that way**: the LLM layer carries its own default policy of **31 entity
-types, 27 of them switched on** (`ORG`, `LOCATION`, `NRP` and `SPECIAL_CATEGORY` ship
-off), each with its own action, so
+does not work that way**: the LLM layer carries its own default policy of **33 entity
+types, 27 of them switched on** (`ORG`, `LOCATION`, `NRP`, `SPECIAL_CATEGORY`,
+`DATE_OF_BIRTH` and `FINANCIAL_AMOUNT` ship off), each with its own action, so
 
 ```python
 guard = Wardcat(salt="s").with_llm(...).add_entity(Entity.EMAIL, Action.TOKENIZE)
@@ -106,7 +116,9 @@ guard = Wardcat(salt="s").with_ner(language="en").add_entity("PERSON").with_prop
 
 Off by default (it can over-redact); only exact, token-bounded matches at least
 `min_length` chars (default 3) propagate, and deterministic regex spans still win
-overlaps.
+overlaps — a propagated match never displaces a checksum-validated one.
+Structural PII (email, phone, IBAN…) is already caught exhaustively by the regex
+layer, so propagation mainly helps names and other model-only entities.
 
 ## Allowlist / denylist
 
@@ -172,8 +184,13 @@ model server queues what it cannot run, so more only adds latency.
 ## YAML reference
 
 ```yaml
-salt: ""
-use_ner: false
+salt: ""                 # read it from the environment in your application
+use_ner: false           # NER is off by default; set true AND name a model below
+# spacy_model: "en_core_web_sm"                          # one model
+# spacy_models: ["en_core_web_sm", "de_core_news_sm"]   # or several (multilingual)
+strict: false            # true: a degraded scan raises DegradedScanError
+# preset: kvkk           # start from a preset: kvkk | gdpr | pci_dss | hipaa_lite | secrets_only
+locale: en               # names and formats for the surrogate action
 min_confidence: 0.8      # drop spans scoring below this
 phone_regions: []        # CLDR codes for libphonenumber-backed PHONE
 propagate_matches: false
@@ -182,10 +199,17 @@ propagate_min_length: 3
 entities:
   CREDIT_CARD: { enabled: true, action: hash }
   EMAIL:       { enabled: true, action: warn }
+  BANK_ROUTING: { enabled: true, action: hash, min_confidence: 0.6 }
 
 llm_detector:
   enabled: false
   backend: ollama
   model: llama3.2
   adjudicate: false
+  circuit_failures: 3
+  circuit_cooldown: 30
+  max_concurrency: 4
 ```
+
+`wardcat check-config policy.yaml` runs a file through every validation the
+library has without building a guard.
