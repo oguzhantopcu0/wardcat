@@ -75,13 +75,15 @@ if guard.is_sensitive(text):
   it's recorded on `ScanResult.warnings` instead of failing silently.
 - **Safe logging** — `result.redacted()` returns a PII-free dict.
 
-!!! tip "New in 1.2.0"
-    Eight more checksum-verified filters (crypto wallets, NHS numbers, ABA
-    routing numbers, IMEI, Dutch BSN and Polish PESEL), the `min_confidence`
-    floor that places them, `USERNAME` and credentials written into a sentence,
-    and `LOCATION` / `NRP` split out of the NER layer so place names and GDPR
-    Article 9 data no longer arrive typed as something else. The
-    [changelog](changelog.md) has the reasoning behind each one.
+!!! tip "New in 1.2.1"
+    A `wardcat` command line, [presets](guide/presets.md) for KVKK, GDPR,
+    PCI DSS and secrets, the reversible `surrogate` action, `classify()` beside
+    `is_sensitive()`, and scans that refuse to fail quietly: `with_strict()`,
+    a circuit breaker for a dead LLM backend, `Violation.source` naming the
+    layer that found each span, and a per-entity `min_confidence`. Batched
+    `scan_batch` runs SpaCy in one pass, and an opt-in `HIGH_ENTROPY_STRING`
+    catches secrets with no known prefix. The [changelog](changelog.md) has the
+    reasoning behind each one.
 
 ## Where next
 
