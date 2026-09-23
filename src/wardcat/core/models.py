@@ -21,6 +21,9 @@ class RedactedViolation(TypedDict):
     action: str
     replacement: str | None
     confidence: float
+    source: str
+    sanitized_start: int
+    sanitized_end: int
 
 
 class RedactedResult(TypedDict):
@@ -57,6 +60,26 @@ class Action(str, Enum):
     the real values back into whatever comes out the other side — an LLM's answer,
     typically. Unlike ``hash``/``redact``/``mask`` this keeps the originals in
     memory: the result object is as sensitive as the input."""
+    SURROGATE = "surrogate"
+    """**Reversible** replacement with a realistic stand-in of the same shape — a
+    name from the guard's locale for a name, an address on a reserved domain for
+    an e-mail, a Luhn-valid number for a card. The same value gets the same
+    surrogate under the same salt, and no two values share one within a scan.
+    A type without a generator falls back to ``tokenize`` and the violation says
+    so. Surrogates look real, which is the point and the risk: see the security
+    guide."""
+
+
+class Layer(str, Enum):
+    """A detector layer, as named in ``add_entity(..., layers=[...])`` and in
+    :attr:`Violation.source`."""
+
+    REGEX = "regex"
+    """Deterministic patterns and checksums."""
+    NER = "ner"
+    """SpaCy named-entity recognition."""
+    LLM = "llm"
+    """The on-prem language model."""
 
 
 class Entity(str, Enum):
@@ -119,6 +142,12 @@ class Entity(str, Enum):
     LOCATION = "LOCATION"
     NRP = "NRP"
     USERNAME = "USERNAME"
+    HIGH_ENTROPY_STRING = "HIGH_ENTROPY_STRING"
+    """A long token that looks like a secret with no known prefix and no keyword
+    beside it: 32+ base64-shaped characters with high Shannon entropy, or a hex
+    digest longer than a git SHA. Scored ``0.70``, under the default floor, so it
+    only acts when enabled with its own ``min_confidence``: it is a guess by
+    construction, and long tokens of many innocent kinds look the same."""
 
 
 # Known entity types — for typo checking and IDE support.
@@ -173,6 +202,44 @@ class Violation:
 
         certain = [v for v in result.violations if v.confidence >= 1.0]  # checksum only
     """
+    source: str = ""
+    """Which layer found it: ``"regex"``, ``"ner"``, ``"llm"``, ``"denylist"``,
+    ``"propagation"`` (a copy of a value another layer found), or ``"custom"``
+    for a third-party detector that did not name itself. Where two layers found
+    the same span, the one that won the overlap."""
+    sanitized_start: int = -1
+    """Start index of :attr:`replacement` in ``sanitized_text``; equals
+    :attr:`start` shifted by the replacements before it. ``-1`` when unknown."""
+    sanitized_end: int = -1
+    """End index (exclusive) of :attr:`replacement` in ``sanitized_text``. For
+    ``warn``, which replaces nothing, the original value's position there."""
+
+
+#: The categories :meth:`~wardcat.Wardcat.classify` can name.
+SENSITIVITY_CATEGORIES: tuple[str, ...] = (
+    "pii",
+    "credentials",
+    "financial",
+    "health",
+    "special_category",
+    "business_confidential",
+)
+
+
+@dataclass(frozen=True)
+class SensitivityVerdict:
+    """What :meth:`~wardcat.Wardcat.classify` decided about a text.
+
+    ``categories`` draws from :data:`SENSITIVITY_CATEGORIES`, plus ``"unknown"``
+    when the model said the text is sensitive but its answer could not be read
+    in full — the verdict fails closed rather than clean. ``reason`` is the
+    model's own one-line justification and may quote the text: treat it as
+    sensitive as the input.
+    """
+
+    sensitive: bool
+    categories: tuple[str, ...] = ()
+    reason: str = ""
 
 
 @dataclass
@@ -212,6 +279,8 @@ class ScanResult:
     """Hashing salt inherited from the originating ``Wardcat``, so :meth:`reapply`
     can produce ``hash`` output consistent with the guard. Internal; not exposed
     by :meth:`redacted`."""
+    _locale: str = field(default="en", repr=False)
+    """Surrogate locale inherited from the guard, for :meth:`reapply`. Internal."""
 
     @property
     def is_clean(self) -> bool:
@@ -230,7 +299,8 @@ class ScanResult:
         Returns:
             A :class:`RedactedResult` (``TypedDict``) containing ``sanitized_text``,
             ``is_clean``, ``scan_error``, and violation metadata (entity_type,
-            start, end, action, replacement, confidence). Raw PII is not included.
+            start, end, action, replacement, confidence, source, and the
+            sanitized-text offsets). Raw PII is not included.
         """
         return {
             "is_clean": self.is_clean,
@@ -245,6 +315,9 @@ class ScanResult:
                     "action": v.action,
                     "replacement": v.replacement,
                     "confidence": v.confidence,
+                    "source": v.source,
+                    "sanitized_start": v.sanitized_start,
+                    "sanitized_end": v.sanitized_end,
                 }
                 for v in self.violations
             ],
@@ -371,14 +444,14 @@ class ScanResult:
             violations = [v for v in violations if v.entity_type in keep]
 
         spans = [
-            DetectedSpan(v.entity_type, v.original, v.start, v.end, v.confidence)
+            DetectedSpan(v.entity_type, v.original, v.start, v.end, v.confidence, v.source)
             for v in violations
         ]
         config = {v.entity_type: {"action": name} for v in violations}
         # A new pass produces new placeholders, so it gets its own context id —
         # the derived result must not answer for the one it came from.
         context_id = new_context_id()
-        sanitized, new_violations = Anonymizer(config, salt=self._salt).apply(
+        sanitized, new_violations = Anonymizer(config, salt=self._salt, locale=self._locale).apply(
             self.original_text, spans, context_id=context_id
         )
         return ScanResult(
@@ -389,6 +462,7 @@ class ScanResult:
             warnings=list(self.warnings),
             context_id=context_id,
             _salt=self._salt,
+            _locale=self._locale,
         )
 
     def __repr__(self) -> str:

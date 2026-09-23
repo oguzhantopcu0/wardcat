@@ -23,9 +23,12 @@ import time
 from dataclasses import dataclass
 
 from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.detectors.regex_detector import CHECKSUM_VALIDATORS
 from wardcat.llm.backends.base import BaseLLMBackend
-from wardcat.llm.prompt import build_messages
-from wardcat.utils.text import chunk_by_paragraph
+from wardcat.llm.circuit import CircuitBreaker
+from wardcat.llm.prompt import build_messages, strip_reasoning
+from wardcat.utils.logsafe import describe
+from wardcat.utils.text import chunk_by_paragraph, strip_name_suffix
 
 logger = logging.getLogger(__name__)
 
@@ -49,16 +52,16 @@ _STRUCTURAL_VALIDATORS: dict[str, re.Pattern] = {
     # Person name must consist of at least two words (first + last name).
     # Single words (e.g. "target", "customer") are LLM hallucinations → discarded.
     "PERSON": re.compile(r"^\S+(?:\s+\S+)+$"),
-    "TC_ID": re.compile(r"^\d{11}$"),
+    "TC_ID": re.compile(r"^\d(?: ?\d){10}$"),
     "IBAN": re.compile(r"^[A-Z]{2}\d{2}[A-Z0-9 ]{10,}$", re.IGNORECASE),
-    "CREDIT_CARD": re.compile(r"^[\d\s\-]{13,19}$"),
+    "CREDIT_CARD": re.compile(r"^[\d\s\-]{12,23}$"),
     "PHONE": re.compile(r"[\d\s\-\+\(\)]{7,}"),
     "IP_ADDRESS": re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$"),
     "POSTAL_CODE": re.compile(r"^\d{5}$"),
     "UUID": re.compile(
         r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
     ),
-    "SSN": re.compile(r"^\d{3}-\d{2}-\d{4}$"),
+    "SSN": re.compile(r"^\d{3}[\- ]?\d{2}[\- ]?\d{4}$"),
     "MAC_ADDRESS": re.compile(r"^(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$"),
     "JWT": re.compile(r"^eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]*$"),
     "IPv6": re.compile(
@@ -97,6 +100,7 @@ class LLMDetector(BaseDetector):
 
     # Marks this detector as the one the engine can route candidates to.
     can_adjudicate = True
+    layer = "llm"
 
     def __init__(
         self,
@@ -106,10 +110,21 @@ class LLMDetector(BaseDetector):
         timeout: int = 60,
         cache_ttl: int = 0,
         chunk_chars: int = 800,
+        breaker: CircuitBreaker | None = None,
+        max_concurrency: int = 4,
     ) -> None:
         self.backend = backend
         self.enabled_entities = enabled_entities
         self.timeout = timeout
+        # How many requests may be in flight at the backend at once, across
+        # scan_batch threads and async chunk fan-out alike. A local model
+        # server queues what it cannot run; flooding it only adds latency.
+        self.max_concurrency = max(1, int(max_concurrency))
+        self._sync_gate = threading.BoundedSemaphore(self.max_concurrency)
+        self._async_gate: asyncio.Semaphore | None = None
+        # Shared by every call on this detector, including is_sensitive(): a
+        # backend that is down is down for all of them.
+        self.breaker = breaker if breaker is not None else CircuitBreaker(0)
         self._cache_ttl = cache_ttl  # seconds; 0 = disabled
         self._chunk_chars = chunk_chars  # max chars per LLM call; 0 = disabled
         self._cache: dict[str, _CacheEntry] = {}
@@ -142,7 +157,7 @@ class LLMDetector(BaseDetector):
             chunk_cands = self._candidates_for_chunk(candidates, offset, len(chunk_text))
             messages = build_messages(chunk_text, self.enabled_entities, chunk_cands)
             try:
-                raw = self.backend.complete_messages(messages, timeout=self.timeout)
+                raw = self.complete_messages(messages)
                 entities = self._parse_llm_response(raw)
                 chunk_spans = self._locate_spans(chunk_text, entities)
                 spans.extend(self._offset_spans(chunk_spans, offset))
@@ -198,7 +213,7 @@ class LLMDetector(BaseDetector):
             chunk_cands = self._candidates_for_chunk(candidates, offset, len(chunk_text))
             messages = build_messages(chunk_text, self.enabled_entities, chunk_cands)
             try:
-                raw = await self.backend.complete_messages_async(messages, timeout=self.timeout)
+                raw = await self.complete_messages_async(messages)
                 entities = self._parse_llm_response(raw)
                 return self._offset_spans(self._locate_spans(chunk_text, entities), offset)
             # ConnectionError propagates (the whole layer is unavailable); the
@@ -223,6 +238,42 @@ class LLMDetector(BaseDetector):
                 )
 
         return spans
+
+    # ------------------------------------------------------------------
+    # Backend calls, through the circuit breaker
+    # ------------------------------------------------------------------
+
+    def complete_messages(self, messages: list[dict]) -> str:
+        """One chat call to the backend, counted by the breaker.
+
+        Raises :class:`~wardcat.llm.circuit.CircuitOpen` without calling the
+        backend while the circuit is open. Any exception the backend raises —
+        a refused connection, an HTTP timeout — counts as a failure and is
+        re-raised unchanged, so the callers' error handling is unaffected.
+        """
+        self.breaker.check()
+        with self._sync_gate:
+            try:
+                reply = self.backend.complete_messages(messages, timeout=self.timeout)
+            except Exception:
+                self.breaker.record_failure()
+                raise
+        self.breaker.record_success()
+        return reply
+
+    async def complete_messages_async(self, messages: list[dict]) -> str:
+        """Async twin of :meth:`complete_messages`."""
+        self.breaker.check()
+        if self._async_gate is None:
+            self._async_gate = asyncio.Semaphore(self.max_concurrency)
+        async with self._async_gate:
+            try:
+                reply = await self.backend.complete_messages_async(messages, timeout=self.timeout)
+            except Exception:
+                self.breaker.record_failure()
+                raise
+        self.breaker.record_success()
+        return reply
 
     # ------------------------------------------------------------------
 
@@ -282,12 +333,13 @@ class LLMDetector(BaseDetector):
         Small models sometimes add ```json ... ``` blocks or
         explanatory text; these are cleaned up with regex.
         """
-        # Strip markdown code block
-        raw = re.sub(r"```(?:json)?", "", raw).strip()
+        # Drop inline reasoning first: a bracketed aside in it would be taken for
+        # the answer. Then strip the markdown code block.
+        raw = re.sub(r"```(?:json)?", "", strip_reasoning(raw)).strip()
 
         match = _JSON_RE.search(raw)
         if not match:
-            logger.debug("No JSON array found in LLM response. Raw response: %.200r", raw)
+            logger.debug("No JSON array found in LLM response (%s)", describe(raw))
             return []
 
         try:
@@ -297,7 +349,7 @@ class LLMDetector(BaseDetector):
                 return []
             return data
         except json.JSONDecodeError as exc:
-            logger.debug("LLM response JSON parse error: %s — raw: %.200r", exc, raw)
+            logger.debug("LLM response JSON parse error: %s (%s)", exc, describe(raw))
             return []
 
     def _locate_spans(self, text: str, entities: list[dict]) -> list[DetectedSpan]:
@@ -312,7 +364,9 @@ class LLMDetector(BaseDetector):
 
         for item in entities:
             entity_type = str(item.get("type", "")).upper().strip()
-            entity_text = str(item.get("text", "")).strip()
+            # A model quoting "Ahmet Yılmaz'ın" means the name; locating the bare
+            # name also covers its other occurrences, in any grammatical case.
+            entity_text, _, _ = strip_name_suffix(str(item.get("text", "")).strip(), 0, 0)
 
             if not entity_text or entity_type not in self.enabled_entities:
                 continue
@@ -322,9 +376,20 @@ class LLMDetector(BaseDetector):
             validator = _STRUCTURAL_VALIDATORS.get(entity_type)
             if validator and not validator.search(entity_text):
                 logger.debug(
-                    "Hallucination filter: %s %r failed format validation",
+                    "Hallucination filter: %s (%s) failed format validation",
                     entity_type,
-                    entity_text,
+                    describe(entity_text),
+                )
+                continue
+            # A model reads "4111 1111 1111 1112" as a card and "TR00 0000 …" as an
+            # IBAN as readily as the real thing. The regex layer refuses both on
+            # their checksum; a model proposal gets the same test.
+            checksum = CHECKSUM_VALIDATORS.get(entity_type)
+            if checksum is not None and not checksum(entity_text):
+                logger.debug(
+                    "Hallucination filter: %s (%s) failed its checksum",
+                    entity_type,
+                    describe(entity_text),
                 )
                 continue
 

@@ -45,6 +45,21 @@ def _httpx() -> Any:
         ) from None
 
 
+def _generate_body(model: str, prompt: str) -> dict[str, Any]:
+    return {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        # Reasoning models (Qwen3, DeepSeek-R1) think before answering unless told
+        # not to. wardcat asks for a bare JSON list or a single word, so the
+        # reasoning is pure cost: on qwen3:14b on an M1 it took a one-sentence scan
+        # from 10 s to over 70 s, past the default timeout. Ollama ignores the
+        # flag for models that do not think.
+        "think": False,
+        "options": {"temperature": 0},  # deterministic output
+    }
+
+
 class OllamaBackend(BaseLLMBackend):
     """
     Ollama REST API backend.
@@ -95,12 +110,7 @@ class OllamaBackend(BaseLLMBackend):
         try:
             response = httpx.post(
                 f"{self.base_url}/api/generate",
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0},  # deterministic output
-                },
+                json=_generate_body(self.model, prompt),
                 timeout=timeout,
             )
             response.raise_for_status()
@@ -125,12 +135,7 @@ class OllamaBackend(BaseLLMBackend):
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.base_url}/api/generate",
-                    json={
-                        "model": self.model,
-                        "prompt": prompt,
-                        "stream": False,
-                        "options": {"temperature": 0},
-                    },
+                    json=_generate_body(self.model, prompt),
                     timeout=timeout,
                 )
                 response.raise_for_status()

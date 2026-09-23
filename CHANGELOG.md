@@ -9,24 +9,241 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Strict mode.** `with_strict()` (YAML `strict: true`) turns a degraded scan
+  into a `DegradedScanError` instead of a result with warnings — at build time
+  for a model that did not load, at scan time for a backend that went down, and
+  from `scan_batch`, which otherwise files the error under `scan_error`. The
+  exception carries the warnings and the partial result. For pipelines where a
+  document stored with names in it is worse than no document.
+
+- **`classify()`: the sensitivity judgement with its categories.**
+  `Wardcat.classify(text)` returns a `SensitivityVerdict` — `sensitive`, the
+  `categories` found (`pii`, `credentials`, `financial`, `health`,
+  `special_category`, `business_confidential`) and the model's one-line
+  `reason` — so a policy can route on the kind. An answer that cannot be read
+  is sensitive with the category `unknown`. It is its own prompt, not the
+  source of `is_sensitive()`: on the 100-text sensitivity benchmark with
+  qwen3:14b it makes 1 false alarm against `is_sensitive()`'s 11 and names the
+  right category every time, but misses 8 sensitive texts against 1 (mostly
+  confidential business plans) and takes 17 s a text against 2 s. Use it to
+  route what the gate stops, not as the gate. Its prompt names placeholders,
+  format examples, public service numbers and reference numbers as not
+  sensitive; the `is_sensitive()` prompt is unchanged, since a change to the
+  gate ships only with its own measurement.
+
+- **`scan_batch` runs batched layers in one pass.** SpaCy NER sees the whole
+  list through `nlp.pipe`; the LLM layer runs per text in the worker pool,
+  bounded at the backend by `with_llm(max_concurrency=4)` — across
+  `scan_batch` threads and async chunk fan-out alike, where the async batch
+  previously fanned out one request per item. Results are unchanged, per-item
+  errors still land in `scan_error`, and strict mode still raises. A detector
+  that batches implements `BaseDetector.detect_many`. Measured on 200 samples
+  of the Presidio corpus with regex + `en_core_web_lg`: 1.43× the throughput
+  of a loop over `scan()`, identical output.
+
+- **An opt-in `HIGH_ENTROPY_STRING` detector.** A long base64-shaped run with
+  the entropy of a generated key, or a hex digest longer than a git SHA, with
+  no prefix and no keyword to go on. Off unless enabled and scored `0.70`,
+  under the default floor, so it acts only with its own `min_confidence`.
+  Measured with it on: no hit on the 100 hard cases, none on the 1,500-sample
+  Presidio corpus, 117 on the 2,891 Gretel finance documents — 18 of them
+  API keys Gretel labels as such, most of the rest unlabelled wallet
+  addresses and UUIDs, a few EDI segments. Base64 with `/` is not matched, so
+  URL paths are not candidates.
+
+- **A `surrogate` action.** A realistic stand-in of the same shape instead of
+  a placeholder: a name from the guard's locale (`with_locale("tr")`, YAML
+  `locale`), an e-mail on a reserved domain, a phone number keeping its country
+  and area code, a Luhn-valid card, a mod-97-valid IBAN, a checksum-valid TC
+  number, a TEST-NET IP. Deterministic per salt, unique within a scan, and
+  reversible through `restore()`. A type without a generator falls back to
+  `tokenize` and the violation says so. Surrogates look real; the security
+  guide says what that costs.
+
+- **Presets.** `with_preset("kvkk")` (also `"gdpr"`, `"pci_dss"`,
+  `"hipaa_lite"`, `"secrets_only"`; YAML `preset:`) enables a starting policy
+  modelled on a data-protection regime — an entity → action mapping that
+  switches no layer on and claims no compliance. Each one documents what it
+  leaves out. `Wardcat.supported_presets()` lists them.
+
+- **A `wardcat` command.** `wardcat scan [file|-]` with `--preset`,
+  `--entity TYPE[=ACTION]`, `--config`, `--ner`, `--llm`, `--strict` and
+  `--json`; `wardcat check-config policy.yaml` runs every validation including
+  the ReDoS screen; `wardcat entities` lists the types. Exit codes say clean,
+  found, config error or degraded. The salt is read from an environment
+  variable named by `--salt-env`, never from an argument, and nothing found is
+  ever printed.
+
+- **Every violation names the layer that found it.** `Violation.source` (and
+  `DetectedSpan.source`) is `"regex"`, `"ner"`, `"llm"`, `"denylist"`,
+  `"propagation"` or `"custom"`, and is carried through `redacted()`,
+  `reapply()` and the restore report. A `Layer` enum is accepted wherever a
+  layer name was (`add_entity(..., layers=[Layer.LLM])`,
+  `supported_entities(Layer.NER)`). The benchmark now breaks TP/FP down by layer.
+
+- **Where a replacement sits in the output.** `Violation.sanitized_start` and
+  `sanitized_end` locate the replacement in `sanitized_text`, for highlighting
+  in a UI; `start`/`end` keep pointing at the original.
+
+- **A confidence floor per entity.** `add_entity(..., min_confidence=0.6)`,
+  the `add_entities` spec form, and `entities.X.min_confidence` in YAML let one
+  weak-checksum type through while the rest keep the global floor.
+  `entity_policy(detailed=True)` reports it.
+
+- **A circuit breaker on the LLM backend.** After `circuit_failures`
+  consecutive failures (default 3) the layer is skipped without a call for
+  `circuit_cooldown` seconds (default 30), then tried once. A backend outage no
+  longer costs every scan the full request timeout. Skipped scans carry a
+  warning naming the open circuit; `is_sensitive()` raises `CircuitOpen`.
+  `circuit_failures=0` disables it.
+
+- **A labelled phone number is found in any national format, with no
+  `phone_regions`.** The built-in pattern refuses a bare `905-674-3793` or
+  `0490 75 40 81`, rightly: a digit run is an order number as often as a phone
+  number. The label settles it — `Phone:`, `Mobile:`, `Fax:`, `call me at …`,
+  `telefon: …`, `Handy:`, or `781 1704 office` in a signature block — so a
+  number next to one is now reported, at `0.90`. The value must hold 7–15 digits
+  and must not be a date; phrases that merely tend to precede a number ("messages
+  to", "not answering at") are deliberately not cues.
+
+- **Troy cards.** Turkey's domestic card scheme (`9792 …`) was not in the card
+  pattern, so a Luhn-valid Troy number went undetected. It is matched now, and
+  still has to pass Luhn.
+
+- **A TC number written in groups, `111 654 670 34`.** Only the 3-3-3-2
+  grouping forms and printouts use, and the checksum still decides.
+
+- **An SSN without dashes, when it is labelled.** `social security number
+  412 76 9038` and `SSN: 412769038` are found at `0.90`. An unlabelled nine-digit
+  run is still refused.
+
+### Changed
+
+- **Literal denylist values are matched in one pass.** Ten thousand names
+  cost one scan of the text rather than ten thousand; the spans found are
+  the same as before (a test keeps the old search as the oracle). A value
+  listed under two entity types keeps the first and logs a warning.
+
+### Security
+
+- **No log line carries a value from the scanned text.** The NER filters
+  logged the span they dropped, the regex layer logged a match that failed its
+  checksum, and the LLM layer logged the model's raw reply — all at `DEBUG`,
+  all containing the PII being scanned. Values are now logged as their entity
+  type and length only. A test scans PII at `DEBUG` and asserts none of it
+  reached the log, and a static check walks every `logger` call for a
+  text-bearing argument.
+
+- **The ReDoS check on your own regex patterns now works.** `custom_patterns`
+  were run against one pathological input in a thread with a 0.5 s timeout.
+  Python's `re` holds the GIL for a whole match and cannot be interrupted, so
+  the timeout could not fire until the match was over: on `(a+)+$` the check
+  **hung configuration loading outright**, and it passed `(\d+)+$` and
+  `(\w+\s?)+$` because it only ever tried a run of `a`.
+
+  Patterns are now screened when they are configured. The parse tree is searched
+  for a variable-width repeat nested in another repeat, or alternation inside a
+  repeat that can consume the same text; each suspect is then run against inputs
+  built from its shape in a child interpreter that the kernel kills after one
+  second. Most patterns have no suspect shape and never start a process. A
+  pattern shown to be catastrophic raises `ConfigError` — so a configuration that
+  loaded before, or hung, can now refuse to load, and only for that reason.
+
+- **Denylist patterns get the same screening, from YAML and from
+  `add_denylist()`.** YAML patterns were only compiled; `add_denylist()` checked
+  nothing at all, so `(a+)+$` was accepted and a 28-character input then took
+  **9 seconds per scan**. Invalid regex added through `add_denylist()` is refused
+  now too, where it used to be skipped on every scan without a word. Patterns are
+  compiled once rather than on every scan.
+
+- The scan-time timeout around custom patterns is removed. It bounded nothing,
+  for the same reason, and discarded the matches of any pattern that ran past two
+  seconds.
+
 ### Fixed
 
-- **A pre-Ampere CUDA card no longer gets a dtype it cannot run.** The
-  Transformers backend hardcoded `bfloat16`; those cards have no bf16 support at
-  all, and `torch.cuda.is_bf16_supported()` says so, so they get `float16` now.
+- **NER spans are cut at the edges where models run over.** Of a span that
+  crosses a line break — into the next field in an address block
+  (`Anna Josefsen\nAddress`), back over a heading (`Renewals Team\nDalton Inc.`)
+  — the line with the most capitalised words is kept, a legal form winning for
+  an organisation. A person's name that runs into markup or a record delimiter
+  (`Carolyn Hill</name`, `Dawn Perkins|560=726`) is recovered as the longest
+  delimiter-free fragment instead of being dropped for its digits; the same
+  rule on organisations kept field labels as companies and was not adopted.
+  A short fixed list of leading words is trimmed — articles, greetings,
+  salutations: `The`, `Dear`, `Sayın`, `dün`. Nothing outside the list is
+  trimmed, since a word too few leaks part of a name; the Turkish `md` model's
+  sentence-initial run-ons (`Raporu Ayşe Demir`) are therefore left as they
+  are. Tuned on the Presidio corpus, validated on the held-out Gretel corpus:
+  there F1 0.504 → 0.508, recall 72.1 % → 73.1 %, PII characters removed
+  74.7 % → 75.8 %; on the Presidio corpus F1 0.759 → 0.758.
 
-- **`with_llm(dtype=...)` chooses the weight dtype.** A torch dtype name
-  (`"float16"`, `"bfloat16"`, `"float32"`); an unknown name is refused rather
-  than silently ignored.
+- **The LLM layer's card, IBAN and TC numbers must pass their checksums.** A
+  model reads `4111 1111 1111 1112` as a card and `TR00 0000 …` as an IBAN as
+  readily as a real one; the regex layer refuses both, and the model's proposal
+  now gets the same test.
 
-  The default stays `bfloat16` everywhere else, including Apple Silicon, and
-  that is worth writing down because the obvious change does not work. Metal has
-  no bf16 arithmetic unit and emulates it, so fp16 ought to be faster there —
-  but loading a model as `float16` with `device_map="auto"` on MPS **segfaults
-  the interpreter** on the torch/transformers versions this package supports,
-  where the same model as `bfloat16` answers in 13 seconds (measured on an M1
-  with SmolLM2-135M-Instruct). A default that crashes is worse than one that is
-  merely slow. The argument is there for anyone whose stack does better.
+- **Form-field labels and postal designators are no longer organisations.**
+  `SSN`, `IBAN`, `Phone`, `P.O. Box`, `Suite` and `APO AP` next to a value were
+  reported as `ORG`. So were spans with fewer than two letters, and street names
+  whose last word is a designator (`Pollen Crescent`, `Koepenicker Str`).
+
+- **A name gets the same placeholder in every grammatical case.** Turkish writes
+  case endings on proper nouns after an apostrophe, and the Turkish SpaCy models
+  put the ending inside the entity: `Ahmet Yılmaz'ın`, `İstanbul'da`,
+  `Türk Telekom'un`. The ending became part of the value, so one person hashed
+  differently in every sentence — an index built from those chunks saw a new
+  person each time. NER and LLM spans now end at the name, and the ending stays
+  in the text: `[PERSON:…]'ın`. The English possessive (`John's`) is handled the
+  same way.
+
+  A name whose apostrophe belongs to it is kept whole: the ending must be lower
+  case and contain a vowel, and at least two letters must precede it, so
+  `O'Brien` and `D'Angelo` are untouched and `O'Brien'ın` becomes `O'Brien`.
+
+- **The LLM layer works with reasoning models on Ollama.** Qwen3 and
+  DeepSeek-R1 think before answering unless asked not to, and wardcat never
+  asked. On `qwen3:14b` (Ollama 0.33, M1 16 GB) a one-sentence scan took between
+  71 and 492 seconds with thinking and 10–12 seconds without it, with identical
+  detections — so under the default timeout the layer mostly did not run at all.
+  Generate calls now send `"think": false`, which Ollama ignores for models that
+  do not think.
+
+  Reasoning that still arrives inline as `<think>…</think>` — from an Ollama
+  that predates the flag, or an OpenAI-compatible server that does not separate
+  it — is removed before parsing. Left in, a bracketed aside was taken for the
+  JSON answer, and a "no" written while thinking could decide an
+  `is_sensitive()` verdict.
+
+- **A layer that could not be built shows up in `warnings`, on every result.**
+  The README promises that a non-empty `warnings` means a degraded scan, and that
+  held for a layer failing mid-scan. A SpaCy model that would not load, SpaCy not
+  being installed at all, or the `phonenumbers` extra missing for
+  `with_phone_regions()` was only logged — `John Smith` came back clean with
+  nothing in `warnings`. Each of those is now on every result, since every scan
+  runs without the layer; the log line is still written once per build.
+
+- **A missing SpaCy model replaced by another is reported, and a change of
+  language is called out.** Asking for a model that is not installed quietly
+  loaded the first installed model instead — in practice a Turkish model reading
+  English text. The substitution still happens, and the warning names both models.
+
+- `scan_batch()` now logs the one-time configuration warnings `scan()` logs, such
+  as an entity enabled with no layer that detects it; it called the engine
+  directly and skipped them. An item that fails inside a batch keeps the build
+  warnings on its result.
+
+- Documentation that had fallen behind the code: `SECURITY.md` still described a
+  pre-1.0 support policy, `CONTRIBUTING.md` described overlap resolution as
+  "longest wins" and listed registration steps that no longer exist, the MCP
+  server guide said wardcat was not on PyPI, and the config loader's docstring
+  referred to a CLI the package does not have. A test now keeps the source-tree
+  version fallback in step with `pyproject.toml`.
+
+- The two dtype entries previously listed here shipped in 1.2.0 and have moved to
+  that release.
 
 ## [1.2.0] — 2026-09-08
 
@@ -219,6 +436,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guide.
 
 ### Fixed
+
+- **A pre-Ampere CUDA card no longer gets a dtype it cannot run.** The
+  Transformers backend hardcoded `bfloat16`; those cards have no bf16 support at
+  all, and `torch.cuda.is_bf16_supported()` says so, so they get `float16` now.
+
+- **`with_llm(dtype=...)` chooses the weight dtype.** A torch dtype name
+  (`"float16"`, `"bfloat16"`, `"float32"`); an unknown name is refused rather
+  than silently ignored.
+
+  The default stays `bfloat16` everywhere else, including Apple Silicon, and
+  that is worth writing down because the obvious change does not work. Metal has
+  no bf16 arithmetic unit and emulates it, so fp16 ought to be faster there —
+  but loading a model as `float16` with `device_map="auto"` on MPS **segfaults
+  the interpreter** on the torch/transformers versions this package supports,
+  where the same model as `bfloat16` answers in 13 seconds (measured on an M1
+  with SmolLM2-135M-Instruct). A default that crashes is worse than one that is
+  merely slow. The argument is there for anyone whose stack does better.
 
 - **`phone_regions` was rejected as an unknown YAML key.** It has been a valid
   configuration key since the libphonenumber work, but was never added to the

@@ -20,3 +20,9 @@ site/
 
 # Local Claude Code config / agents (machine-local, not part of the package)
 .claude/
+
+# Benchmark downloads and outputs (benchmarks/README.md)
+benchmarks/data/
+.DS_Store
+benchmarks/preds/
+benchmarks/results/

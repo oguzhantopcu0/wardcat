@@ -51,7 +51,8 @@ Wardcat(config_path="policy.yaml")                              # replace it who
 ## Phone regions
 
 `PHONE` is matched by a precision-first pattern covering TR/FR/DE national formats
-plus E.164. For national formats elsewhere, name the regions you serve and
+plus E.164, and by the label beside a number (`Phone:`, `call me at …`) in any
+format. For national formats elsewhere, name the regions you serve and
 detection moves to libphonenumber:
 
 ```python
@@ -83,7 +84,12 @@ other one, so those uncued matches are found but left alone:
 ```python
 guard.with_min_confidence(0.6)    # act on uncued matches too
 guard.with_min_confidence(0.95)   # checksummed and structural only
+guard.add_entity(Entity.BANK_ROUTING, Action.HASH, min_confidence=0.6)  # this one alone
 ```
+
+An entity's own floor (also `entities.X.min_confidence` in YAML) overrides the
+global one for that entity and survives a later `add_entity` that does not
+mention it; `entity_policy(detailed=True)` shows it.
 
 The floor is applied **after** overlap resolution, so a stronger span still wins
 its overlap first: a phone number that also satisfies the NHS checksum resolves
@@ -109,6 +115,11 @@ guard.add_allowlist(["no-reply@example.com"])                 # never flag
 guard.add_denylist([{"value": "ProjectX", "entity_type": "CUSTOM_SECRET"}])  # always flag
 ```
 
+Literal denylist values are matched in a single pass however many there are, so
+a customer list of ten thousand names costs one scan of the text, not ten
+thousand. Regex entries (`{"pattern": ...}`) each run on their own. A value
+listed under two entity types keeps the first, with a warning.
+
 ## Degraded scans
 
 If a layer cannot run (most commonly the LLM backend being unreachable), the scan
@@ -119,6 +130,44 @@ res = guard.scan(text)
 if res.warnings:
     logger.warning("PII scan degraded: %s", res.warnings)
 ```
+
+### Strict mode: refuse a degraded scan
+
+A pipeline that stores what it scans — an indexer, an ETL job — wants the
+opposite of a partial result. `with_strict()` (YAML: `strict: true`) makes any
+such condition raise `DegradedScanError` instead: at build time for what is
+known then (a SpaCy model that did not load, a missing `phonenumbers`), at scan
+time for the rest (an LLM backend that went down), and from `scan_batch` too,
+which otherwise files errors under `scan_error`.
+
+```python
+from wardcat import DegradedScanError
+
+guard = Wardcat(salt="s").with_ner(language="tr").with_strict()
+try:
+    result = guard.scan(chunk)
+except DegradedScanError as exc:
+    exc.warnings   # what did not run
+    exc.result     # the partial ScanResult, or None when the guard refused to build
+```
+
+### The LLM circuit breaker
+
+An unreachable backend would otherwise cost every scan the full `timeout`
+before the layer is skipped. After `circuit_failures` consecutive backend
+failures (default 3) the layer is skipped without a call for `circuit_cooldown`
+seconds (default 30), then one call is tried. Each skipped scan carries a
+warning naming the open circuit — it is a degraded scan like any other, and
+strict mode raises on it — and `is_sensitive()` raises `CircuitOpen` rather
+than answering. `circuit_failures=0` turns the breaker off.
+
+```python
+guard.with_llm(model="qwen3:14b", circuit_failures=3, circuit_cooldown=30)
+```
+
+`max_concurrency` (default 4) bounds how many requests are in flight at the
+backend at once, across `scan_batch` threads and async chunk fan-out; a local
+model server queues what it cannot run, so more only adds latency.
 
 ## YAML reference
 

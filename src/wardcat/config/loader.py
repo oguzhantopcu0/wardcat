@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import concurrent.futures
 import logging
 import re
 from pathlib import Path
@@ -11,6 +10,7 @@ import yaml
 from wardcat.core.actions import registered_actions
 from wardcat.exceptions import ConfigError
 from wardcat.llm.backends.registry import supported_backends
+from wardcat.utils.regex_safety import is_catastrophic
 
 logger = logging.getLogger(__name__)
 
@@ -116,29 +116,23 @@ _KNOWN_CONFIG_KEYS = frozenset(
         "normalize_confusables",
         "phone_regions",
         "min_confidence",
+        "strict",
+        "preset",
+        "locale",
     }
 )
 
 
-def _check_redos(pattern: re.Pattern, timeout: float = 0.5) -> bool:
-    """Return True if the pattern appears safe, False if it times out (potential ReDoS).
+def _check_redos(pattern: re.Pattern) -> bool:
+    """Return True if the pattern is safe to run on untrusted text.
 
-    Tests the compiled regex against a known pathological input (repeated 'a's followed
-    by a non-matching character) to detect catastrophic backtracking at config load time.
-    This prevents user-supplied custom patterns from locking up the server at runtime.
-
-    Note: uses a thread with timeout; the thread may continue running briefly after
-    the timeout, but the main thread is not blocked beyond the timeout window.
+    User patterns run at scan time with no way to stop them, so this is where a
+    catastrophic one has to be caught. See :mod:`wardcat.utils.regex_safety`.
     """
-    test_input = "a" * 50 + "b"
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(pattern.search, test_input)
-        try:
-            future.result(timeout=timeout)
-            return True
-        except concurrent.futures.TimeoutError:
-            logger.warning("Pattern %r timed out during ReDoS check — rejecting.", pattern.pattern)
-            return False
+    if is_catastrophic(pattern):
+        logger.warning("Pattern %r backtracks catastrophically — rejecting.", pattern.pattern)
+        return False
+    return True
 
 
 def load_config(path: str | Path | None = None) -> dict[str, Any]:
@@ -151,8 +145,7 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
 
     The library does **not** read environment variables — pass configuration
     explicitly via :class:`~wardcat.Wardcat` constructor arguments or a YAML
-    file. (The ``wardcat`` CLI, being an application, does read ``WARDCAT_*``
-    env vars as defaults.)
+    file.
 
     If ``"default"`` is passed as ``path``, the bundled
     ``wardcat/config/default.yaml`` file is used.
@@ -193,6 +186,21 @@ def validate_config(config: dict[str, Any]) -> None:
     _validate_entity_map(config.get("entities", {}), "entity")
     _validate_custom_patterns(config.get("custom_patterns", {}))
     _validate_min_confidence(config.get("min_confidence", 0.8))
+    if not isinstance(config.get("strict", False), bool):
+        raise ConfigError(f"'strict' must be true or false, got {config['strict']!r}.")
+    if "locale" in config:
+        from wardcat.surrogates import SUPPORTED_LOCALES
+
+        if config["locale"] not in SUPPORTED_LOCALES:
+            raise ConfigError(
+                f"'locale' must be one of {', '.join(SUPPORTED_LOCALES)}, got {config['locale']!r}."
+            )
+    if "preset" in config:
+        from wardcat.presets import get_preset
+
+        if not isinstance(config["preset"], str):
+            raise ConfigError(f"'preset' must be a preset name, got {config['preset']!r}.")
+        get_preset(config["preset"])  # raises for an unknown name
     _validate_allowlist(config.get("allowlist", []))
     _validate_denylist(config.get("denylist", []))
     _validate_llm_detector(config.get("llm_detector", {}))
@@ -225,6 +233,8 @@ def _validate_entity_map(entities: dict[str, Any], label: str) -> None:
                 f"got {type(entity_cfg).__name__}."
             )
         _validate_action(entity_cfg.get("action", "warn"), f"{label}: {entity_name}")
+        if "min_confidence" in entity_cfg:
+            _validate_min_confidence(entity_cfg["min_confidence"])
 
 
 def _validate_custom_patterns(custom_patterns: dict[str, Any]) -> None:
@@ -295,11 +305,16 @@ def _validate_denylist(denylist: Any) -> None:
                     f"got {type(entry['pattern']).__name__}"
                 )
             try:
-                re.compile(entry["pattern"])
+                compiled = re.compile(entry["pattern"])
             except re.error as exc:
                 raise ConfigError(
                     f"Denylist entry 'pattern' {entry['pattern']!r} is not valid regex: {exc}"
                 ) from exc
+            if not _check_redos(compiled):
+                raise ConfigError(
+                    f"Denylist entry 'pattern' {entry['pattern']!r} may cause catastrophic "
+                    "backtracking (ReDoS). Simplify the pattern or remove nested quantifiers."
+                )
 
 
 def _validate_llm_detector(llm_cfg: dict[str, Any]) -> None:
@@ -313,6 +328,23 @@ def _validate_llm_detector(llm_cfg: dict[str, Any]) -> None:
     timeout = llm_cfg.get("timeout", 60)
     if not isinstance(timeout, (int, float)) or timeout <= 0:
         raise ConfigError(f"Invalid llm_detector.timeout: {timeout!r} (must be a positive number)")
+
+    failures = llm_cfg.get("circuit_failures", 3)
+    if not isinstance(failures, int) or isinstance(failures, bool) or failures < 0:
+        raise ConfigError(
+            f"Invalid llm_detector.circuit_failures: {failures!r} (must be an integer >= 0; "
+            "0 disables the circuit breaker)"
+        )
+    concurrency = llm_cfg.get("max_concurrency", 4)
+    if not isinstance(concurrency, int) or isinstance(concurrency, bool) or concurrency < 1:
+        raise ConfigError(
+            f"Invalid llm_detector.max_concurrency: {concurrency!r} (must be an integer >= 1)"
+        )
+    cooldown = llm_cfg.get("circuit_cooldown", 30)
+    if not isinstance(cooldown, (int, float)) or isinstance(cooldown, bool) or cooldown < 0:
+        raise ConfigError(
+            f"Invalid llm_detector.circuit_cooldown: {cooldown!r} (must be a number of seconds >= 0)"
+        )
 
     _validate_entity_map(llm_cfg.get("entities", {}), "llm_detector.entities")
 

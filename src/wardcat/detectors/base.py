@@ -20,6 +20,9 @@ class DetectedSpan:
     confidence: float = 1.0
     """Detection confidence in [0.0, 1.0]. Regex/checksum detections are 1.0;
     NER and LLM detections are 0.85 (model-based, not fully deterministic)."""
+    source: str = ""
+    """The layer that produced the span. A detector may leave it empty; the
+    engine then stamps :attr:`BaseDetector.layer`."""
 
 
 class BaseDetector(ABC):
@@ -39,6 +42,17 @@ class BaseDetector(ABC):
     #: candidate spans (currently the LLM detector). The engine reads this flag.
     can_adjudicate: bool = False
 
+    #: The name this detector's spans carry in ``Violation.source``. Built-in
+    #: detectors use their layer name; a third-party detector that does not set
+    #: it is reported as ``"custom"``.
+    layer: str = "custom"
+
+    #: Problems found while building the detector that leave it covering less
+    #: than was configured — an optional package that is missing, say. The engine
+    #: copies them into every result's ``warnings``, because each of those scans
+    #: really did run with less coverage than the caller asked for.
+    build_warnings: tuple[str, ...] = ()
+
     @abstractmethod
     def detect(self, text: str, candidates: list[DetectedSpan] | None = None) -> list[DetectedSpan]:
         """Scan *text* and return the spans found.
@@ -47,6 +61,14 @@ class BaseDetector(ABC):
             adjudicating detectors (``can_adjudicate=True``); others ignore it.
         """
         ...
+
+    def detect_many(self, texts: list[str]) -> list[list[DetectedSpan]]:
+        """Scan several texts; the default is one :meth:`detect` per text.
+
+        A detector whose model runs faster over a batch — SpaCy's ``nlp.pipe``,
+        say — overrides this. The result has one span list per input, in order.
+        """
+        return [self.detect(text) for text in texts]
 
     async def detect_async(
         self, text: str, candidates: list[DetectedSpan] | None = None

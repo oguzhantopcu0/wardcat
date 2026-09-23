@@ -70,11 +70,11 @@ if guard.is_sensitive(text):
 - **Hybrid detection** — Regex + SpaCy NER + on-prem LLM (Ollama, vLLM, OpenAI-compatible, HuggingFace Transformers)
 - **Semantic sensitivity gate** — `is_sensitive(text) → bool`: a holistic yes/no on whether text is safe to send onward (LLM-only), catching confidential content the typed detectors miss (unreleased financials, deal terms, a confidential project); optional per-language prompt
 - **Ensemble adjudication** (optional) — the LLM verifies/relabels/drops regex & NER candidates and adds what they missed, in one call; deterministic regex results are always protected
-- **Five actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt; the default when `action` is omitted), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking), `tokenize` (`[TYPE_1]` — **reversible**, see [reversible masking](#reversible-masking-mask-on-the-way-out-restore-on-the-way-back))
-- **Checksum validation** — TC_ID (Nüfus İdaresi), IBAN (mod-97), CREDIT_CARD (Luhn), Bitcoin (Base58Check / bech32), NHS (mod-11), ABA routing (mod-10), IMEI (Luhn) and every EU national-ID scheme are verified before flagging — eliminates false positives
+- **Six actions** — `warn` (keep text, report only), `hash` (`[TYPE:16hex]` via SHA-256 + salt; the default when `action` is omitted), `redact` (`[TYPE]` label, no hash), `mask` (entity-aware partial masking), `tokenize` (`[TYPE_1]` — **reversible**, see [reversible masking](#reversible-masking-mask-on-the-way-out-restore-on-the-way-back)), `surrogate` (a realistic stand-in of the same shape — a name for a name, a Luhn-valid number for a card — deterministic per salt and reversible; see [surrogates](https://docs.wardcat.com/guide/reversible/#surrogates-realistic-stand-ins))
+- **Checksum validation** — TC_ID (Nüfus İdaresi), IBAN (mod-97), CREDIT_CARD (Luhn, including Troy), Bitcoin (Base58Check / bech32), NHS (mod-11), ABA routing (mod-10), IMEI (Luhn) and every EU national-ID scheme are verified before flagging — eliminates false positives
 - **Rainbow table protection** — user-defined salt for all hashes
 - **Two APIs** — method chaining (programmatic) and YAML (declarative)
-- **Async & batch** — `scan_async` / `scan_batch` / `is_sensitive_async`; concurrent requests overlap (native async LLM I/O), one shared guard is safe to reuse across scans
+- **Async & batch** — `scan_async` / `scan_batch` / `is_sensitive_async`; `scan_batch` runs SpaCy over the whole list in one `nlp.pipe` pass and bounds LLM requests in flight; one shared guard is safe to reuse across scans
 - **Multilingual support** — Turkish, English, German, and French for names, addresses, birth dates, and phone numbers; plus Spanish, Italian, Dutch address patterns; TC_ID, IBAN, SSN, NIN, DNI/NIE, UK postcodes, US ZIP+4, EU VAT numbers and more
 - **Secret detection** — API keys and tokens (OpenAI, Anthropic, Stripe, AWS, Google, GitHub incl. fine-grained PATs, GitLab, Slack, Twilio, SendGrid, npm, Hugging Face, Shopify, DigitalOcean), Azure storage keys, Sentry DSNs, connection-string passwords and PEM private keys
 - **Passport detection** — contextual passport number detection (regex keyword-based + LLM) for any country
@@ -133,8 +133,13 @@ Or download a model yourself with SpaCy's own CLI:
 
 ```bash
 uv run python -m spacy download en_core_web_sm     # English (recommended)
-uv run python -m spacy download tr_core_news_md    # Turkish (recommended)
+uv run python -m spacy download tr_core_news_md    # Turkish
 ```
+
+For Turkish, prefer `tr_core_news_lg` where its size is acceptable: on the
+consistency benchmark it gives one name one value across grammatical cases in
+7 of 9 entities (1.2 distinct values per name), where `tr_core_news_md` runs
+sentence-initial words into the name (2.9 distinct values per name).
 
 > If a requested SpaCy model is not installed, wardcat automatically falls back to any installed model of the same language and logs a warning. SpaCy is not required if you only need regex-based detection.
 
@@ -213,6 +218,17 @@ semantic-only entity off the regex/NER path:
 guard.add_entity("EMAIL", action="redact", layers=["regex"])
 guard.add_entity("SPECIAL_CATEGORY", action="redact", layers=["llm"])
 ```
+
+A preset is a starting policy modelled on a data-protection regime — an
+entity → action mapping, no layer switched on and no compliance claimed:
+
+```python
+guard = Wardcat(salt="s").with_preset("kvkk").with_ner(language="tr")
+Wardcat.supported_presets()   # ("kvkk", "gdpr", "pci_dss", "hipaa_lite", "secrets_only")
+```
+
+The [presets guide](https://docs.wardcat.com/guide/presets/) lists what each one
+enables and what it leaves out.
 
 To turn on many filters at once, use `add_entities()`. It accepts a list,
 a `{name: action}` mapping, or a `{name: {...}}` mapping for per-entity control,
@@ -408,6 +424,11 @@ guard.scan("call 07700 063 966 or 699 956 915")
 # both detected; the built-in pattern reaches neither
 ```
 
+A number that is labelled is found without any of this, in any national format:
+`Phone: 0490 75 40 81`, `Mobile:`, `Fax:`, `call me at …`, `telefon: …`, or a
+trailing `office` / `fax` in a signature. The label is the evidence, so these
+score `0.90`; an unlabelled national number still needs its region.
+
 Needs `pip install "wardcat[phone]"`. Without it the built-in pattern is used and
 a warning is logged — nothing breaks. Call `with_phone_regions()` with no
 arguments to go back to the pattern.
@@ -453,6 +474,13 @@ claim is resolved as `PHONE` at `0.97`, never dropped as a weak NHS match.
 
 Raising the floor works too: `with_min_confidence(0.95)` keeps only checksummed
 and high-precision structural matches and drops the fuzzy address heuristics.
+
+One entity can have its own floor, so a single weak-checksum type is let
+through while the rest keep the default:
+
+```python
+guard.add_entity(Entity.BANK_ROUTING, Action.HASH, min_confidence=0.6)
+```
 
 ### Catching every occurrence (value propagation)
 
@@ -752,6 +780,27 @@ if guard.is_sensitive(user_text):
 - **Long inputs** are chunked at paragraph boundaries — any sensitive chunk makes the whole text sensitive — and oversized input is rejected (`max_text_bytes`).
 - Async: `await guard.is_sensitive_async(text)`.
 
+When a yes/no is not enough, `classify()` returns the same judgement with the
+kinds of sensitive information it found and the model's one-line reason, so a
+policy can route on the kind — block health data, allow business data inside
+the company, log the rest:
+
+```python
+verdict = guard.classify("Tom from accounting is in rehab, keep it quiet.")
+verdict.sensitive     # True
+verdict.categories    # ("health", "pii")  — from SENSITIVITY_CATEGORIES
+verdict.reason        # the model's sentence; may quote the text
+```
+
+Categories are `pii`, `credentials`, `financial`, `health`, `special_category`,
+`business_confidential`, plus `unknown` when the model said sensitive but its
+answer could not be read in full. `classify()` reads every chunk and merges the
+categories. It is a separate prompt, not the source of `is_sensitive()`: asked
+for structure, the model is measurably more precise and less sensitive (on the
+100-text benchmark with qwen3:14b, 1 false alarm against 11 but 8 misses against
+1, mostly confidential business plans) and several times slower — use
+`is_sensitive()` as the gate and `classify()` to route what it stops.
+
 ---
 
 ### Examples
@@ -921,19 +970,32 @@ class Violation:
     action:      Action       # WARN | HASH | REDACT | MASK
     replacement: str | None   # "[TYPE:16hex]" for hash, "[TYPE]" for redact, masked value for mask, None for warn
     confidence:  float        # checksum 1.0 · structural regex 0.97 · fuzzy regex 0.90 · NER/LLM 0.85
+    source:      str          # which layer found it: "regex" · "ner" · "llm" · "denylist" · "propagation"
+    sanitized_start: int      # where the replacement sits in sanitized_text
+    sanitized_end:   int
 ```
 
-> **Degraded scans — check `warnings`.** If a detector layer cannot run (most
-> commonly the LLM backend being unreachable), the scan still returns the other
-> layers' results but records the failure in `result.warnings`. A non-empty
-> `warnings` means detection was **degraded** — some PII may have been missed —
-> so you are not silently misled into thinking every layer ran:
+> **Degraded scans — check `warnings`.** If a detector layer cannot run — the LLM
+> backend is unreachable, a SpaCy model could not be loaded, an optional package
+> such as `phonenumbers` is missing — the scan still returns the other layers'
+> results but records the problem in `result.warnings`. A layer that failed while
+> the guard was being built is reported on every result, since every scan runs
+> without it. A non-empty `warnings` means detection was **degraded** — some PII
+> may have been missed — so you are not silently misled into thinking every layer
+> ran:
 >
 > ```python
 > result = guard.scan(text)
 > if result.warnings:
 >     logger.warning("PII scan degraded: %s", result.warnings)
 > ```
+>
+> When a partial result is worse than none — an indexer, an ETL job —
+> `with_strict()` (YAML `strict: true`) raises `DegradedScanError` in every one
+> of these cases instead, `scan_batch` included. And a backend that is down does
+> not cost every scan its full timeout: after three consecutive failures the LLM
+> layer is skipped for thirty seconds, with a warning that says so
+> (`with_llm(..., circuit_failures=3, circuit_cooldown=30)`).
 
 ---
 

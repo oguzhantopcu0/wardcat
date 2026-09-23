@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import concurrent.futures
 import hashlib
 import logging
+import math
 import re
 from collections.abc import Callable
 
 from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.utils.logsafe import describe
 from wardcat.utils.normalize import fold_confusables, has_confusables
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,8 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         rf"|35(?:2[89]|[3-8][0-9]){_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # JCB 3528-3589
         rf"|(?:1800|2131)[0-9]{{11}}"  # JCB legacy, 15 digits
         rf"|6(?:011|5[0-9]{{2}}){_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"  # Discover
+        # Troy, Turkey's domestic scheme — 9792 BIN range, 16 digits
+        rf"|9792{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}{_SEP}[0-9]{{4}}"
         # Maestro — 12 to 19 digits, so the length is carried by the quantifier
         rf"|(?:5018|5020|5038|5893|6304|6759|676[1-3])[0-9]{{8,15}}"
         r")"
@@ -143,10 +146,26 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         r"(?!\.?\d)",
         0,
     ),
+    # ── High-entropy string ───────────────────────────────────────────
+    # A secret with no known prefix and no cue word: a run of base64-shaped
+    # characters long enough to be a key, validated on its entropy by
+    # _validate_high_entropy. "/" is left out of the class on purpose: keys in
+    # the wild use the URL-safe alphabet, and with "/" every path segment of a
+    # long URL became a candidate. Bounded on both sides so a slice of a longer
+    # run is never taken. The quantifier is a single bounded run: linear.
+    "HIGH_ENTROPY_STRING": (
+        r"(?<![A-Za-z0-9+/=_\-])[A-Za-z0-9+=_\-]{32,512}(?![A-Za-z0-9+/=_\-])",
+        0,
+    ),
     # ── Turkish National ID (TC Kimlik No) ────────────────────────────
     # Regex performs format check only; checksum validated by _validate_tc_id().
+    # Written whole, or in the 3-3-3-2 grouping forms and printouts use
+    # ("111 654 670 34"); no other grouping, so a spaced run of digits is not
+    # offered to a checksum that one number in a hundred passes by chance.
     "TC_ID": (
-        r"(?<!\d)[1-9][0-9]{10}(?!\d)",
+        r"(?<!\d)(?:[1-9][0-9]{10}"
+        # The grouped form must not be a slice of a longer grouped run.
+        r"|(?<!\d )[1-9][0-9]{2} [0-9]{3} [0-9]{3} [0-9]{2}(?! \d))(?!\d)",
         0,
     ),
     # ── Turkey postal code: 01000–81999 ──────────────────────────────
@@ -610,6 +629,83 @@ def _looks_like_a_secret(value: str) -> bool:
     return classes >= 2
 
 
+# ── Keyword-cued phone numbers ───────────────────────────────────────────────
+# The built-in PHONE pattern refuses a bare national number such as "905-674-3793"
+# or "0490 75 40 81": a digit run with separators is an order number as often as a
+# phone number. The word labelling it settles which — "Phone:", "Mobile:",
+# "call me at", or a trailing "office"/"fax" in a signature block — and needs no
+# numbering plan, so it reaches formats of any country without phone_regions.
+#
+# The cue lists are conventions, not phrasings: a label or a request to call.
+# Phrases that merely tend to precede a number ("messages to", "answering at")
+# are left out; they would catch account and ticket numbers just as readily.
+_PHONE_CUE_BEFORE = (
+    r"(?i:\b(?:"
+    r"telephone|phone|tel|mobile|cell(?:phone)?|fax|whats\s?app|sms"
+    r"|(?:call|text|reach|ring)\s+(?:me|us)\s+(?:at|on)"
+    # A signature line's label, only in label form ("Office: …").
+    r"|(?:office|home|work|direct|desk)\s*:"
+    r"|telefon[a-zçğıöşü]{0,6}|cep|gsm|faks"  # Turkish; Telefon is also German
+    r"|handy|mobil|t[ée]l[ée]phone|t[ée]l|portable|tel[ée]fono|m[óo]vil|celular"
+    r")(?![^\W\d_])"
+    # "number", "no.", "numaram", "is", "at" … between the cue and the value.
+    r"(?:[\s:.#\-–]{0,4}(?:number|no|nr|num[ée]ro|n[úu]mero|nummer"
+    r"|numaras[ıi]|numaram|is|at|on)\b){0,3}"
+    r"[\s:.#\-–]{0,4})"
+)
+_PHONE_CUE_AFTER = r"[ \t]{0,3}[\-(]?[ \t]{0,3}(?i:office|fax|mobile|cell|home)\b"
+# Groups of digits, each optionally led by a parenthesised area or trunk code,
+# joined by one or two separators; an optional extension. A separator is required
+# between groups, so a digit run has exactly one reading and the match stays
+# linear. Digit counts are checked afterwards by _is_phone_shaped.
+_PHONE_VALUE = (
+    r"(?P<phone>\+?"
+    r"(?:\(\d{1,5}\)[ ]?)?\d{1,15}"
+    r"(?:[ .\-/]{1,2}(?:\(\d{1,5}\)[ ]?)?\d{1,15}){0,7}"
+    r"(?:[ ]?(?:x|ext\.?)[ ]?\d{1,6})?"
+    r")(?![\w.\-/:]\d|\w)"
+)
+_CUED_PHONE_BEFORE: re.Pattern = re.compile(_PHONE_CUE_BEFORE + _PHONE_VALUE)
+_CUED_PHONE_AFTER: re.Pattern = re.compile(r"(?<![\w+.\-/])" + _PHONE_VALUE + _PHONE_CUE_AFTER)
+
+# ── Keyword-cued SSN ──────────────────────────────────────────────────────────
+# The built-in SSN pattern needs dashes: a bare "412 76 9038" or "412769038" is
+# any nine digits. Named as a social security number, it is one. Only the value
+# is reported, at CONF_FUZZY, and it must still have a valid area, group and
+# serial.
+_CUED_SSN: re.Pattern = re.compile(
+    r"(?i:\b(?:ssn|ss\#|social\s+security(?:\s+(?:number|no\.?|\#))?))"
+    r"[\s:#.=\-]{0,4}(?:is[\s:]{1,3})?"
+    r"(?P<ssn>(?!000|666|9\d{2})\d{3}[ ]?(?!00)\d{2}[ ]?(?!0000)\d{4})(?![\d\-])"
+)
+
+_EXTENSION = re.compile(r"(?:x|ext\.?)[ ]?\d{1,6}$")
+# A date or timestamp after "Phone:" is a form's other field, not a number. Only a
+# value that is, or starts with, a whole date counts: "28-64-66-98" is a Danish
+# number whose first three groups merely look like one.
+_DATE_PREFIX = re.compile(
+    r"(?:(?P<y>\d{4})[\-./](?P<m>\d{1,2})[\-./](?P<d>\d{1,2})"
+    r"|(?P<d2>\d{1,2})[\-./](?P<m2>\d{1,2})[\-./](?P<y2>\d{2}|\d{4}))(?:$|[ T])"
+)
+
+
+def _is_date(value: str) -> bool:
+    match = _DATE_PREFIX.match(value)
+    if match is None:
+        return False
+    day, month = (match["d"], match["m"]) if match["y"] else (match["d2"], match["m2"])
+    # Either order: 03/12 is a date in London and in New York.
+    a, b = int(day), int(month)
+    return 1 <= min(a, b) and (a <= 12 and b <= 31 or b <= 12 and a <= 31)
+
+
+def _is_phone_shaped(value: str) -> bool:
+    """Seven to fifteen digits (E.164's ceiling), not counting an extension; not a date."""
+    number = _EXTENSION.sub("", value).rstrip()
+    digits = sum(c.isdigit() for c in number)
+    return 7 <= digits <= 15 and not _is_date(number)
+
+
 _URI_CREDENTIAL: re.Pattern = re.compile(
     # Bounded quantifiers keep this linear; an unbounded run before the required
     # "://" backtracks quadratically on adversarial input. See _REDOS_GATE.
@@ -617,41 +713,12 @@ _URI_CREDENTIAL: re.Pattern = re.compile(
     re.IGNORECASE,
 )
 
-# Timeout for a single custom-pattern execution (seconds).
-_CUSTOM_PATTERN_TIMEOUT = 2.0
-
 # Cheap pre-filter for built-in patterns that only ever match when a given
 # literal is present ("@" for EMAIL). Skipping the scan when the literal is
 # absent is an O(n) substring check that avoids running the regex over
 # irrelevant text at all. (The patterns themselves are already linear thanks to
 # their bounded quantifiers; this is an optimization, not the ReDoS fix.)
 _REDOS_GATE: dict[str, str] = {"EMAIL": "@"}
-
-
-def _safe_finditer(pattern: re.Pattern, text: str) -> list:
-    """Execute a *custom* regex with a timeout so a user pattern can't ReDoS a scan.
-
-    Returns the matches, or an empty list if the pattern exceeds
-    ``_CUSTOM_PATTERN_TIMEOUT``. ``shutdown(wait=False)`` lets the call return
-    promptly on timeout instead of blocking on the still-running match thread
-    (that orphaned thread finishes on its own). Built-in patterns don't need this
-    — they are bounded to linear time by construction.
-    """
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    try:
-        future = executor.submit(list, pattern.finditer(text))
-        try:
-            return future.result(timeout=_CUSTOM_PATTERN_TIMEOUT)
-        except concurrent.futures.TimeoutError:
-            logger.warning(
-                "Custom pattern %r timed out after %.1fs on input of length %d — skipped.",
-                pattern.pattern,
-                _CUSTOM_PATTERN_TIMEOUT,
-                len(text),
-            )
-            return []
-    finally:
-        executor.shutdown(wait=False)
 
 
 def _finditer_builtin(entity_type: str, pattern: re.Pattern, text: str) -> list:
@@ -761,6 +828,7 @@ def _validate_tc_id(value: str) -> bool:
     - (d[0]+d[2]+d[4]+d[6]+d[8]) * 7 - (d[1]+d[3]+d[5]+d[7]) mod 10 == d[9]
     - (d[0]+d[1]+...+d[9]) mod 10 == d[10]
     """
+    value = value.replace(" ", "")
     if len(value) != 11 or not value.isdigit() or value[0] == "0":
         return False
     d = [int(c) for c in value]
@@ -925,6 +993,41 @@ def _validate_eu_national_id(value: str) -> bool:
     return False
 
 
+_LOWER_WORD_RUN = re.compile(r"[a-z]{4,}")
+
+
+def _shannon_bits(value: str) -> float:
+    """Shannon entropy of *value* in bits per character."""
+    counts: dict[str, int] = {}
+    for ch in value:
+        counts[ch] = counts.get(ch, 0) + 1
+    n = len(value)
+    return -sum(c / n * math.log2(c / n) for c in counts.values())
+
+
+def _validate_high_entropy(value: str) -> bool:
+    """Does a long token carry the entropy of a generated secret?
+
+    Base64-shaped text (mixed case, digits, symbols) of a random key runs at
+    about 5.5 bits per character and is accepted from 4.0 up. A pure hex digest
+    tops out near 4.0, so it is judged on its own scale, and only past 40
+    characters: git commit hashes and MD5/SHA-1 digests are everywhere in logs
+    and are not secrets. A token with no digit, or no letter, is a word or a
+    number, whatever its length.
+    """
+    if not any(c.isdigit() for c in value) or not any(c.isalpha() for c in value):
+        return False
+    # Three or more word-length runs of lower-case letters make an identifier —
+    # "MessageReferenceNumber1234567890", "us-gaap_instance_investment_2023" —
+    # whatever the entropy of the whole. A random key has such runs rarely.
+    if len(_LOWER_WORD_RUN.findall(value)) >= 3:
+        return False
+    stripped = value.rstrip("=")
+    if all(c in "0123456789abcdefABCDEF" for c in stripped):
+        return len(stripped) > 40 and _shannon_bits(stripped) >= 3.2
+    return _shannon_bits(stripped) >= 4.0
+
+
 # Entity-type → checksum/structural validator. A regex match is only accepted
 # as a violation when its validator (if any) returns True. Adding a new
 # validated entity is a one-line registry entry — no changes to detect().
@@ -937,6 +1040,14 @@ _VALIDATORS: dict[str, Callable[[str], bool]] = {
     "BANK_ROUTING": _validate_aba_routing,
     "NHS_NUMBER": _validate_nhs_number,
     "EU_NATIONAL_ID": _validate_eu_national_id,
+    "HIGH_ENTROPY_STRING": _validate_high_entropy,
+}
+
+# The checksums a value from another layer must pass too. Only schemes whose
+# check is strong and whose written form is unambiguous: an LLM quoting a TC
+# number, an IBAN or a card number quotes the whole value.
+CHECKSUM_VALIDATORS: dict[str, Callable[[str], bool]] = {
+    entity: _VALIDATORS[entity] for entity in ("TC_ID", "IBAN", "CREDIT_CARD")
 }
 
 # ── Confidence tiers ──────────────────────────────────────────────────────────
@@ -961,6 +1072,8 @@ _CUED_ENTITIES: frozenset[str] = frozenset({"IMEI", "BANK_ROUTING", "NHS_NUMBER"
 
 
 def _regex_confidence(entity_type: str, matched: str = "") -> float:
+    if entity_type == "HIGH_ENTROPY_STRING":
+        return CONF_UNCUED  # a guess from shape alone; under the default floor
     if entity_type in _CUED_ENTITIES:
         return CONF_CHECKSUM if any(c.isalpha() for c in matched) else CONF_UNCUED
     if entity_type in _VALIDATORS:
@@ -972,6 +1085,8 @@ def _regex_confidence(entity_type: str, matched: str = "") -> float:
 
 class RegexDetector(BaseDetector):
     """Detects structural PII patterns using regex (CC, IBAN, TC_ID, email, …)."""
+
+    layer = "regex"
 
     def __init__(
         self,
@@ -997,11 +1112,13 @@ class RegexDetector(BaseDetector):
             try:
                 import phonenumbers  # noqa: F401
             except ImportError:
-                logger.warning(
+                message = (
                     "phone_regions is set but the 'phonenumbers' package is missing, so "
                     "PHONE detection falls back to the built-in pattern. "
                     "Install with: pip install 'wardcat[phone]'"
                 )
+                logger.warning(message)
+                self.build_warnings = (message,)
                 self._phone_regions = []
         # When True, matching runs on a confusable-folded copy of the input so
         # homoglyph-obfuscated PII (Cyrillic/Greek lookalikes, fullwidth/Arabic
@@ -1161,10 +1278,10 @@ class RegexDetector(BaseDetector):
                                 )
                             continue
                     logger.debug(
-                        "%s format match rejected (failed validation): %r — "
+                        "%s format match rejected (failed validation, %s) — "
                         "if this is real PII, the value may be incorrectly formatted.",
                         entity_type,
-                        folded_value,
+                        describe(folded_value),
                     )
                     continue
                 spans.append(
@@ -1175,9 +1292,12 @@ class RegexDetector(BaseDetector):
                         end=match.end(),
                     )
                 )
-        # Custom patterns — no checksum validation; use timeout wrapper for ReDoS safety
+        # Custom patterns — no checksum validation. They run unguarded: ``re`` cannot
+        # be interrupted mid-match, so a timeout here would bound nothing and only
+        # throw away a slow match's results. The guard is at configuration time,
+        # where a catastrophic pattern is refused (see wardcat.utils.regex_safety).
         for entity_type, (pattern, _action) in self._custom_compiled.items():
-            for match in _safe_finditer(pattern, text):
+            for match in pattern.finditer(text):
                 value = match.group()
                 spans.append(
                     DetectedSpan(
@@ -1201,6 +1321,51 @@ class RegexDetector(BaseDetector):
 
         # Appended after tiering: these carry their own confidence, which is lower
         # than the structural tier this loop would stamp on a PHONE span.
-        if self._phone_regions and "PHONE" in self.enabled_entities:
-            spans.extend(self._phone_spans(text))
+        if "PHONE" in self.enabled_entities:
+            if self._phone_regions:
+                spans.extend(self._phone_spans(text))
+            spans.extend(self._cued_phone_spans(text, scan_text, spans))
+        if "SSN" in self.enabled_entities:
+            taken = {(s.start, s.end) for s in spans if s.entity_type == "SSN"}
+            for match in _CUED_SSN.finditer(scan_text):
+                start, end = match.span("ssn")
+                if (start, end) not in taken:
+                    spans.append(
+                        DetectedSpan(
+                            entity_type="SSN",
+                            text=text[start:end],
+                            start=start,
+                            end=end,
+                            confidence=CONF_FUZZY,
+                        )
+                    )
+        return spans
+
+    @staticmethod
+    def _cued_phone_spans(
+        text: str, scan_text: str, found: list[DetectedSpan]
+    ) -> list[DetectedSpan]:
+        """PHONE spans named by the word beside them, at :data:`CONF_FUZZY`.
+
+        The label is the only evidence, as with a keyword-cued password, so these
+        rank below the structural pattern; a number that pattern or libphonenumber
+        already reported at the same offsets is not reported twice.
+        """
+        taken = {(s.start, s.end) for s in found if s.entity_type == "PHONE"}
+        spans: list[DetectedSpan] = []
+        for pattern in (_CUED_PHONE_BEFORE, _CUED_PHONE_AFTER):
+            for match in pattern.finditer(scan_text):
+                start, end = match.span("phone")
+                if (start, end) in taken or not _is_phone_shaped(match.group("phone")):
+                    continue
+                taken.add((start, end))
+                spans.append(
+                    DetectedSpan(
+                        entity_type="PHONE",
+                        text=text[start:end],
+                        start=start,
+                        end=end,
+                        confidence=CONF_FUZZY,
+                    )
+                )
         return spans

@@ -362,34 +362,17 @@ class TestCustomPatternsInRegexDetector:
         spans = det.detect("test text")
         assert not any(s.entity_type == "BAD_PATTERN" for s in spans)
 
-    def test_safe_finditer_timeout_returns_empty(self, caplog):
-        """When a custom pattern times out, _safe_finditer returns [] and logs a warning."""
-        import concurrent.futures
-        import logging
-        import re
-        from unittest.mock import MagicMock, patch
+    def test_custom_pattern_matches_are_kept_on_long_input(self):
+        """A custom pattern runs to completion and every match is reported.
 
-        from wardcat.detectors.regex_detector import _safe_finditer
-
-        pattern = re.compile(r"\w+")
-        mock_future = MagicMock()
-        mock_future.result.side_effect = concurrent.futures.TimeoutError()
-        mock_executor = MagicMock()
-        mock_executor.submit.return_value = mock_future
-
-        with (
-            patch(
-                "wardcat.detectors.regex_detector.concurrent.futures.ThreadPoolExecutor",
-                return_value=mock_executor,
-            ),
-            caplog.at_level(logging.WARNING, logger="wardcat.detectors.regex_detector"),
-        ):
-            result = _safe_finditer(pattern, "hello world")
-
-        assert result == []
-        assert any("timed out" in r.message.lower() for r in caplog.records)
-        # The executor is shut down without waiting on the orphaned match thread.
-        mock_executor.shutdown.assert_called_once_with(wait=False)
+        It used to run in a thread under a timeout that could not stop ``re`` and
+        only threw away the matches of a pattern that ran past it.
+        """
+        custom = {"EMPLOYEE_ID": {"pattern": r"\bEMP-\d{6}\b", "action": "hash"}}
+        det = RegexDetector(set(), custom_patterns=custom)
+        text = "filler text " * 20_000 + "EMP-123456"
+        spans = det.detect(text)
+        assert [s.text for s in spans if s.entity_type == "EMPLOYEE_ID"] == ["EMP-123456"]
 
     def test_builtin_patterns_are_not_redos_vulnerable(self):
         """Adversarial input must not turn a scan into quadratic-time CPU burn.

@@ -11,17 +11,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from wardcat.core.actions import ActionContext, TokenAllocator, get_action
+from wardcat.core.actions import ActionContext, ActionFallback, TokenAllocator, get_action
 from wardcat.core.models import Violation
 from wardcat.detectors.base import DetectedSpan
+from wardcat.surrogates import SurrogateAllocator
 
 
 class Anonymizer:
     """Applies configured actions to detected spans and rebuilds the text."""
 
-    def __init__(self, entity_config: dict[str, Any], salt: str = "") -> None:
+    def __init__(self, entity_config: dict[str, Any], salt: str = "", locale: str = "en") -> None:
         self._entity_config = entity_config
         self._salt = salt
+        self._locale = locale
 
     def apply(
         self,
@@ -42,20 +44,36 @@ class Anonymizer:
         # A fresh context per call: reversible actions allocate placeholders in it,
         # so state must not leak between scans — one Anonymizer instance is shared
         # by every scan on a guard, including the concurrent ones in scan_batch.
-        ctx = ActionContext(salt=self._salt, tokens=TokenAllocator(context_id))
+        ctx = ActionContext(
+            salt=self._salt,
+            tokens=TokenAllocator(context_id),
+            locale=self._locale,
+            surrogates=SurrogateAllocator(self._salt, self._locale),
+        )
         violations: list[Violation] = []
         sanitized = text
         offset = 0
 
         for span in spans:
             action_name = self._entity_config.get(span.entity_type, {}).get("action", "warn")
-            replacement = get_action(action_name)(span, ctx)
+            try:
+                replacement = get_action(action_name)(span, ctx)
+            except ActionFallback as fallback:
+                # The action declined this span; the one it named is applied
+                # and recorded, so the violation says what really happened.
+                action_name = fallback.action
+                replacement = get_action(action_name)(span, ctx)
 
+            # Where this span sits in the output: shifted by every replacement
+            # before it, and as wide as what now stands there.
+            adj_start = span.start + offset
             if replacement is not None:
-                adj_start = span.start + offset
                 adj_end = span.end + offset
                 sanitized = sanitized[:adj_start] + replacement + sanitized[adj_end:]
                 offset += len(replacement) - (span.end - span.start)
+                sanitized_end = adj_start + len(replacement)
+            else:
+                sanitized_end = adj_start + (span.end - span.start)
 
             violations.append(
                 Violation(
@@ -66,6 +84,9 @@ class Anonymizer:
                     action=action_name,
                     replacement=replacement,
                     confidence=span.confidence,
+                    source=span.source,
+                    sanitized_start=adj_start,
+                    sanitized_end=sanitized_end,
                 )
             )
 

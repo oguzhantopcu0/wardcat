@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -10,9 +9,9 @@ if TYPE_CHECKING:
     from wardcat.detectors.llm_detector import LLMDetector
 
 from wardcat._entity_policy import EntityPolicyMixin
-from wardcat.config.loader import load_config
+from wardcat.config.loader import _validate_denylist, load_config
 from wardcat.core.engine import DetectionEngine
-from wardcat.core.models import KNOWN_ENTITY_TYPES, ScanResult
+from wardcat.core.models import KNOWN_ENTITY_TYPES, Layer, ScanResult, SensitivityVerdict
 from wardcat.core.registry import (
     LAYER_ENTITIES,
     NER_ENTITIES,
@@ -21,9 +20,14 @@ from wardcat.core.registry import (
 )
 from wardcat.detectors.base import BaseDetector
 from wardcat.detectors.regex_detector import RegexDetector
-from wardcat.exceptions import ConfigError, UnsupportedLanguageError
+from wardcat.exceptions import ConfigError, DegradedScanError, UnsupportedLanguageError
 from wardcat.llm.backends.base import Backend
-from wardcat.llm.prompt import build_sensitivity_messages, parse_sensitivity
+from wardcat.llm.prompt import (
+    build_classification_messages,
+    build_sensitivity_messages,
+    parse_classification,
+    parse_sensitivity,
+)
 from wardcat.ner.spacy_catalog import Language
 from wardcat.utils.text import chunk_by_paragraph
 
@@ -83,6 +87,29 @@ def _resolve_spacy_model(model: str) -> str:
         model,
     )
     return fallback
+
+
+def _merge_verdicts(verdicts: list[SensitivityVerdict]) -> SensitivityVerdict:
+    """One verdict for a text judged in chunks: sensitive if any chunk is."""
+    sensitive = [v for v in verdicts if v.sensitive]
+    if not sensitive:
+        return SensitivityVerdict(False)
+    categories = tuple(dict.fromkeys(c for v in sensitive for c in v.categories))
+    return SensitivityVerdict(True, categories, sensitive[0].reason)
+
+
+def _ner_fallback_warning(requested: str, used: str) -> str:
+    """Describe a SpaCy model substitution, calling out a change of language."""
+    message = (
+        f"SpaCy model {requested!r} is not installed; the NER layer is using {used!r} instead."
+    )
+    wanted_lang, used_lang = requested.split("_")[0], used.split("_")[0]
+    if wanted_lang != used_lang:
+        message += (
+            f" That model is for a different language ({used_lang!r}, not {wanted_lang!r}), "
+            "so most names in the requested language will be missed."
+        )
+    return message + f" Install the requested model with: python -m spacy download {requested}"
 
 
 class Wardcat(EntityPolicyMixin):
@@ -188,6 +215,10 @@ class Wardcat(EntityPolicyMixin):
         # in _rebuild() too, since entities are opt-in and usually added after init.
         self._salt_warned = False
         self._default_action_warned = False
+        # A YAML `preset:` is the base; the file's own `entities:` win over it.
+        preset_name = self._config.pop("preset", None)
+        if preset_name:
+            self._apply_preset(preset_name, keep_existing=True)
         self._rebuild()
 
     # ------------------------------------------------------------------
@@ -196,9 +227,7 @@ class Wardcat(EntityPolicyMixin):
 
     def scan(self, text: str) -> ScanResult:
         """Scan text and return a ScanResult."""
-        self._warn_orphan_entities()
-        self._warn_implicit_llm_entities()
-        self._warn_ner_type_split()
+        self._warn_about_configuration()
         return self._engine.scan(text)
 
     async def scan_async(self, text: str) -> ScanResult:
@@ -208,9 +237,7 @@ class Wardcat(EntityPolicyMixin):
         the LLM detector (if enabled) uses ``httpx.AsyncClient`` natively,
         so multiple concurrent calls do not block each other.
         """
-        self._warn_orphan_entities()
-        self._warn_implicit_llm_entities()
-        self._warn_ner_type_split()
+        self._warn_about_configuration()
         return await self._engine.scan_async(text)
 
     # ------------------------------------------------------------------
@@ -225,16 +252,19 @@ class Wardcat(EntityPolicyMixin):
         contains sensitive information (PII, credentials, financial, health, or
         confidential business data) and returns a single ``True``/``False`` flag.
         Useful as a lightweight guardrail before sending text to an external
-        service.
+        service. :meth:`classify` asks the same question but for the kinds
+        present; it is measured to be stricter, so for a yes/no gate this is
+        the method to use.
 
         Requires the LLM layer (:meth:`with_llm`); no entities need to be enabled
         and no regex/NER runs. Empty text is ``False``. Fail-closed: if the LLM
-        backend is unreachable the underlying error propagates, so a guardrail
-        never silently treats sensitive text as safe.
+        backend is unreachable the underlying error propagates, and an answer
+        that cannot be read counts as sensitive, so a guardrail never silently
+        treats sensitive text as safe.
 
         :raises ConfigError: if the LLM layer is not configured.
         """
-        backend, timeout = self._require_llm("is_sensitive")
+        detector = self._require_llm("is_sensitive")
         self._check_text_size(text)
         if not text.strip():
             return False
@@ -244,16 +274,14 @@ class Wardcat(EntityPolicyMixin):
         for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
             if not chunk.strip():
                 continue
-            reply = backend.complete_messages(
-                build_sensitivity_messages(chunk, language), timeout=timeout
-            )
+            reply = detector.complete_messages(build_sensitivity_messages(chunk, language))
             if parse_sensitivity(reply):
                 return True
         return False
 
     async def is_sensitive_async(self, text: str) -> bool:
         """Async variant of :meth:`is_sensitive` (native async LLM I/O when available)."""
-        backend, timeout = self._require_llm("is_sensitive_async")
+        detector = self._require_llm("is_sensitive_async")
         self._check_text_size(text)
         if not text.strip():
             return False
@@ -261,12 +289,66 @@ class Wardcat(EntityPolicyMixin):
         for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
             if not chunk.strip():
                 continue
-            reply = await backend.complete_messages_async(
-                build_sensitivity_messages(chunk, language), timeout=timeout
+            reply = await detector.complete_messages_async(
+                build_sensitivity_messages(chunk, language)
             )
             if parse_sensitivity(reply):
                 return True
         return False
+
+    def classify(self, text: str) -> SensitivityVerdict:
+        """Decide whether *text* is sensitive, and of what kind.
+
+        Like :meth:`is_sensitive`, one holistic LLM judgement over the whole
+        text — but the answer names the categories present (``pii``,
+        ``credentials``, ``financial``, ``health``, ``special_category``,
+        ``business_confidential``) and carries the model's one-line reason, so a
+        caller can route on the kind: block health data, allow business data
+        inside the company, log the rest. Long texts are judged in chunks and the
+        categories merged; the reason is the first sensitive chunk's.
+
+        It is a separate call with its own prompt, not the source of
+        :meth:`is_sensitive`: asked for structure, the model was measured to be
+        more precise and less sensitive (on the benchmark, one false alarm in a
+        hundred texts against eleven, but eight misses against one, mostly
+        confidential business plans), and several times slower. Use
+        :meth:`is_sensitive` as the gate and this for routing what it stops.
+
+        An answer that cannot be read is *sensitive* with the category
+        ``"unknown"`` — the guardrail fails closed. ``reason`` may quote the
+        text and is as sensitive as the input.
+
+        :raises ConfigError: if the LLM layer is not configured.
+        """
+        detector = self._require_llm("classify")
+        self._check_text_size(text)
+        if not text.strip():
+            return SensitivityVerdict(False)
+        language = self._config.get("llm_detector", {}).get("language")
+        verdicts = []
+        for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
+            if not chunk.strip():
+                continue
+            reply = detector.complete_messages(build_classification_messages(chunk, language))
+            verdicts.append(parse_classification(reply))
+        return _merge_verdicts(verdicts)
+
+    async def classify_async(self, text: str) -> SensitivityVerdict:
+        """Async variant of :meth:`classify`."""
+        detector = self._require_llm("classify_async")
+        self._check_text_size(text)
+        if not text.strip():
+            return SensitivityVerdict(False)
+        language = self._config.get("llm_detector", {}).get("language")
+        verdicts = []
+        for chunk, _ in chunk_by_paragraph(text, _SENSITIVITY_CHUNK_CHARS):
+            if not chunk.strip():
+                continue
+            reply = await detector.complete_messages_async(
+                build_classification_messages(chunk, language)
+            )
+            verdicts.append(parse_classification(reply))
+        return _merge_verdicts(verdicts)
 
     def _check_text_size(self, text: str) -> None:
         """Reject oversized input (mirrors the engine's DoS guard for scan())."""
@@ -278,15 +360,15 @@ class Wardcat(EntityPolicyMixin):
                 "Split the text into smaller chunks."
             )
 
-    def _require_llm(self, feature: str) -> tuple[Any, int]:
-        """Return the configured LLM (backend, timeout) or raise if none is set."""
+    def _require_llm(self, feature: str) -> LLMDetector:
+        """Return the configured LLM detector or raise if none is set."""
         detector = self._llm_detector
         if detector is None:
             raise ConfigError(
                 f"{feature}() needs the LLM layer — configure it with "
                 "with_llm(...) (e.g. Wardcat().with_llm(model='llama3.1:8b'))."
             )
-        return detector.backend, detector.timeout
+        return detector
 
     def scan_batch(self, texts: list[str], *, max_workers: int | None = None) -> list[ScanResult]:
         """
@@ -304,34 +386,15 @@ class Wardcat(EntityPolicyMixin):
         if not texts:
             return []
 
+        # The engine is called directly, so the one-time configuration warnings
+        # that scan() logs have to be raised here, once for the whole batch.
+        self._warn_about_configuration()
         workers = max_workers or self._config.get("scan_batch_workers", 4)
-
-        results: list[ScanResult | None] = [None] * len(texts)
-
-        def _scan_one(idx: int, text: str) -> tuple[int, ScanResult]:
-            try:
-                return idx, self._engine.scan(text)
-            except Exception as exc:
-                logger.error(
-                    "scan_batch item %d failed (%s: %s), returning original text.",
-                    idx,
-                    type(exc).__name__,
-                    exc,
-                )
-                return idx, ScanResult(
-                    original_text=text,
-                    sanitized_text=text,
-                    violations=[],
-                    scan_error=f"{type(exc).__name__}: {exc}",
-                )
-
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(_scan_one, i, text): i for i, text in enumerate(texts)}
-            for future in as_completed(futures):
-                idx, result = future.result()
-                results[idx] = result
-
-        return results  # type: ignore[return-value]
+        # Batched layers (SpaCy NER via nlp.pipe) see the whole list in one
+        # pass; the LLM layer runs per text in `workers` threads, bounded at the
+        # backend by its own max_concurrency. Strict mode propagates from here
+        # too: no degraded result is filed under scan_error.
+        return self._engine.scan_many(texts, workers=workers)
 
     async def scan_batch_async(
         self, texts: list[str], *, max_workers: int | None = None
@@ -344,10 +407,16 @@ class Wardcat(EntityPolicyMixin):
         """
         if not texts:
             return []
+        # Bounded like the sync batch: `scan_batch_workers` texts in flight at
+        # once, so a large list does not fan out into one request per item.
+        gate = asyncio.Semaphore(max_workers or self._config.get("scan_batch_workers", 4))
 
         async def _one(idx: int, text: str) -> tuple[int, ScanResult]:
             try:
-                return idx, await self.scan_async(text)
+                async with gate:
+                    return idx, await self.scan_async(text)
+            except DegradedScanError:
+                raise
             except Exception as exc:
                 logger.error(
                     "scan_batch_async item %d failed (%s: %s), returning original text.",
@@ -360,6 +429,7 @@ class Wardcat(EntityPolicyMixin):
                     sanitized_text=text,
                     violations=[],
                     scan_error=f"{type(exc).__name__}: {exc}",
+                    warnings=list(self._engine.build_warnings),
                 )
 
         pairs = await asyncio.gather(*(_one(i, t) for i, t in enumerate(texts)))
@@ -373,7 +443,7 @@ class Wardcat(EntityPolicyMixin):
     # (entity add/remove/change + introspection live in EntityPolicyMixin)
     # ------------------------------------------------------------------
     @staticmethod
-    def supported_entities(layer: str | None = None) -> frozenset[str]:
+    def supported_entities(layer: str | Layer | None = None) -> frozenset[str]:
         """Return the entity types wardcat can detect (discoverability helper).
 
         ::
@@ -389,6 +459,8 @@ class Wardcat(EntityPolicyMixin):
         """
         if layer is None:
             return frozenset(KNOWN_ENTITY_TYPES)
+        if isinstance(layer, Layer):
+            layer = layer.value
         if layer not in LAYER_ENTITIES:
             raise ConfigError(f"Unknown layer {layer!r}. Valid layers: {sorted(VALID_LAYERS)}")
         return LAYER_ENTITIES[layer]
@@ -454,6 +526,9 @@ class Wardcat(EntityPolicyMixin):
         load_in_4bit: bool = False,
         dtype: str | None = None,
         language: str | Language | None = None,
+        circuit_failures: int = 3,
+        circuit_cooldown: float = 30.0,
+        max_concurrency: int = 4,
     ) -> Wardcat:
         """
         Enable the on-prem LLM detector. Supports chaining, like :meth:`with_ner`.
@@ -502,6 +577,15 @@ class Wardcat(EntityPolicyMixin):
             (``tr``/``de``/``fr``; anything else uses the English, multilingual-aware
             prompt). It does not change the entity-detection prompt used by
             :meth:`scan`, which is multilingual by design.
+        :param circuit_failures: consecutive backend failures after which the
+            LLM layer is skipped without being called, so an outage does not make
+            every scan wait the full ``timeout``. ``0`` disables the breaker.
+        :param circuit_cooldown: seconds the layer stays skipped before one call
+            is tried again. While skipped, each scan carries a warning naming
+            the open circuit; :meth:`is_sensitive` raises instead.
+        :param max_concurrency: requests in flight at the backend at once,
+            across :meth:`scan_batch` threads and async chunk fan-out. A local
+            model server queues what it cannot run, so more only adds latency.
         """
         lang_code = language.value if isinstance(language, Language) else language
         llm_cfg = self._config.setdefault("llm_detector", {})
@@ -520,6 +604,9 @@ class Wardcat(EntityPolicyMixin):
                 "load_in_4bit": load_in_4bit,
                 "dtype": dtype,
                 "language": lang_code,
+                "circuit_failures": circuit_failures,
+                "circuit_cooldown": circuit_cooldown,
+                "max_concurrency": max_concurrency,
             }
         )
         # Only pin base_url when the caller gave one; otherwise leave it out so
@@ -639,28 +726,102 @@ class Wardcat(EntityPolicyMixin):
     def add_denylist(self, entries: list[dict[str, str]]) -> Wardcat:
         """Add values that should always be flagged as PII.
 
-        Each entry must have a ``value`` key and an ``entity_type`` key.
-        The action applied is taken from the entity's config (same as
+        Each entry has an ``entity_type`` and either an exact ``value`` or a regex
+        ``pattern``. The action applied is taken from the entity's config (same as
         regular detections).  Supports method chaining::
 
             guard.add_denylist([
                 {"value": "John Smith",    "entity_type": "PERSON"},
-                {"value": "ProjectSecret", "entity_type": "CUSTOM_SECRET"},
+                {"pattern": r"\\bPRJ-\\d{4}\\b", "entity_type": "CUSTOM_SECRET"},
             ])
 
-        :param entries: List of dicts with ``value`` and ``entity_type`` keys.
+        Entries are validated exactly as a YAML ``denylist`` is, and all of them
+        before any is added: a pattern that is not valid regex, or that backtracks
+        catastrophically, is refused — a match cannot be interrupted once a scan
+        has started it.
+
+        :param entries: List of dicts with ``entity_type`` and ``value`` or ``pattern``.
+        :raises ConfigError: if any entry is invalid.
         """
-        existing: list[dict[str, str]] = self._config.setdefault("denylist", [])
-        for entry in entries:
-            if not isinstance(entry, dict):
-                raise ConfigError(
-                    f"Each denylist entry must be a dict with a 'value' or 'pattern' key: {entry!r}"
-                )
-            if "value" not in entry and "pattern" not in entry:
-                raise ConfigError(
-                    f"Each denylist entry must have either a 'value' or a 'pattern' key: {entry!r}"
-                )
-            existing.append(entry)
+        _validate_denylist(entries)
+        self._config.setdefault("denylist", []).extend(entries)
+        self._rebuild()
+        return self
+
+    @staticmethod
+    def supported_presets() -> tuple[str, ...]:
+        """The names :meth:`with_preset` accepts."""
+        from wardcat.presets import supported_presets
+
+        return supported_presets()
+
+    def with_preset(self, name: str) -> Wardcat:
+        """Enable the entities of a starting policy, with the actions it names.
+
+        A preset is an entity → action mapping modelled on a data-protection
+        regime (``"kvkk"``, ``"gdpr"``, ``"pci_dss"``, ``"hipaa_lite"``,
+        ``"secrets_only"``). It switches no layer on: names need
+        :meth:`with_ner` or :meth:`with_llm`, special-category data needs
+        :meth:`with_llm`, and an entity left without its layer is reported as
+        uncovered at the first scan, as always. Adjust afterwards with
+        :meth:`change_entity_action` and :meth:`remove_entity`. YAML: ``preset: kvkk``,
+        with the file's own ``entities`` taking precedence.
+
+        See the presets guide for what each one enables and, as importantly,
+        what it does not cover.
+
+        :raises ConfigError: for an unknown preset name.
+        """
+        self._apply_preset(name, keep_existing=False)
+        self._rebuild()
+        return self
+
+    def _apply_preset(self, name: str, *, keep_existing: bool) -> None:
+        from wardcat.presets import get_preset
+
+        preset = get_preset(name)
+        configured = self._config.get("entities", {})
+        for entity, action in preset.entities.items():
+            if keep_existing and entity in configured:
+                continue
+            self._set_entity(entity, enabled=True, action=action, layers=None)
+
+    def with_locale(self, locale: str | Language) -> Wardcat:
+        """Choose the language the ``surrogate`` action draws its stand-ins from.
+
+        ``"en"``, ``"tr"``, ``"de"`` or ``"fr"``; the default is ``"en"``. It is
+        deliberately not inferred from the NER or LLM language — a multilingual
+        guard has no single one. YAML: ``locale: tr``.
+
+        :raises ConfigError: for a locale without name pools.
+        """
+        from wardcat.surrogates import SUPPORTED_LOCALES
+
+        code = (locale.value if isinstance(locale, Language) else str(locale)).lower()
+        if code not in SUPPORTED_LOCALES:
+            raise ConfigError(
+                f"Unsupported surrogate locale {code!r}. Supported: {', '.join(SUPPORTED_LOCALES)}."
+            )
+        self._config["locale"] = code
+        self._rebuild()
+        return self
+
+    def with_strict(self, enabled: bool = True) -> Wardcat:
+        """Refuse any scan that covers less than was configured.
+
+        By default a layer that cannot run — a SpaCy model that failed to load,
+        an LLM backend that is down — is reported on :attr:`ScanResult.warnings`
+        and the partial result is returned, which is right for a chat guard
+        that must answer. A pipeline that indexes documents wants the opposite:
+        better no result than a document stored with names in it. With strict
+        on, such a condition raises :class:`~wardcat.DegradedScanError` — at
+        build time for problems known then, at scan time for the rest, and
+        from :meth:`scan_batch` too, which otherwise turns errors into
+        ``scan_error`` entries.
+
+        YAML: ``strict: true``.
+        """
+        self._config["strict"] = bool(enabled)
         self._rebuild()
         return self
 
@@ -691,6 +852,12 @@ class Wardcat(EntityPolicyMixin):
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    def _warn_about_configuration(self) -> None:
+        """Log the once-only configuration warnings; run before any scan starts."""
+        self._warn_orphan_entities()
+        self._warn_implicit_llm_entities()
+        self._warn_ner_type_split()
 
     def _maybe_warn_unsalted(self) -> None:
         """Warn once if a hash action is active but no salt is set."""
@@ -835,6 +1002,9 @@ class Wardcat(EntityPolicyMixin):
         self._detectors: list[BaseDetector] = []
         self._llm_detector: LLMDetector | None = None
         entity_cfg = self._config.get("entities", {})
+        # Everything below that leaves a layer covering less than was configured
+        # is recorded here as well as logged; the engine puts it on every result.
+        build_warnings: list[str] = []
 
         # Regex detector
         custom_patterns = self._config.get("custom_patterns", {})
@@ -877,16 +1047,28 @@ class Wardcat(EntityPolicyMixin):
 
                             ensure_model(model, auto_download=True)
                         resolved = _resolve_spacy_model(model)
+                        if resolved != model:
+                            build_warnings.append(_ner_fallback_warning(model, resolved))
                         if resolved in loaded:  # avoid duplicate detectors
                             continue
-                        loaded.add(resolved)
                         self._detectors.append(NERDetector(enabled_ner, resolved))
+                        loaded.add(resolved)
                     except Exception as exc:
                         logger.warning(
                             "SpaCy NER model %r could not be loaded, skipping it. Error: %s",
                             model,
                             exc,
                         )
+                        build_warnings.append(
+                            f"NERDetector did not run: SpaCy model {model!r} could not be "
+                            f"loaded ({type(exc).__name__}: {exc})."
+                        )
+                if models and not loaded:
+                    build_warnings.append(
+                        "The NER layer has no model loaded and detects nothing, so "
+                        f"{', '.join(sorted(enabled_ner))} will only be found if another "
+                        "layer covers them."
+                    )
 
         # LLM detector (optional). Kept on a dedicated attribute too, so the
         # semantic is_sensitive() check can reuse its backend directly.
@@ -895,7 +1077,9 @@ class Wardcat(EntityPolicyMixin):
             self._llm_detector = self._build_llm_detector(llm_cfg)
             self._detectors.append(self._llm_detector)
 
-        self._engine = DetectionEngine(self._config, self._detectors)
+        self._engine = DetectionEngine(self._config, self._detectors, build_warnings=build_warnings)
+        if self._config.get("strict") and self._engine.build_warnings:
+            raise DegradedScanError(list(self._engine.build_warnings))
 
     def _build_llm_detector(self, llm_cfg: dict[str, Any]) -> LLMDetector:
         """Build the LLM detector according to configuration."""
@@ -918,6 +1102,16 @@ class Wardcat(EntityPolicyMixin):
             )
 
         cache_ttl = llm_cfg.get("cache_ttl", 0)
+        from wardcat.llm.circuit import CircuitBreaker
+
+        breaker = CircuitBreaker(
+            llm_cfg.get("circuit_failures", 3), llm_cfg.get("circuit_cooldown", 30.0)
+        )
         return LLMDetector(
-            backend=backend, enabled_entities=enabled, timeout=timeout, cache_ttl=cache_ttl
+            backend=backend,
+            enabled_entities=enabled,
+            timeout=timeout,
+            cache_ttl=cache_ttl,
+            breaker=breaker,
+            max_concurrency=llm_cfg.get("max_concurrency", 4),
         )

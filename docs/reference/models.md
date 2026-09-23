@@ -14,6 +14,8 @@
 
 ::: wardcat.UnrestoredValue
 
+::: wardcat.SensitivityVerdict
+
 ## Exceptions
 
 Everything wardcat raises derives from `WardcatError`, so one `except` catches
@@ -30,11 +32,17 @@ replaced (`ValueError` / `RuntimeError`), so existing handlers keep working.
 
 ::: wardcat.UnsupportedLanguageError
 
+::: wardcat.DegradedScanError
+
+::: wardcat.CircuitOpen
+
 ## Constants
 
 ::: wardcat.Entity
 
 ::: wardcat.Action
+
+::: wardcat.Layer
 
 ::: wardcat.Backend
 

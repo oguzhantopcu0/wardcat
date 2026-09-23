@@ -9,11 +9,14 @@ from wardcat.core.actions import (
 )
 from wardcat.core.models import (
     KNOWN_ENTITY_TYPES,
+    SENSITIVITY_CATEGORIES,
     Action,
     Entity,
+    Layer,
     RedactedResult,
     RedactedViolation,
     ScanResult,
+    SensitivityVerdict,
     Violation,
 )
 from wardcat.core.restore import RestoredText, Substitution, UnrestoredValue
@@ -31,13 +34,16 @@ from wardcat.entity_groups import (
 from wardcat.exceptions import (
     ConfigError,
     ContextMismatch,
+    DegradedScanError,
     ModelDownloadError,
     UnsupportedLanguageError,
     WardcatError,
 )
 from wardcat.guard import Wardcat
 from wardcat.llm.backends.base import Backend
+from wardcat.llm.circuit import CircuitOpen
 from wardcat.ner.spacy_catalog import Language, supported_languages
+from wardcat.presets import Preset, supported_presets
 
 try:
     __version__: str = version("wardcat")
@@ -55,8 +61,13 @@ __all__ = [
     "RedactedViolation",
     "Action",
     "Entity",
+    "Layer",
+    "SensitivityVerdict",
+    "SENSITIVITY_CATEGORIES",
     "Language",
     "supported_languages",
+    "Preset",
+    "supported_presets",
     "Backend",
     "register_action",
     "registered_actions",
@@ -69,6 +80,8 @@ __all__ = [
     "WardcatError",
     "ConfigError",
     "ContextMismatch",
+    "DegradedScanError",
+    "CircuitOpen",
     "ModelDownloadError",
     "UnsupportedLanguageError",
     # Entity group helpers

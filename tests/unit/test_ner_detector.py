@@ -10,7 +10,8 @@ from __future__ import annotations
 import logging
 
 import pytest
-import spacy.util
+
+spacy = pytest.importorskip("spacy", reason="needs the [ner] extra")
 
 from tests.conftest import make_legacy_guard
 from wardcat import Wardcat

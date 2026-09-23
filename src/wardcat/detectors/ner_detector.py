@@ -6,6 +6,8 @@ import threading
 from typing import Any
 
 from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.utils.logsafe import describe
+from wardcat.utils.text import strip_name_suffix
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +153,85 @@ _NER_STOPWORDS: frozenset[str] = frozenset(
         "dr",
         "herr",
         "frau",
+        # Form-field labels and postal designators. A model reads "SSN", "IBAN"
+        # or "APO AP" beside a value as an organisation; they name the field or
+        # the military post office, never a company or a person.
+        "ssn",
+        "iban",
+        "bic",
+        "swift",
+        "cvv",
+        "cvc",
+        "pin",
+        "dob",
+        "vat",
+        "atm",
+        "address",
+        "phone",
+        "email",
+        "e-mail",
+        "fax",
+        "mobile",
+        "tel",
+        "adres",
+        "telefon",
+        "e-posta",
+        "suite",
+        "apt",
+        "p.o",
+        "box",
+        "apo",
+        "fpo",
+        "dpo",
+        "psc",
+        "rr",
+        "aa",  # the armed-forces "state" codes that follow APO/FPO/DPO
+        "ae",
+        "ap",
     }
+)
+
+# Words a model sweeps into the front of a name: an article, a greeting, a
+# "Sayın" or a "dün" that happened to stand before it. They are trimmed only from
+# the front and only while they lead, so "de la Cruz" or "van der Berg" — whose
+# particles are not listed — stay whole. Anything uncertain stays in the span:
+# a word too many costs a consistent placeholder, a word too few leaks a name.
+# That is why "a", "an" and "cher" are absent: "A Smith", "An Nguyen", "Cher".
+_LEADING_NOISE: frozenset[str] = frozenset(
+    {
+        "the",
+        "dear",
+        "hi",
+        "hello",
+        "hey",
+        "attn",
+        "cc",
+        "sayın",
+        "sayin",
+        "merhaba",
+        "selam",
+        "dün",
+        "dun",
+        "bugün",
+        "bugun",
+        "yarın",
+        "yarin",
+        "liebe",
+        "lieber",
+        "sehr",
+        "geehrte",
+        "geehrter",
+        "bonjour",
+    }
+)
+
+# A street designator as the final word makes an "organisation" a street name —
+# "Pollen Crescent", "Koepenicker Str". Final word only: "Wall Street Journal"
+# keeps its place.
+_STREET_LAST_WORD = re.compile(
+    r"(?:street|st|str|straße|strasse|avenue|ave|road|rd|boulevard|blvd|lane|drive"
+    r"|crescent|caddesi|cad|sokak|sokağı|sok|mahallesi|mah|bulvarı|gasse|weg|allee)\.?",
+    re.IGNORECASE,
 )
 
 
@@ -162,6 +242,83 @@ def _trim_span(text: str, start: int, end: int) -> tuple[str, int, int]:
         return text, start, end
     offset = text.index(trimmed)
     return trimmed, start + offset, start + offset + len(trimmed)
+
+
+# A legal form at the end of a line marks the line that names an organisation.
+_LEGAL_FORM = re.compile(
+    r"\b(?:Inc|Ltd|LLC|PLC|Corp|Co|GmbH|AG|KG|SA|SAS|SARL|A\.Ş|Ltd\. Şti|Holding|Group|Grup)\.?$",
+    re.IGNORECASE,
+)
+
+
+def _best_line(text: str, start: int, end: int) -> tuple[str, int, int]:
+    """Keep the one line of a multi-line span that names the entity.
+
+    A name does not continue onto the next line. In an address block or a
+    signature the model runs on into the following field — "Anna Josefsen\nAddress"
+    — and in a document with headings it runs back over the heading above —
+    "Renewals Team\nDalton Inc.". The line with the most capitalised words is
+    the name; a line ending in a legal form wins for an organisation; ties go
+    to the first line.
+    """
+    if "\n" not in text and "\r" not in text:
+        return text, start, end
+    best: tuple[int, int, str] | None = None  # (score, -position, line)
+    pos = 0
+    for line in re.split(r"\r?\n", text):
+        stripped = line.strip(_EDGE_PUNCT)
+        if stripped:
+            score = sum(1 for w in stripped.split() if w[:1].isupper())
+            if _LEGAL_FORM.search(stripped):
+                score += 2
+            if best is None or score > best[0]:
+                best = (score, -pos, line)
+        pos += len(line) + 1
+    if best is None:
+        return text, start, end
+    line_start = start - best[1]
+    return _trim_span(best[2], line_start, line_start + len(best[2]))
+
+
+# Where a model's span runs into markup or a record delimiter — "Carolyn
+# Hill</name", "Dawn Perkins|560=726", 'BkCode=1290:::ABC Bank' — the name is one
+# fragment between delimiters. A comma counts only before a number, so
+# "Marshall, Hernandez and Simpson" stays whole.
+_STRUCTURAL_DELIMITER = re.compile(r"""[<>|/\\="`\[\]{}*;:]+|,(?=\s*\d)|\s-\s""")
+
+
+def _name_fragment(text: str, start: int, end: int) -> tuple[str, int, int]:
+    """Keep the longest delimiter-free fragment that carries no digit.
+
+    Only applies when the span holds a structural delimiter; a span with none
+    is returned as it is. A span whose every fragment has a digit is returned
+    unchanged too, for the digit filter to reject.
+    """
+    if not _STRUCTURAL_DELIMITER.search(text):
+        return text, start, end
+    best: tuple[int, int, str] | None = None
+    pos = 0
+    for piece in _STRUCTURAL_DELIMITER.split(text):
+        at = text.find(piece, pos)
+        stripped = piece.strip(_EDGE_PUNCT)
+        if stripped and not any(c.isdigit() for c in stripped):
+            if best is None or len(stripped) > best[0]:
+                best = (len(stripped), at, piece)
+        pos = at + len(piece)
+    if best is None:
+        return text, start, end
+    frag_start = start + best[1]
+    return _trim_span(best[2], frag_start, frag_start + len(best[2]))
+
+
+def _drop_leading_noise(text: str, start: int, end: int) -> tuple[str, int, int]:
+    """Remove :data:`_LEADING_NOISE` words from the front, keeping at least one word."""
+    while True:
+        head, sep, rest = text.partition(" ")
+        if not sep or not rest.strip() or head.strip(".,:;").lower() not in _LEADING_NOISE:
+            return text, start, end
+        offset = len(head) + len(sep) + (len(rest) - len(rest.lstrip()))
+        text, start = text[offset:], start + offset
 
 
 def _has_case(text: str) -> bool:
@@ -208,18 +365,18 @@ def _is_valid_person(text: str, *, document_has_case: bool = True) -> bool:
     """
     stripped = text.strip()
     if len(stripped) <= 2:
-        logger.debug("NER PERSON filtered (too short): %r", text)
+        logger.debug("NER PERSON filtered (too short): %s", describe(text))
         return False
     if _NON_PERSON_CHARS.search(stripped):
-        logger.debug("NER PERSON filtered (contains digits/punct): %r", text)
+        logger.debug("NER PERSON filtered (contains digits/punct): %s", describe(text))
         return False
     if _ADDRESS_KW.search(stripped):
-        logger.debug("NER PERSON filtered (address keyword): %r", text)
+        logger.debug("NER PERSON filtered (address keyword): %s", describe(text))
         return False
     # At least one word must start with an uppercase letter — but only where the
     # document capitalizes at all.
     if document_has_case and not any(word[:1].isupper() for word in stripped.split()):
-        logger.debug("NER PERSON filtered (no uppercase word): %r", text)
+        logger.debug("NER PERSON filtered (no uppercase word): %s", describe(text))
         return False
     return True
 
@@ -248,13 +405,25 @@ def _load_model(model_name: str) -> Any:
 class NERDetector(BaseDetector):
     """SpaCy-based Named Entity Recognition detector."""
 
+    layer = "ner"
+
     def __init__(self, enabled_entities: set[str], model: str = "en_core_web_sm") -> None:
         self.nlp = _load_model(model)
         self.enabled_entities = enabled_entities
 
     def detect(self, text: str, candidates: list[DetectedSpan] | None = None) -> list[DetectedSpan]:
         """Return person, organization, and location spans detected by SpaCy NER."""
-        doc = self.nlp(text)
+        return self._spans_from_doc(self.nlp(text), text)
+
+    def detect_many(self, texts: list[str]) -> list[list[DetectedSpan]]:
+        """One ``nlp.pipe`` pass over the batch — the model's own batching, which
+        is several times faster than a call per text."""
+        return [
+            self._spans_from_doc(doc, text)
+            for doc, text in zip(self.nlp.pipe(texts, batch_size=32), texts, strict=True)
+        ]
+
+    def _spans_from_doc(self, doc: Any, text: str) -> list[DetectedSpan]:
         document_has_case = _has_case(text)
         spans: list[DetectedSpan] = []
         for ent in doc.ents:
@@ -262,10 +431,18 @@ class NERDetector(BaseDetector):
             if not mapped or mapped not in self.enabled_entities:
                 continue
             value, start, end = _trim_span(ent.text, ent.start_char, ent.end_char)
+            value, start, end = _best_line(value, start, end)
+            if mapped == "PERSON":
+                # Measured on the held-out corpus: recovering a name from markup
+                # adds people at little cost, but applied to organisations it
+                # keeps field labels ("BkName") as companies — more noise than gain.
+                value, start, end = _name_fragment(value, start, end)
+            value, start, end = _drop_leading_noise(value, start, end)
+            value, start, end = strip_name_suffix(value, start, end)
             # Multilingual gazetteer filter: drop spans that are entirely
             # job titles, HR terms, or abbreviations (never PII on their own).
             if _is_all_stopwords(value):
-                logger.debug("NER %s filtered (all stopwords): %r", mapped, value)
+                logger.debug("NER %s filtered (all stopwords): %s", mapped, describe(value))
                 continue
             if mapped == "PERSON" and not _is_valid_person(
                 value, document_has_case=document_has_case
@@ -276,7 +453,13 @@ class NERDetector(BaseDetector):
             # The street-keyword list is deliberately *not* applied here — it would
             # take "Wall Street Journal" with it.
             if mapped == "ORG" and _NON_PERSON_CHARS.search(value):
-                logger.debug("NER ORG filtered (digits/address punctuation): %r", value)
+                logger.debug("NER ORG filtered (digits/address punctuation): %s", describe(value))
+                continue
+            if mapped == "ORG" and sum(c.isalpha() for c in value) < 2:
+                logger.debug("NER ORG filtered (fewer than two letters): %s", describe(value))
+                continue
+            if mapped == "ORG" and _STREET_LAST_WORD.fullmatch(value.split()[-1]):
+                logger.debug("NER ORG filtered (ends in a street designator): %s", describe(value))
                 continue
             spans.append(
                 DetectedSpan(

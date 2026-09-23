@@ -30,6 +30,14 @@ guard = Wardcat(salt=os.environ["WARDCAT_SALT"]).add_entity("CREDIT_CARD", "hash
 `original_text` and `violations[].original` contain raw PII. Use
 `result.redacted()` for logs and API responses.
 
+The library's own log lines never carry a value, at any level. A rejected match,
+a span a filter dropped, a model reply that did not parse — each is logged as
+its entity type and length (`len=19`), never its text, so `DEBUG` logging in
+production writes no PII. `ScanResult.warnings` carries no values either. A
+test (`tests/unit/test_no_pii_in_logs.py`) scans PII-laden text at `DEBUG` and
+asserts nothing from it reached the log, and walks every `logger.*` call in the
+source for a text-bearing argument.
+
 ## Transport
 
 Loopback HTTP (`localhost` / `127.0.0.1` / `::1`) is allowed with no warning — it
@@ -47,6 +55,18 @@ the system prompt is injected first, malformed responses are discarded, structur
 validators reject hallucinations, and the regex/NER layers run independently. For
 high-security deployments, treat the LLM layer as a **best-effort supplement** to
 regex/NER, not the primary mechanism.
+
+## Surrogates
+
+The `surrogate` action produces values that look real by design. Three things
+follow. A reader downstream — a person, a system, a later scan — cannot tell a
+surrogate from a value, so an output that mixes surrogates with untouched text
+carries no signal about which is which. A generated name will sometimes be a
+real person's; the pools are ordinary names, and there is no name nobody has.
+And because surrogates are deterministic per salt, the salt links a surrogate
+to its value across scans as surely as a hash does: keep it as secret as the
+hash salt, which it is. `tokenize` remains the action whose output announces
+itself as anonymized.
 
 ## Input size limit
 

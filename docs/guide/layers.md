@@ -27,7 +27,8 @@ Deterministic, exhaustive, and free — the backbone. 28 patterns, always on for
 any enabled regex-supported entity, with no extra dependency.
 
 **Checksum-validated, so a match is proof rather than a guess:** `TC_ID` (Nüfus
-İdaresi), `IBAN` (mod-97), `CREDIT_CARD` (Luhn), `CRYPTO_WALLET` (Base58Check for
+İdaresi, whole or grouped `111 654 670 34`), `IBAN` (mod-97), `CREDIT_CARD` (Luhn,
+Troy included), `CRYPTO_WALLET` (Base58Check for
 legacy Bitcoin addresses, the bech32/bech32m polymod for segwit), `NHS_NUMBER`
 (mod-11), `BANK_ROUTING` (ABA mod-10 over a Federal Reserve prefix), `IMEI`
 (Luhn), and every scheme inside `EU_NATIONAL_ID` — Spanish DNI/NIE check letters,
@@ -39,9 +40,22 @@ IPv6, MAC address, postcodes, VAT numbers, and the provider-prefixed secrets
 and more).
 
 **Cued by the word beside them,** because they have no shape of their own: a
-credential written into a sentence (`parolası ise …`, `password is …`) and
-`USERNAME` (`kullanıcı adı ahmet.yilmaz`). Only the value is taken, never the
-keyword, so the redacted line still reads.
+credential written into a sentence (`parolası ise …`, `password is …`),
+`USERNAME` (`kullanıcı adı ahmet.yilmaz`), an SSN without dashes
+(`social security number 412 76 9038`), and a phone number in any national
+format once it is labelled — `Phone: 0490 75 40 81`, `call me at 905-674-3793`, or
+`781 1704 office` in a signature. Only the value is taken, never the keyword, so
+the redacted line still reads. A labelled number scores `0.90`, below the
+structural pattern's `0.97`.
+
+**Guessed from shape alone:** `HIGH_ENTROPY_STRING`, a run of 32+ base64-shaped
+characters with the Shannon entropy of a generated key, or a hex digest longer
+than a git SHA. A secret with no known prefix and no keyword beside it has no
+other signature, and many innocent tokens share this one, so it is off unless
+enabled and scores `0.70`, under the default floor: turn it on with
+`add_entity(Entity.HIGH_ENTROPY_STRING, Action.REDACT, min_confidence=0.7)` and
+measure it on your own logs first. Known secret shapes (a JWT, a UUID, a prefixed
+API key) win the overlap.
 
 Three of those checksums are weak enough that a bare digit run passes about one
 time in ten — the ABA, NHS and IMEI checks. Both the cued and the bare form are
@@ -61,8 +75,37 @@ guard = Wardcat(salt="s").with_ner(language=Language.TR).add_entity("PERSON")
 guard = Wardcat(salt="s").with_ner(spacy_model=["en_core_web_sm", "de_core_news_sm"])
 ```
 
-A multilingual gazetteer filters out job titles and abbreviations that NER models
-commonly mislabel as names.
+A model that cannot be loaded — SpaCy is not installed, or the model is missing
+and could not be downloaded — is skipped, and every `ScanResult.warnings` says so.
+If a missing model is replaced by another one that is installed, the warning names
+both, and says plainly when the replacement is for a different language: an
+English model reading Turkish text misses most names.
+
+Case endings written after an apostrophe are left out of the span. Turkish SpaCy
+models return `Ahmet Yılmaz'ın` and `İstanbul'da` as entities; wardcat replaces
+only the name, so the text reads `[PERSON:…]'ın` and one person keeps one
+placeholder whatever case the sentence puts them in — which is what lets an index
+link the mentions. `O'Brien` and similar names, where the apostrophe is part of
+the name, are kept whole.
+
+A multilingual gazetteer filters out job titles, abbreviations, form-field labels
+(`SSN`, `IBAN`, `Phone`) and postal designators (`P.O. Box`, `APO AP`) that NER
+models commonly mislabel as names or organisations. An organisation whose last
+word is a street designator (`Pollen Crescent`) is dropped as a street name.
+
+Span edges are cleaned before a value is replaced, so one name keeps one
+placeholder. Of a span that crosses a line break — in an address block the model
+runs on into the next field (`Anna Josefsen\nAddress`), under a heading it runs
+back over the heading (`Renewals Team\nDalton Inc.`) — the line with the most
+capitalised words is kept, a line ending in a legal form winning for an
+organisation. Where a span runs into markup or a record delimiter
+(`Carolyn Hill</name`, `Dawn Perkins|560=726`, `BkCode=1290:::ABC Bank`) the
+longest delimiter-free fragment without a digit is kept. A short, fixed list of words is
+trimmed from the front: articles, greetings and salutations (`The`, `Dear`,
+`Sayın`, `dün`). Nothing outside that list is trimmed, because a word too many
+costs consistency and a word too few leaks part of a name. That is why the
+Turkish `md` model's sentence-initial run-ons (`Raporu Ayşe Demir`) are left as
+they are; `tr_core_news_lg` makes that mistake far less often.
 
 `LOCATION` covers countries, cities and regions, kept apart from `ADDRESS` (a
 street address) because the two carry different risk. `NRP` is nationality,
@@ -103,8 +146,9 @@ The strongest context — detects semantic PII the others can't: GDPR Article 9
 special-category data (a stated health condition, religious or political
 affiliation, trade-union membership), contextual secrets (`password=…`),
 unlabeled passports. It is never trusted blindly: the model returns
-`{"type","text"}` JSON, which is filtered by structural validators and located
-back in the original text. If the backend is unreachable the whole layer is
+`{"type","text"}` JSON, which is filtered by structural validators — a card,
+IBAN or TC number must also pass the same checksum the regex layer applies — and
+located back in the original text. If the backend is unreachable the whole layer is
 skipped and recorded in `ScanResult.warnings`; a transient per-chunk error
 (timeout, malformed JSON) is logged and that chunk is skipped while the rest
 continue.
@@ -124,6 +168,14 @@ guard = Wardcat(salt="s").with_llm(backend=Backend.VLLM,
 guard = Wardcat(salt="s").with_llm(backend=Backend.TRANSFORMERS,
                                    model="Qwen/Qwen2.5-3B-Instruct")
 ```
+
+Reasoning models such as Qwen3 and DeepSeek-R1 are asked not to think: wardcat
+wants a bare JSON list, and on `qwen3:14b` thinking stretched a one-sentence scan
+from about ten seconds to minutes. The Ollama backend sends `think: false`. Other
+servers are not sent a vendor-specific flag, so switch reasoning off in the
+server's own configuration (vLLM and llama.cpp accept
+`chat_template_kwargs={"enable_thinking": false}`); any `<think>…</think>` that
+still reaches wardcat is removed before the reply is parsed.
 
 ### Model lifecycle & choosing a backend
 
@@ -249,5 +301,16 @@ if guard.is_sensitive(user_text):   # or: await guard.is_sensitive_async(...)
 
 LLM-only (no entities to enable); requires `with_llm(...)`; empty text is `False`.
 Fail-closed — a backend error propagates rather than returning a misleading `False`.
+
+`classify(text)` gives the same judgement as a `SensitivityVerdict`: `sensitive`,
+the `categories` present (`pii`, `credentials`, `financial`, `health`,
+`special_category`, `business_confidential`, or `unknown` when the model said
+sensitive but its answer could not be read in full) and the model's one-line
+`reason`. Route on the kind — block health data, allow business data inside the
+company. It is a separate prompt: asked for structure the model is more precise
+but misses more, chiefly confidential business plans, and answers several times
+slower, so `is_sensitive()` stays the gate. Its prompt names placeholders and
+format examples, a company's public customer-service number and order or version
+numbers as not sensitive; the `is_sensitive()` prompt is unchanged.
 
 See the full API on the [Wardcat reference page](../reference/wardcat.md).

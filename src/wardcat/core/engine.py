@@ -4,12 +4,14 @@ import asyncio
 import logging
 import re
 import time
+from collections.abc import Sequence
 from typing import Any
 
 from wardcat.core.actions import new_context_id
 from wardcat.core.anonymizer import Anonymizer
 from wardcat.core.models import ScanResult
 from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.exceptions import DegradedScanError
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,13 @@ class DetectionEngine:
     applies configured actions, and returns a ScanResult.
     """
 
-    def __init__(self, config: dict[str, Any], detectors: list[BaseDetector]) -> None:
+    def __init__(
+        self,
+        config: dict[str, Any],
+        detectors: list[BaseDetector],
+        *,
+        build_warnings: Sequence[str] = (),
+    ) -> None:
         self.config = config
         self.detectors = detectors
         # Ensemble adjudication: when enabled and an LLM detector is present,
@@ -60,7 +68,71 @@ class DetectionEngine:
         # other tier, so lowering it trades precision for recall and nothing
         # else changes.
         self._min_confidence: float = float(config.get("min_confidence", 0.8))
-        self._denylist: list[dict[str, str]] = config.get("denylist", [])
+        # Strict: a scan that covered less than was configured is an error, not a
+        # result with warnings. The guard already refuses to build in that state;
+        # this catches what only shows up per scan (an LLM backend going down).
+        self._strict: bool = bool(config.get("strict", False))
+        # Denylist entries, in configured order, as (entity_type, value or compiled
+        # pattern). Compiled once here rather than on every scan. Patterns were
+        # screened for catastrophic backtracking when they were configured.
+        self._denylist: list[tuple[str, re.Pattern[str]]] = []
+        # Literal entries are matched in one pass, whatever their number: a
+        # customer list of ten thousand names would otherwise be ten thousand
+        # passes over every text. One alternation, longest value first so the
+        # longest literal at a position wins, wrapped in a lookahead so every
+        # start position is reported — exactly what the entry-by-entry search
+        # found, and what overlap resolution expects. Regex entries stay
+        # separate: merging them would renumber their groups and let one
+        # entry's backtracking reach into another's.
+        self._denylist_literals: dict[str, str] = {}
+        self._denylist_literal_re: re.Pattern[str] | None = None
+        denylist_warnings: list[str] = []
+        for entry in config.get("denylist", []):
+            entity_type = entry.get("entity_type", "CUSTOM")
+            if "pattern" in entry:
+                try:
+                    self._denylist.append((entity_type, re.compile(entry["pattern"])))
+                except re.error as exc:
+                    denylist_warnings.append(
+                        f"Denylist pattern {entry['pattern']!r} is not valid regex and was "
+                        f"skipped: {exc}"
+                    )
+            elif entry.get("value"):
+                value = entry["value"]
+                first_type = self._denylist_literals.get(value)
+                if first_type is not None:
+                    if first_type != entity_type:
+                        logger.warning(
+                            "Denylist value listed under two entity types (%s and %s); "
+                            "the first one is used.",
+                            first_type,
+                            entity_type,
+                        )
+                    continue
+                self._denylist_literals[value] = entity_type
+        # Every literal that matches at a position is a prefix of the longest one
+        # matching there, so the shorter ones are recovered from a prefix table
+        # rather than searched for. Overlap resolution then sees the same
+        # candidates the entry-by-entry search produced.
+        self._denylist_prefixes: dict[str, list[str]] = {}
+        if self._denylist_literals:
+            ordered = sorted(self._denylist_literals, key=len, reverse=True)
+            self._denylist_literal_re = re.compile(
+                "(?=(" + "|".join(re.escape(v) for v in ordered) + "))"
+            )
+            for value in ordered:
+                self._denylist_prefixes[value] = [
+                    value[:k] for k in range(1, len(value)) if value[:k] in self._denylist_literals
+                ]
+        # Problems found while the guard was built that leave every scan covering
+        # less than was configured — an NER model that did not load, say. A log
+        # line is read once if at all; the result is what a caller checks, so each
+        # result carries them, since each scan really was incomplete.
+        self.build_warnings: tuple[str, ...] = (
+            *build_warnings,
+            *(warning for detector in detectors for warning in detector.build_warnings),
+            *denylist_warnings,
+        )
         # Value propagation: once any layer detects a value, redact every other
         # whole-token occurrence of that exact value too. Closes the gap where a
         # model-based layer (NER/LLM) reports a repeated value only once.
@@ -70,7 +142,8 @@ class DetectionEngine:
         self._propagate_min_len: int = config.get("propagate_min_length", 3)
         # Detection (this class) is kept separate from anonymization (applying the
         # configured action to each span); the Anonymizer owns that stage.
-        self._anonymizer = Anonymizer(self.entity_config, self.salt)
+        self._locale: str = config.get("locale", "en")
+        self._anonymizer = Anonymizer(self.entity_config, self.salt, self._locale)
 
         if not self.salt:
             logger.debug(
@@ -87,7 +160,7 @@ class DetectionEngine:
         t_start = time.perf_counter()
         self._check_size(text)
 
-        warnings: list[str] = []
+        warnings: list[str] = list(self.build_warnings)
         if self._use_adjudication:
             candidate_spans: list[DetectedSpan] = []
             for detector in self._other_detectors:
@@ -118,13 +191,136 @@ class DetectionEngine:
             len(text),
             elapsed_ms,
         )
-        return ScanResult(
+        result = ScanResult(
             original_text=text,
             sanitized_text=sanitized,
             violations=violations,
             warnings=warnings,
             context_id=context_id,
             _salt=self.salt,
+            _locale=self._locale,
+        )
+        if self._strict and warnings:
+            raise DegradedScanError(warnings, result)
+        return result
+
+    def scan_many(self, texts: list[str], *, workers: int = 4) -> list[ScanResult]:
+        """Scan a batch: batched layers in one pass each, the rest in threads.
+
+        The result list matches *texts* in order and equals what :meth:`scan`
+        would return for each, apart from context ids. A detector that batches
+        (:meth:`~wardcat.detectors.base.BaseDetector.detect_many`, which SpaCy
+        NER implements with ``nlp.pipe``) sees the whole batch at once; the
+        others — the LLM layer — run per text in a pool of *workers* threads.
+        A layer that fails is skipped for the whole batch and recorded on every
+        result. A text that cannot be scanned at all (too large) gets a result
+        with ``scan_error`` set and its text unchanged. Adjudication is not
+        batched: with it on, each text goes through :meth:`scan`.
+        """
+        if not texts:
+            return []
+        if self._use_adjudication:
+            return [self._scan_or_error(text) for text in texts]
+
+        results: list[ScanResult | None] = [None] * len(texts)
+        todo: list[int] = []
+        for i, text in enumerate(texts):
+            try:
+                self._check_size(text)
+            except ValueError as exc:
+                results[i] = self._error_result(text, exc)
+                continue
+            todo.append(i)
+        if not todo:
+            return results  # type: ignore[return-value]
+
+        warnings: list[str] = list(self.build_warnings)
+        batch = [texts[i] for i in todo]
+        per_text: list[list[DetectedSpan]] = [[] for _ in todo]
+        pooled: list[BaseDetector] = []
+        for detector in self.detectors:
+            if type(detector).detect_many is BaseDetector.detect_many:
+                pooled.append(detector)
+                continue
+            try:
+                found = detector.detect_many(batch)
+            except Exception as exc:
+                msg = f"{type(detector).__name__} did not run: {exc}"
+                logger.warning("scan_many: detector layer skipped — %s", msg)
+                warnings.append(msg)
+                continue
+            for spans, acc in zip(found, per_text, strict=True):
+                acc.extend(self._stamp_source(spans, detector))
+
+        # Detectors without a batch path — the LLM layer — still run per text,
+        # but in parallel; its own gate bounds what reaches the backend.
+        if pooled:
+            from concurrent.futures import ThreadPoolExecutor
+
+            failed: dict[int, list[str]] = {}
+
+            def one(k: int) -> list[DetectedSpan]:
+                local: list[str] = []
+                spans: list[DetectedSpan] = []
+                for detector in pooled:
+                    spans.extend(self._safe_detect(detector, batch[k], local))
+                if local:
+                    failed[k] = local
+                return spans
+
+            with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+                for k, spans in enumerate(pool.map(one, range(len(batch)))):
+                    per_text[k].extend(spans)
+        else:
+            failed = {}
+
+        for k, i in enumerate(todo):
+            text = texts[i]
+            item_warnings = warnings + failed.get(k, [])
+            # The per-item tail is isolated as scan_batch always was: an error
+            # here files that item under scan_error and the rest go on.
+            try:
+                raw = per_text[k] + self._collect_denylist_spans(text)
+                spans = self._filter_spans(raw, text)
+                context_id = new_context_id()
+                sanitized, violations = self._anonymizer.apply(text, spans, context_id=context_id)
+            except Exception as exc:
+                result = self._error_result(text, exc)
+                result.warnings = item_warnings
+                results[i] = result
+                continue
+            result = ScanResult(
+                original_text=text,
+                sanitized_text=sanitized,
+                violations=violations,
+                warnings=item_warnings,
+                context_id=context_id,
+                _salt=self.salt,
+                _locale=self._locale,
+            )
+            if self._strict and item_warnings:
+                raise DegradedScanError(item_warnings, result)
+            results[i] = result
+        return results  # type: ignore[return-value]
+
+    def _scan_or_error(self, text: str) -> ScanResult:
+        try:
+            return self.scan(text)
+        except DegradedScanError:
+            raise
+        except Exception as exc:
+            return self._error_result(text, exc)
+
+    def _error_result(self, text: str, exc: Exception) -> ScanResult:
+        logger.error("scan failed (%s: %s), returning original text.", type(exc).__name__, exc)
+        return ScanResult(
+            original_text=text,
+            sanitized_text=text,
+            violations=[],
+            scan_error=f"{type(exc).__name__}: {exc}",
+            warnings=list(self.build_warnings),
+            _salt=self.salt,
+            _locale=self._locale,
         )
 
     async def scan_async(self, text: str) -> ScanResult:
@@ -137,7 +333,7 @@ class DetectionEngine:
         t_start = time.perf_counter()
         self._check_size(text)
 
-        warnings: list[str] = []
+        warnings: list[str] = list(self.build_warnings)
         if self._use_adjudication:
             cand_results = await asyncio.gather(
                 *(self._safe_detect_async(d, text) for d in self._other_detectors)
@@ -177,14 +373,18 @@ class DetectionEngine:
             len(text),
             elapsed_ms,
         )
-        return ScanResult(
+        result = ScanResult(
             original_text=text,
             sanitized_text=sanitized,
             violations=violations,
             warnings=warnings,
             context_id=context_id,
             _salt=self.salt,
+            _locale=self._locale,
         )
+        if self._strict and warnings:
+            raise DegradedScanError(warnings, result)
+        return result
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -205,13 +405,23 @@ class DetectionEngine:
         """
         try:
             if candidates is None:
-                return detector.detect(text)
-            return detector.detect(text, candidates=candidates)
+                spans = detector.detect(text)
+            else:
+                spans = detector.detect(text, candidates=candidates)
         except Exception as exc:
             msg = f"{type(detector).__name__} did not run: {exc}"
             logger.warning("scan: detector layer skipped — %s", msg)
             warnings.append(msg)
             return []
+        return self._stamp_source(spans, detector)
+
+    @staticmethod
+    def _stamp_source(spans: list[DetectedSpan], detector: BaseDetector) -> list[DetectedSpan]:
+        """Name the layer on every span that did not name it itself."""
+        for span in spans:
+            if not span.source:
+                span.source = detector.layer
+        return spans
 
     async def _safe_detect_async(
         self,
@@ -222,8 +432,10 @@ class DetectionEngine:
         """Async :meth:`_safe_detect` — returns ``(spans, warning_or_None)``."""
         try:
             if candidates is None:
-                return await detector.detect_async(text), None
-            return await detector.detect_async(text, candidates=candidates), None
+                spans = await detector.detect_async(text)
+            else:
+                spans = await detector.detect_async(text, candidates=candidates)
+            return self._stamp_source(spans, detector), None
         except Exception as exc:
             msg = f"{type(detector).__name__} did not run: {exc}"
             logger.warning("scan_async: detector layer skipped — %s", msg)
@@ -248,13 +460,17 @@ class DetectionEngine:
         checksum is resolved as PHONE, not dropped as a weak NHS match.
         """
         spans = self._resolve_overlaps(raw_spans)
-        if self._min_confidence > 0:
-            spans = [s for s in spans if s.confidence >= self._min_confidence]
+        spans = [s for s in spans if s.confidence >= self._threshold_for(s.entity_type)]
         if self._allowlist:
             spans = [s for s in spans if s.text not in self._allowlist]
         if self._propagate:
             spans = self._propagate_values(spans, text)
         return spans
+
+    def _threshold_for(self, entity_type: str) -> float:
+        """The confidence floor for one entity: its own, or the global one."""
+        own = self.entity_config.get(entity_type, {}).get("min_confidence")
+        return float(own) if own is not None else self._min_confidence
 
     def _propagate_values(self, spans: list[DetectedSpan], text: str) -> list[DetectedSpan]:
         """Add a span for every other whole-token occurrence of each detected value.
@@ -293,6 +509,7 @@ class DetectionEngine:
                         start=start,
                         end=end,
                         confidence=template.confidence,
+                        source="propagation",
                     )
                 )
         if not extra:
@@ -309,48 +526,32 @@ class DetectionEngine:
     def _collect_denylist_spans(self, text: str) -> list[DetectedSpan]:
         """Match denylist entries (exact value or regex pattern) against *text*."""
         spans: list[DetectedSpan] = []
-        for entry in self._denylist:
-            entity_type = entry.get("entity_type", "CUSTOM")
-
-            if "pattern" in entry:
-                # Regex denylist entry
-                try:
-                    compiled = re.compile(entry["pattern"])
-                except re.error:
-                    logger.warning("Denylist pattern %r is invalid — skipped.", entry["pattern"])
-                    continue
-                for m in compiled.finditer(text):
-                    spans.append(
-                        DetectedSpan(
-                            entity_type=entity_type,
-                            text=m.group(),
-                            start=m.start(),
-                            end=m.end(),
-                            confidence=1.0,
-                        )
+        for entity_type, pattern in self._denylist:
+            for m in pattern.finditer(text):
+                spans.append(
+                    DetectedSpan(
+                        entity_type=entity_type,
+                        text=m.group(),
+                        start=m.start(),
+                        end=m.end(),
+                        confidence=1.0,
+                        source="denylist",
                     )
-
-            elif "value" in entry:
-                # Exact-match denylist entry
-                value = entry["value"]
-                if not value:
-                    continue
-                start = 0
-                while True:
-                    pos = text.find(value, start)
-                    if pos == -1:
-                        break
+                )
+        if self._denylist_literal_re is not None:
+            for m in self._denylist_literal_re.finditer(text):
+                longest = m.group(1)
+                for value in (longest, *self._denylist_prefixes[longest]):
                     spans.append(
                         DetectedSpan(
-                            entity_type=entity_type,
+                            entity_type=self._denylist_literals[value],
                             text=value,
-                            start=pos,
-                            end=pos + len(value),
+                            start=m.start(),
+                            end=m.start() + len(value),
                             confidence=1.0,
+                            source="denylist",
                         )
                     )
-                    start = pos + 1
-
         return spans
 
     def _resolve_overlaps(self, spans: list[DetectedSpan]) -> list[DetectedSpan]:
