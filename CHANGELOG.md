@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **README.** Rewritten to a one-screen introduction — install, a first scan
+  that runs offline, why wardcat, links — that defers to
+  [docs.wardcat.com](https://docs.wardcat.com). Nothing was dropped: the
+  entity tables moved to a new [entity types](https://docs.wardcat.com/reference/entities/)
+  page, the limitations table to [known limitations](https://docs.wardcat.com/guide/limitations/),
+  the repository layout and test commands to `CONTRIBUTING.md`, and the
+  remaining paragraphs into the guide pages they belong to. A test runs every
+  README example and resolves every link, so the two cannot drift apart.
+
 ### Added
 
 - **Strict mode.** `with_strict()` (YAML `strict: true`) turns a degraded scan

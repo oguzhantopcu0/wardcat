@@ -1,6 +1,6 @@
 """A layer that could not be built is reported on every result, not only in a log.
 
-The README promises that a non-empty ``warnings`` means a scan was degraded. That
+The configuration guide promises that a non-empty ``warnings`` means a scan was degraded. That
 held for a layer failing mid-scan, but a layer that failed while the guard was
 being built — a SpaCy model that would not load, SpaCy not installed at all, the
 ``phonenumbers`` extra missing — was only logged, and every scan came back clean

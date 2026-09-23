@@ -36,6 +36,27 @@ guard = (
 )
 ```
 
+Predefined groups pair naturally with `add_entities()`:
+
+```python
+from wardcat import Wardcat, turkish_entities
+
+guard = Wardcat(salt="s")
+guard.add_entities(turkish_entities(), action="hash")          # a whole group, one action
+guard.add_entities(["EMAIL", "CREDIT_CARD", "IBAN"], action="redact")
+guard.add_entities({                                           # per-entity actions and layers
+    "CREDIT_CARD":      "hash",
+    "EMAIL":            {"action": "mask"},
+    "SPECIAL_CATEGORY": {"action": "redact", "layers": ["llm"]},
+})
+```
+
+The groups — `core_entities`, `financial_entities`, `turkish_entities`,
+`european_entities`, `uk_entities`, `us_entities`, `network_entities`,
+`identity_entities`, `all_entities` — are importable from `wardcat`. Every
+entity, with its default action, is on the [entity types](reference/entities.md)
+page.
+
 ## Declarative API (YAML)
 
 ```python
@@ -75,5 +96,18 @@ results = guard.scan_batch(["ali@example.com", "Card: 4111 1111 1111 1111", "Cle
 for r in results:
     print(r.is_clean, len(r.violations))
 ```
+
+## Examples
+
+Runnable scripts in [`examples/`](https://github.com/oguzhantopcu0/wardcat/tree/main/examples):
+
+| File | Shows |
+|---|---|
+| `demo.py` | Programmatic + YAML APIs |
+| `batch_and_async.py` | `scan_batch` and the async API (regex-only, no services) |
+| `llm_hybrid.py` | regex + NER + LLM with ensemble adjudication (needs Ollama) |
+| `all_layers.py` | all three layers on one guard, with adjudication (needs Ollama + a SpaCy model) |
+| `reversible_roundtrip.py` | `Action.TOKENIZE` out, `restore()` back — regex-only, stubbed model, runs offline |
+| `asgi_middleware.py` | Copy-paste ASGI middleware (FastAPI/Starlette) that scans request bodies — wardcat ships no web-framework code; this is a self-contained example |
 
 Next: enable the [detection layers](guide/layers.md) you need.
