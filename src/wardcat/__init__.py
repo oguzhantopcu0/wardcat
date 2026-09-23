@@ -48,7 +48,7 @@ from wardcat.presets import Preset, supported_presets
 try:
     __version__: str = version("wardcat")
 except PackageNotFoundError:
-    __version__ = "1.2.0"  # development environment fallback
+    __version__ = "1.2.1"  # development environment fallback
 
 __all__ = [
     "Wardcat",

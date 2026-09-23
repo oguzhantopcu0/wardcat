@@ -9,16 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **README.** Rewritten to a one-screen introduction — install, a first scan
-  that runs offline, why wardcat, links — that defers to
-  [docs.wardcat.com](https://docs.wardcat.com). Nothing was dropped: the
-  entity tables moved to a new [entity types](https://docs.wardcat.com/reference/entities/)
-  page, the limitations table to [known limitations](https://docs.wardcat.com/guide/limitations/),
-  the repository layout and test commands to `CONTRIBUTING.md`, and the
-  remaining paragraphs into the guide pages they belong to. A test runs every
-  README example and resolves every link, so the two cannot drift apart.
+## [1.2.1] — 2026-09-23
 
 ### Added
 
@@ -131,6 +122,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   run is still refused.
 
 ### Changed
+
+- **README.** Rewritten to a one-screen introduction — install, a first scan
+  that runs offline, why wardcat, links — that defers to
+  [docs.wardcat.com](https://docs.wardcat.com). Nothing was dropped: the
+  entity tables moved to a new [entity types](https://docs.wardcat.com/reference/entities/)
+  page, the limitations table to [known limitations](https://docs.wardcat.com/guide/limitations/),
+  the repository layout and test commands to `CONTRIBUTING.md`, and the
+  remaining paragraphs into the guide pages they belong to. A test runs every
+  README example and resolves every link, so the two cannot drift apart.
 
 - **Literal denylist values are matched in one pass.** Ten thousand names
   cost one scan of the text rather than ten thousand; the spans found are
@@ -851,7 +851,10 @@ changes only in a future 2.0.
 - **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
-[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.0...v1.2.1
+[1.2.0]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.2...v1.2.0
+[1.1.2]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/oguzhantopcu0/wardcat/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/oguzhantopcu0/wardcat/compare/v1.0.0...v1.0.1

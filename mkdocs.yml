@@ -38,26 +38,26 @@ theme:
 # Keep it to the handful of changes worth interrupting a reader for; the card
 # links to the changelog for the rest.
 extra:
-  whats_new_version: "1.2.0"
+  whats_new_version: "1.2.1"
   whats_new:
-    - title: Reversible masking
-      note: tokenize out, restore the answer
-      link: guide/reversible/
-    - title: Eight checksum-verified filters
-      note: wallets, NHS, ABA routing, IMEI, EU IDs
-      link: guide/layers/#regex
-    - title: Confidence floor
-      note: min_confidence decides what is acted on
-      link: guide/configuration/#confidence-floor
-    - title: USERNAME and in-sentence credentials
-      note: cued by the word beside them
-      link: guide/layers/#regex
-    - title: LOCATION and NRP split out of NER
-      note: place names and Article 9 data get their own types
-      link: guide/layers/#spacy-ner-ner
-    - title: libphonenumber phone regions
-      note: national formats beyond TR/FR/DE
-      link: guide/configuration/#phone-regions
+    - title: Command line
+      note: wardcat scan, check-config, entities
+      link: guide/cli/
+    - title: Presets
+      note: kvkk, gdpr, pci_dss, hipaa_lite, secrets_only
+      link: guide/presets/
+    - title: Surrogates
+      note: realistic, reversible stand-ins
+      link: guide/reversible/#surrogates-realistic-stand-ins
+    - title: Strict mode and the circuit breaker
+      note: a degraded scan raises instead of passing
+      link: guide/configuration/#strict-mode-refuse-a-degraded-scan
+    - title: classify()
+      note: which kind of sensitive, not only whether
+      link: guide/layers/#semantic-sensitivity-gate-is_sensitive
+    - title: Entity types page
+      note: every entity, default action and layer
+      link: reference/entities/
 
 validation:
   anchors: warn
