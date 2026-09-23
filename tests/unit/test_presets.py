@@ -50,7 +50,9 @@ class TestEveryPreset:
 
     def test_the_guide_lists_the_same_entities(self, name: str) -> None:
         guide = Path(__file__).resolve().parents[2] / "docs" / "guide" / "presets.md"
-        section = re.search(rf"^## `{name}`\n(.*?)(?=^## |\Z)", guide.read_text(), re.S | re.M)
+        # utf-8 named: the arrows in the guide are not in Windows' default codepage.
+        text = guide.read_text(encoding="utf-8")
+        section = re.search(rf"^## `{name}`\n(.*?)(?=^## |\Z)", text, re.S | re.M)
         assert section, f"presets.md has no section for {name}"
         listed = set(re.findall(r"`([A-Z][A-Z0-9_]+)` → `(\w+)`", section.group(1)))
         assert listed == set(get_preset(name).entities.items())
