@@ -2,8 +2,8 @@
 
 **PII detection and anonymization for LLM inputs** — a hybrid engine that scans
 text for personally identifiable information (PII) *before* it reaches an LLM,
-and either warns about or replaces the sensitive data with salted SHA-256
-hashes.
+and warns about, hashes, redacts, masks, tokenizes or swaps the sensitive data
+for a realistic stand-in.
 
 Three detection layers cooperate behind one interface:
 
@@ -57,15 +57,15 @@ if guard.is_sensitive(text):
 - **Hybrid detection** across three cooperating layers, merged with a
   confidence-first overlap resolver (a deterministic regex span always wins).
 - **Checksum validation** — TC_ID, IBAN, CREDIT_CARD, Bitcoin wallet addresses,
-  NHS numbers, ABA routing numbers, IMEI and every EU national-ID scheme are
-  mathematically verified before flagging, so a match is proof rather than a
+  NHS numbers, ABA routing numbers, IMEI and the EU national-ID schemes it
+  knows (DNI/NIE, INSEE, BSN, PESEL) are mathematically verified before flagging, so a match is proof rather than a
   guess ([Detection layers](guide/layers.md#regex)).
 - **A confidence floor** — every detection is tiered by how strong the evidence
   is, and `min_confidence` decides what is acted on. Weak-checksum matches with
   no supporting keyword are found but left alone until you lower it
   ([Configuration](guide/configuration.md#confidence-floor)).
-- **Five actions** — `warn`, `hash` (salted SHA-256), `redact`, `mask`, and the
-  reversible `tokenize` — all pluggable via a registry.
+- **Six actions** — `warn`, `hash` (salted SHA-256), `redact`, `mask`, and the
+  reversible `tokenize` and `surrogate` — all pluggable via a registry.
 - **Reversible masking** — mask on the way out, restore the LLM's answer on the
   way back, with an ordered source list of what was put back
   ([Reversible masking](guide/reversible.md)).
@@ -90,3 +90,5 @@ if guard.is_sensitive(text):
 - [Detection layers](guide/layers.md) — regex, NER, and the LLM layer.
 - [Reversible masking](guide/reversible.md) — the LLM round trip, and restoring the answer.
 - [API reference](reference/wardcat.md) — generated from the source docstrings.
+- [Entity types](reference/entities.md) — every entity, its default action and its layer.
+- [Known limitations](guide/limitations.md) — what is not caught, and what to do about it.

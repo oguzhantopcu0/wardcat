@@ -61,6 +61,89 @@ uv run pytest --cov=src/wardcat --cov-report=term-missing # coverage
 - **Mocked LLM tests** (default) verify plumbing — no model required.
 - **Live LLM tests** (`slow`) call a real Ollama model and auto-skip when it is
   unavailable. Choose the model with `WARDCAT_TEST_LLM_MODEL=<name>`.
+- **README examples** (`tests/unit/test_readme_examples.py`) run every code
+  block in the README, compare the printed output with the `# …` comments, and
+  resolve every link against `docs/` and the repository. Change the README and
+  the docs together.
+
+### Detection quality
+
+`tests/benchmark/` scores the detectors two ways: a false-positive suite
+(detectors must stay quiet on clean text) and a precision/recall harness over a
+labelled, checksum-valid corpus. Both run in CI. Print the P/R report:
+
+```bash
+uv run python -m tests.benchmark.eval_harness
+```
+
+Widen coverage by adding rows to `CORPUS` in `tests/benchmark/eval_harness.py`.
+`benchmarks/` holds the reproducible comparison against Microsoft Presidio on
+public corpora; its README says how to run it and where the data comes from.
+
+### Docs
+
+The site at <https://docs.wardcat.com> is built from `docs/` with MkDocs +
+Material and an auto-generated API reference. Preview it locally:
+
+```bash
+uv run --group docs mkdocs serve
+```
+
+CI builds it with `--strict`, so a broken link or a page missing from the
+`mkdocs.yml` nav fails the build.
+
+## Repository layout
+
+```
+wardcat/
+├── src/wardcat/
+│   ├── guard.py              # Wardcat — main interface, layer builders, classify()
+│   ├── _entity_policy.py     # add/remove/change entity + introspection (mixin)
+│   ├── entity_groups.py      # core_entities(), turkish_entities(), … helpers
+│   ├── presets.py            # kvkk / gdpr / pci_dss / hipaa_lite / secrets_only
+│   ├── cli.py                # the `wardcat` command
+│   ├── exceptions.py         # WardcatError and friends (ConfigError, DegradedScanError…)
+│   ├── core/
+│   │   ├── engine.py         # DetectionEngine — overlap resolution, layer merge, denylist
+│   │   ├── anonymizer.py     # applies the action to each resolved span
+│   │   ├── actions.py        # action registry — hash/redact/mask/warn/tokenize/surrogate
+│   │   ├── restore.py        # TokenAllocator + restore() — the reversible path
+│   │   ├── registry.py       # which entity types each layer can produce
+│   │   └── models.py         # Entity, Action, Layer, Violation, ScanResult, SensitivityVerdict
+│   ├── detectors/
+│   │   ├── base.py           # BaseDetector ABC
+│   │   ├── regex_detector.py # patterns, checksum validators, keyword-cued secrets/usernames
+│   │   ├── ner_detector.py   # SpaCy NER (multilingual) + gazetteer FP filter + span cleanup
+│   │   └── llm_detector.py   # LLM-based detection with hallucination filter, circuit breaker
+│   ├── llm/
+│   │   ├── backends/         # ollama, openai_compat, vllm, transformers + registry
+│   │   ├── circuit.py        # CircuitBreaker
+│   │   ├── model_catalog.py  # supported model list
+│   │   ├── model_manager.py  # download / cache lifecycle
+│   │   └── prompt.py         # detection, sensitivity and classification prompts
+│   ├── ner/
+│   │   ├── spacy_catalog.py  # language + size tier → SpaCy package name
+│   │   └── downloader.py     # auto-download of missing models
+│   ├── surrogates/           # SurrogateAllocator + per-locale value pools
+│   ├── config/
+│   │   └── loader.py         # YAML loader and validation (no env lookup)
+│   └── utils/
+│       ├── hashing.py        # SHA-256 + salt
+│       ├── logsafe.py        # describe() — log a value's length, never its text
+│       ├── normalize.py      # confusable / homoglyph folding
+│       ├── regex_safety.py   # ReDoS screen for custom and denylist patterns
+│       └── text.py           # chunking and offset helpers
+├── tests/
+│   ├── unit/                 # component-level tests
+│   ├── integration/          # scenario and adversarial tests
+│   └── benchmark/            # eval harness and the false-positive suite
+├── benchmarks/               # Presidio comparison (data and results are not committed)
+├── examples/                 # runnable scripts
+├── docs/                     # the documentation site
+├── config/
+│   └── default.yaml          # example policy file
+└── pyproject.toml
+```
 
 ## Architecture in one minute
 
@@ -78,8 +161,8 @@ Three detector layers feed a single engine:
 The `DetectionEngine` (`core/engine.py`) merges spans, resolves overlaps (higher
 confidence wins, then the longer span), drops spans below `min_confidence`,
 applies allow/deny lists, and hands the result to the `Anonymizer`, which runs
-the configured action (`warn` / `hash` / `redact` / `mask` / `tokenize`, or one
-added with `register_action`).
+the configured action (`warn` / `hash` / `redact` / `mask` / `tokenize` /
+`surrogate`, or one added with `register_action`).
 
 A layer that cannot run must say so in `ScanResult.warnings` — failing mid-scan
 through `_safe_detect`, failing while the guard is built through
@@ -98,7 +181,7 @@ result.
    entry under `llm_detector.entities` in `config/loader.py`, and an `Entity`
    member.
 3. Add it to the matching groups in `entity_groups.py`, then add tests and a row
-   to the README entity table.
+   to the entity table in `docs/reference/entities.md`.
 
 ## Conventions
 

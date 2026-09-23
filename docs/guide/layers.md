@@ -23,8 +23,16 @@ Wardcat.supported_entities("ner")     # {"PERSON", "ORG", "ADDRESS", "LOCATION",
 
 ## Regex
 
-Deterministic, exhaustive, and free — the backbone. 28 patterns, always on for
-any enabled regex-supported entity, with no extra dependency.
+Deterministic, exhaustive, and free — the backbone. Always on for any enabled
+regex-supported entity, with no extra dependency. The full list, with each
+entity's default action, is on the [entity types](../reference/entities.md) page.
+
+Text is folded before the patterns run: confusable characters — Cyrillic and
+Greek lookalikes, fullwidth and Arabic-Indic digits — are mapped to their ASCII
+skeleton, so `ali@tеst.com` with a Cyrillic `е` or a card written `４111…` is
+matched like its plain form, and offsets still point into the original text.
+That is `normalize_confusables`, on by default; it is a curated skeleton rather
+than the full Unicode table, so an exotic lookalike may still slip through.
 
 **Checksum-validated, so a match is proof rather than a guess:** `TC_ID` (Nüfus
 İdaresi, whole or grouped `111 654 670 34`), `IBAN` (mod-97), `CREDIT_CARD` (Luhn,
@@ -75,6 +83,22 @@ guard = Wardcat(salt="s").with_ner(language=Language.TR).add_entity("PERSON")
 guard = Wardcat(salt="s").with_ner(spacy_model=["en_core_web_sm", "de_core_news_sm"])
 ```
 
+**Pick a language, not a model name.** Use the `Language` constants (or their
+ISO codes — `en`, `de`, `fr`, `es`, `it`, `nl`, `pt`, `tr`) and an optional size
+tier, and wardcat resolves the package from its catalog and downloads it if it
+is missing:
+
+```python
+guard = Wardcat().with_ner(language=Language.DE)                  # → de_core_news_sm
+guard = Wardcat().with_ner(language=Language.FR, spacy_size="md") # → fr_core_news_md (sm/md/lg/trf)
+guard = Wardcat().with_ner(language=Language.TR, spacy_size="lg") # → tr_core_news_lg
+guard = Wardcat().with_ner(language=Language.EN, auto_download=False)  # never download
+```
+
+If the requested size is unavailable for a language, the recommended model is
+used. Selecting a language implies auto-download; `auto_download=False` turns
+it off. `tr_core_news_trf` is incompatible with SpaCy 3.5+ — use `md` or `lg`.
+
 A model that cannot be loaded — SpaCy is not installed, or the model is missing
 and could not be downloaded — is skipped, and every `ScanResult.warnings` says so.
 If a missing model is replaced by another one that is installed, the warning names
@@ -99,7 +123,8 @@ runs on into the next field (`Anna Josefsen\nAddress`), under a heading it runs
 back over the heading (`Renewals Team\nDalton Inc.`) — the line with the most
 capitalised words is kept, a line ending in a legal form winning for an
 organisation. Where a span runs into markup or a record delimiter
-(`Carolyn Hill</name`, `Dawn Perkins|560=726`, `BkCode=1290:::ABC Bank`) the
+(`Carolyn Hill` running into a closing XML tag, `Dawn Perkins|560=726`,
+`BkCode=1290:::ABC Bank`) the
 longest delimiter-free fragment without a digit is kept. A short, fixed list of words is
 trimmed from the front: articles, greetings and salutations (`The`, `Dear`,
 `Sayın`, `dün`). Nothing outside that list is trimmed, because a word too many
@@ -117,6 +142,10 @@ A `PERSON` normally has to contain a capitalized word. That rule is skipped wher
 the surrounding text carries no capitals at all, since a chat log or an ASR
 transcript would otherwise lose every name to a property it never had. The trade
 is that a lower-cased document can surface a common-word sequence as a `PERSON`.
+Over-flagging is the safer direction for a redaction tool, and on
+presidio-research's corpus it is also the more accurate one: the old rule
+removed 15 real names to remove 7 false ones. Feed the layer text that keeps its
+original casing if you want the stricter behaviour.
 
 ### Choosing a language (and auto-detection)
 
@@ -138,7 +167,10 @@ else:
 ```
 
 For genuinely mixed-language text, either pass a list (`language=["en", "de"]`,
-one model each) or lean on the LLM layer, which needs no per-language model.
+one model each — each model adds RAM and roughly multiplies NER scan time) or
+lean on the LLM layer, whose prompt is multilingual and needs no per-language
+model. Either way the choice is explicit: wardcat does not guess the language of
+the input. The regex layer is multilingual regardless.
 
 ## On-prem LLM (`llm`)
 
@@ -156,18 +188,31 @@ continue.
 ```python
 from wardcat import Wardcat, Backend
 
-# Ollama (default): needs a running Ollama service
+# Ollama (default): needs a running Ollama service — https://ollama.com, then `ollama pull llama3.1:8b`
 guard = Wardcat(salt="s").with_llm(backend=Backend.OLLAMA, model="llama3.1:8b")
 
 # vLLM server (OpenAI-compatible API; native chat, defaults to :8000/v1)
+# started with `vllm serve meta-llama/Llama-3.1-8B-Instruct`
 guard = Wardcat(salt="s").with_llm(backend=Backend.VLLM,
                                    model="meta-llama/Llama-3.1-8B-Instruct",
                                    base_url="http://localhost:8000/v1")
 
 # In-process HuggingFace Transformers (no daemon): pip install "wardcat[transformers]"
 guard = Wardcat(salt="s").with_llm(backend=Backend.TRANSFORMERS,
-                                   model="Qwen/Qwen2.5-3B-Instruct")
+                                   model="Qwen/Qwen2.5-3B-Instruct",
+                                   load_in_8bit=True)   # optional: less VRAM
 ```
+
+The LLM layer is configured only through `with_llm()` (or a YAML
+`config_path`), not constructor arguments. `backend` is the backend *type* —
+`Backend.OLLAMA`, `Backend.VLLM`, `Backend.OPENAI_COMPATIBLE`,
+`Backend.TRANSFORMERS`, plain strings accepted — and the address goes to
+`base_url`. `Backend.VLLM` sends the chat messages natively and defaults to
+`http://localhost:8000/v1`; for LM Studio, LocalAI, LiteLLM and other
+OpenAI-style servers use `Backend.OPENAI_COMPATIBLE` with the endpoint's
+`base_url` (pass `api_key=` only if the server was started with one).
+`with_llm()` also switches on the layer's
+[own entity policy](configuration.md#the-llm-layers-own-entity-policy).
 
 Reasoning models such as Qwen3 and DeepSeek-R1 are asked not to think: wardcat
 wants a bare JSON list, and on `qwen3:14b` thinking stretched a one-sentence scan
@@ -277,13 +322,19 @@ results = await asyncio.gather(*(guard.scan_async(t) for t in texts))
 - `scan_async` is non-blocking, but a single Ollama on one GPU can still process
   LLM requests near-sequentially — use **vLLM** (continuous batching) or raise
   `OLLAMA_NUM_PARALLEL` for genuine parallel LLM throughput.
+- Regex/NER-only scans are already sub-millisecond to ~100 ms, so concurrency
+  there is rarely the bottleneck. `scan_batch` runs SpaCy over the whole list in
+  one `nlp.pipe` pass and bounds the LLM requests in flight (`max_concurrency`),
+  so a list is cheaper than a loop of single scans.
 
 ### Ensemble adjudication
 
 With `with_llm(adjudicate=True)` the LLM verifies/relabels/drops the regex+NER
 candidates **and** adds what they missed, in a single call — cleaning NER noise
 (e.g. a job title mislabeled as a name). Deterministic regex spans are always
-kept regardless of the LLM verdict.
+kept regardless of the LLM verdict. Adjudication has no effect in an LLM-only
+setup — there are no regex/NER candidates to judge, so the LLM runs as a pure
+detector.
 
 ### Semantic sensitivity gate — `is_sensitive()`
 
@@ -299,17 +350,24 @@ if guard.is_sensitive(user_text):   # or: await guard.is_sensitive_async(...)
     raise ValueError("won't forward sensitive text")
 ```
 
-LLM-only (no entities to enable); requires `with_llm(...)`; empty text is `False`.
-Fail-closed — a backend error propagates rather than returning a misleading `False`.
+LLM-only (no entities to enable); requires `with_llm(...)`, raising `ConfigError`
+without it; empty text is `False`. Fail-closed — a backend error propagates
+rather than returning a misleading `False`. `with_llm(language="tr")` (or `de`,
+`fr`) asks the question with a system prompt written in that language, which
+can help smaller models; any other value uses the English, multilingual-aware
+prompt, and the `scan()` detection prompt is not affected. Long inputs are
+chunked at paragraph boundaries — any sensitive chunk makes the whole text
+sensitive — and input over `max_text_bytes` is rejected.
 
 `classify(text)` gives the same judgement as a `SensitivityVerdict`: `sensitive`,
 the `categories` present (`pii`, `credentials`, `financial`, `health`,
-`special_category`, `business_confidential`, or `unknown` when the model said
-sensitive but its answer could not be read in full) and the model's one-line
-`reason`. Route on the kind — block health data, allow business data inside the
+`special_category`, `business_confidential` — the `SENSITIVITY_CATEGORIES`
+constant — or `unknown` when the model said sensitive but its answer could not
+be read in full) and the model's one-line `reason`, which may quote the text. Route on the kind — block health data, allow business data inside the
 company. It is a separate prompt: asked for structure the model is more precise
-but misses more, chiefly confidential business plans, and answers several times
-slower, so `is_sensitive()` stays the gate. Its prompt names placeholders and
+but misses more, chiefly confidential business plans (on the 100-text benchmark
+with `qwen3:14b`: 1 false alarm against 11, but 8 misses against 1), and answers
+several times slower, so `is_sensitive()` stays the gate. Its prompt names placeholders and
 format examples, a company's public customer-service number and order or version
 numbers as not sensitive; the `is_sensitive()` prompt is unchanged.
 
