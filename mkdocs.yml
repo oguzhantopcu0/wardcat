@@ -114,6 +114,8 @@ nav:
       - MCP server: guide/mcp-server.md
       - Security: guide/security.md
       - Known limitations: guide/limitations.md
+      - KVKK and generative AI: guide/kvkk-generative-ai.md
+      - KVKK ve üretken YZ (TR): guide/kvkk-generative-ai.tr.md
   - API reference:
       - Wardcat: reference/wardcat.md
       - Results & constants: reference/models.md

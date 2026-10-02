@@ -120,6 +120,7 @@ scores wardcat against Microsoft Presidio on public corpora.
 - [Extending](https://docs.wardcat.com/guide/extending/) — custom actions and detectors.
 - [MCP server](https://docs.wardcat.com/guide/mcp-server/) — wardcat as a tool for an agent.
 - [Known limitations](https://docs.wardcat.com/guide/limitations/) — what is not caught, and what to do about it.
+- [KVKK and generative AI](https://docs.wardcat.com/guide/kvkk-generative-ai/) — what on-prem masking changes about sending text to a model abroad, and what it does not ([Türkçe](https://docs.wardcat.com/guide/kvkk-generative-ai.tr/)).
 - [API reference](https://docs.wardcat.com/reference/wardcat/) · [Examples](https://github.com/oguzhantopcu0/wardcat/tree/main/examples) · [Changelog](https://github.com/oguzhantopcu0/wardcat/blob/main/CHANGELOG.md)
 
 <a name="security"></a>
