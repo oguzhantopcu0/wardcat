@@ -9,6 +9,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] — 2026-10-02
+
+### Fixed
+
+- **A failing LLM no longer unmasks what NER found under adjudication.** With
+  `adjudicate=True` a candidate below 0.90, which is every NER span, survives
+  only when the model confirms it. A model that never answered confirmed
+  nothing, so the name went out in clear text: silently when the reply held no
+  JSON list or a chunk timed out, and with only a warning when the backend was
+  down or the circuit open. The same guard without an LLM would have masked it.
+  Now a chunk the model never judged keeps its candidates and records a
+  warning, a whole-layer failure keeps every unjudged candidate, and strict
+  mode refuses the scan. An empty list is still an answer: limiting how much
+  the model may drop is planned for the next minor release.
+- **Parser-only SpaCy pipelines no longer leave NER empty without a word.**
+  `with_ner(language="de"|"fr"|"es", spacy_size="trf")` loaded the
+  `*_dep_news_trf` package, which has no `ner` component, and found no names.
+  Those sizes now load the `lg` model, and every result says which model was
+  used instead. Loading any pipeline without `ner` raises `ConfigError`, which
+  the guard records as a build warning (and strict mode refuses).
+- **The ASGI example fails closed.** `examples/asgi_middleware.py` forwarded a
+  body over `max_body_bytes`, and a body whose scan raised, to the route
+  untouched. Both are now refused (413 and 503), with `on_scan_error="pass"`
+  as the explicit opt-out.
+
+### Changed
+
+- **Turkish and English NER are faster.** For catalog models whose NER
+  dependencies were measured, the components NER does not read are switched
+  off. Measured on about 3,500 characters, with identical entities:
+
+  | Model | Faster by |
+  |---|---|
+  | `tr_core_news_md` | 29% |
+  | `tr_core_news_lg` | 22% |
+  | `en_core_web_sm`, `en_core_web_lg` | about 60% |
+
+  Models that were not measured run their full pipeline as before.
+- **A chunk the LLM failed on is now a warning.** A timeout or an unreadable
+  reply used to be logged and skipped. It now appears in `result.warnings`,
+  without adjudication too, so strict mode raises `DegradedScanError` where it
+  used to pass. A run with a failed chunk is no longer cached.
+- **Detectors can report partial failure.** `BaseDetector` gains
+  `detect_report()` and `detect_report_async()`, returning spans plus
+  warnings. The defaults wrap `detect()`, so existing detectors are unaffected.
+
+### Documentation
+
+- **KVKK and generative AI.** A new guide page, in English and Turkish, on
+  what on-prem masking changes about sending text to a model abroad and what
+  it does not, drawn from Article 9 and the KVKK generative-AI guide of
+  24 November 2025. A test now fails on any positive compliance claim in the
+  repository. The security guide says a surrogate TC number, card or IBAN
+  passes its checksum and can belong to a real person.
+
 ## [1.2.1] — 2026-09-23
 
 ### Added
@@ -851,7 +906,8 @@ changes only in a future 2.0.
 - **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
-[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.1...v1.1.2
