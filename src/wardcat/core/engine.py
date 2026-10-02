@@ -170,7 +170,7 @@ class DetectionEngine:
             ]
             for adjudicator in self._adjudicators:
                 raw_spans.extend(
-                    self._safe_detect(adjudicator, text, warnings, candidates=candidate_spans)
+                    self._safe_adjudicate(adjudicator, text, warnings, candidate_spans)
                 )
         else:
             raw_spans = []
@@ -339,26 +339,22 @@ class DetectionEngine:
                 *(self._safe_detect_async(d, text) for d in self._other_detectors)
             )
             candidate_spans: list[DetectedSpan] = [s for spans, _ in cand_results for s in spans]
-            warnings.extend(w for _, w in cand_results if w)
+            warnings.extend(w for _, ws in cand_results for w in ws)
             raw_spans = [
                 s for s in candidate_spans if s.confidence >= _ADJUDICATION_KEEP_CONFIDENCE
             ]
             adj_results = await asyncio.gather(
-                *(
-                    self._safe_detect_async(d, text, candidates=candidate_spans)
-                    for d in self._adjudicators
-                )
+                *(self._safe_adjudicate_async(d, text, candidate_spans) for d in self._adjudicators)
             )
-            for spans, w in adj_results:
+            for spans, adj_warnings in adj_results:
                 raw_spans.extend(spans)
-                if w:
-                    warnings.append(w)
+                warnings.extend(adj_warnings)
         else:
             results = await asyncio.gather(
                 *(self._safe_detect_async(d, text) for d in self.detectors)
             )
             raw_spans = [s for spans, _ in results for s in spans]
-            warnings.extend(w for _, w in results if w)
+            warnings.extend(w for _, ws in results for w in ws)
         raw_spans.extend(self._collect_denylist_spans(text))
         spans = self._filter_spans(raw_spans, text)
         # One context id per scan — it is what keeps this scan's reversible
@@ -401,19 +397,53 @@ class DetectionEngine:
 
         A layer that cannot run (e.g. the LLM backend is unreachable) must not
         block the others — its error is recorded on the result so the caller
-        knows detection was degraded rather than silently missing PII.
+        knows detection was degraded rather than silently missing PII. A layer
+        that ran but partly failed reports that through
+        :meth:`~wardcat.detectors.base.BaseDetector.detect_report`, and those
+        warnings land on the result too.
         """
         try:
-            if candidates is None:
-                spans = detector.detect(text)
-            else:
-                spans = detector.detect(text, candidates=candidates)
+            report = detector.detect_report(text, candidates)
         except Exception as exc:
             msg = f"{type(detector).__name__} did not run: {exc}"
             logger.warning("scan: detector layer skipped — %s", msg)
             warnings.append(msg)
             return []
-        return self._stamp_source(spans, detector)
+        warnings.extend(report.warnings)
+        return self._stamp_source(report.spans, detector)
+
+    def _safe_adjudicate(
+        self,
+        adjudicator: BaseDetector,
+        text: str,
+        warnings: list[str],
+        candidates: list[DetectedSpan],
+    ) -> list[DetectedSpan]:
+        """Run an adjudicator; if it cannot run, keep every candidate it would have judged.
+
+        Under adjudication the candidates below the keep threshold survive only
+        when the model confirms them. A model that is down never confirms
+        anything, so without this the scan would come back with fewer
+        detections than the same guard without an LLM at all.
+        """
+        try:
+            report = adjudicator.detect_report(text, candidates)
+        except Exception as exc:
+            kept = self._unjudged(candidates)
+            msg = (
+                f"{type(adjudicator).__name__} did not run: {exc}; "
+                f"kept {len(kept)} candidate span(s) from the other layers"
+            )
+            logger.warning("scan: adjudicator skipped — %s", msg)
+            warnings.append(msg)
+            return kept
+        warnings.extend(report.warnings)
+        return self._stamp_source(report.spans, adjudicator)
+
+    @staticmethod
+    def _unjudged(candidates: list[DetectedSpan]) -> list[DetectedSpan]:
+        """The candidates adjudication would have decided — the ones not kept outright."""
+        return [s for s in candidates if s.confidence < _ADJUDICATION_KEEP_CONFIDENCE]
 
     @staticmethod
     def _stamp_source(spans: list[DetectedSpan], detector: BaseDetector) -> list[DetectedSpan]:
@@ -428,18 +458,34 @@ class DetectionEngine:
         detector: BaseDetector,
         text: str,
         candidates: list[DetectedSpan] | None = None,
-    ) -> tuple[list[DetectedSpan], str | None]:
-        """Async :meth:`_safe_detect` — returns ``(spans, warning_or_None)``."""
+    ) -> tuple[list[DetectedSpan], list[str]]:
+        """Async :meth:`_safe_detect` — returns ``(spans, warnings)``."""
         try:
-            if candidates is None:
-                spans = await detector.detect_async(text)
-            else:
-                spans = await detector.detect_async(text, candidates=candidates)
-            return self._stamp_source(spans, detector), None
+            report = await detector.detect_report_async(text, candidates)
         except Exception as exc:
             msg = f"{type(detector).__name__} did not run: {exc}"
             logger.warning("scan_async: detector layer skipped — %s", msg)
-            return [], msg
+            return [], [msg]
+        return self._stamp_source(report.spans, detector), list(report.warnings)
+
+    async def _safe_adjudicate_async(
+        self,
+        adjudicator: BaseDetector,
+        text: str,
+        candidates: list[DetectedSpan],
+    ) -> tuple[list[DetectedSpan], list[str]]:
+        """Async :meth:`_safe_adjudicate`."""
+        try:
+            report = await adjudicator.detect_report_async(text, candidates)
+        except Exception as exc:
+            kept = self._unjudged(candidates)
+            msg = (
+                f"{type(adjudicator).__name__} did not run: {exc}; "
+                f"kept {len(kept)} candidate span(s) from the other layers"
+            )
+            logger.warning("scan_async: adjudicator skipped — %s", msg)
+            return kept, [msg]
+        return self._stamp_source(report.spans, adjudicator), list(report.warnings)
 
     def _check_size(self, text: str) -> None:
         byte_len = len(text.encode("utf-8", errors="replace"))
