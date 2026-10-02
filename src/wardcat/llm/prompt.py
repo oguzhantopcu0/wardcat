@@ -313,9 +313,12 @@ def build_messages(
 
         * The system prompt is injected first and is relatively long, making
           simple override attempts less effective on instruction-tuned models.
-        * :meth:`LLMDetector._parse_llm_response` discards responses that are
-          not a valid JSON array, and structural validators reject hallucinations.
-        * The regex and NER detectors run independently and are not affected.
+        * A reply that is not a valid JSON array counts as a failed chunk: the
+          scan records a warning and, under adjudication, keeps the other
+          layers' candidates. Structural validators reject hallucinations.
+        * Regex spans of confidence 0.90 or more are always kept. Under
+          adjudication the model can still drop an NER candidate it was shown,
+          which is the residual risk (see the security guide).
 
         For high-security deployments, treat the LLM layer as a best-effort
         supplement to regex/NER rather than the primary detection mechanism.
