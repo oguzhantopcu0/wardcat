@@ -11,6 +11,15 @@ Modes (on_pii_detected):
     "sanitize" → replace PII in the body before it reaches the route
     "warn"     → pass through unchanged; result on scope["state"]["wardcat_result"]
 
+Failing closed: a body the middleware cannot scan never reaches the route
+unscanned. A body over max_body_bytes is rejected with 413, and a scan that
+raises is answered with 503 (pass on_scan_error="pass" to forward it instead,
+which you should only do where an unscanned request is acceptable).
+
+JSON bodies are scanned leaf by leaf, each string on its own. The violations on
+the combined result therefore carry offsets into their own leaf, not into the
+JSON text, and the same value in two fields gets two unrelated placeholders.
+
 Run:
     pip install "wardcat" fastapi uvicorn
     uvicorn examples.asgi_middleware:app --reload
@@ -46,12 +55,18 @@ class WardcatMiddleware:
         content_types: Sequence[str] = _DEFAULT_CONTENT_TYPES,
         max_body_bytes: int = 1_000_000,
         json_field_scan: bool = True,
+        on_scan_error: str = "block",
     ) -> None:
         if on_pii_detected not in ("block", "sanitize", "warn"):
             raise ValueError(
                 f"Invalid on_pii_detected={on_pii_detected!r}. "
                 "Valid values: 'block', 'sanitize', 'warn'."
             )
+        if on_scan_error not in ("block", "pass"):
+            raise ValueError(
+                f"Invalid on_scan_error={on_scan_error!r}. Valid values: 'block', 'pass'."
+            )
+        self.on_scan_error = on_scan_error
         self.app = app
         self.guard = guard
         self.on_pii_detected = on_pii_detected
@@ -85,7 +100,8 @@ class WardcatMiddleware:
         body = b"".join(body_chunks)
 
         if len(body) > self.max_body_bytes:
-            await self._forward(scope, send, body)
+            # Too large to scan is not the same as clean: refuse it.
+            await self._send_error(send, 413, "Request body too large to scan for PII.")
             return
 
         text = body.decode("utf-8", errors="replace")
@@ -98,8 +114,12 @@ class WardcatMiddleware:
                 result = await self.guard.scan_async(text)
                 sanitized_body = result.sanitized_text.encode("utf-8")
         except Exception as exc:
-            logger.warning("wardcat: scan failed (%s) — passing request through.", exc)
-            await self._forward(scope, send, body)
+            if self.on_scan_error == "pass":
+                logger.warning("wardcat: scan failed (%s) — passing request through.", exc)
+                await self._forward(scope, send, body)
+            else:
+                logger.warning("wardcat: scan failed (%s) — rejecting the request.", exc)
+                await self._send_error(send, 503, "PII scan unavailable; request not forwarded.")
             return
 
         scope.setdefault("state", {})["wardcat_result"] = result
@@ -153,18 +173,28 @@ class WardcatMiddleware:
 
         await self.app(scope, patched_receive, send)
 
-    @staticmethod
-    async def _send_422(send, redacted: dict) -> None:
-        body = json.dumps(
+    @classmethod
+    async def _send_422(cls, send, redacted: dict) -> None:
+        await cls._send_json(
+            send,
+            422,
             {
                 "error": "Request blocked: PII detected.",
                 "violations": redacted.get("violations", []),
-            }
-        ).encode("utf-8")
+            },
+        )
+
+    @classmethod
+    async def _send_error(cls, send, status: int, message: str) -> None:
+        await cls._send_json(send, status, {"error": message})
+
+    @staticmethod
+    async def _send_json(send, status: int, payload: dict) -> None:
+        body = json.dumps(payload).encode("utf-8")
         await send(
             {
                 "type": "http.response.start",
-                "status": 422,
+                "status": status,
                 "headers": [
                     (b"content-type", b"application/json"),
                     (b"content-length", str(len(body)).encode()),

@@ -1,9 +1,11 @@
 """Turkish PII corpus, hand-labelled.
 
 Provenance matters and is stated up front: unlike the English side, which uses
-presidio-research's own dataset, no public Turkish PII benchmark was available,
-so this one was written by wardcat's side. That is home-field advantage and every
-number drawn from it should be read with that in mind. It is written to be hard
+presidio-research's own dataset, this one was written by wardcat's side, at a time
+when no public Turkish PII benchmark was in use. That is home-field advantage and
+every number drawn from it should be read with that in mind. Third-party Turkish
+sets have appeared since (newmindai/nm-kvkk-pii-6K, neondijital/neonredact-tr);
+a run against them is planned and will be reported apart from this corpus. It is written to be hard
 rather than flattering — names in lower case, numbers in local formats, values
 embedded in prose rather than in labelled fields.
 
