@@ -64,6 +64,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repository. The security guide says a surrogate TC number, card or IBAN
   passes its checksum and can belong to a real person.
 
+### Fixed
+
+- **A Turkish phone number written with its code in parentheses.** `(0212) 680 18 33`
+  matched from the `0` rather than the `(`, because the Turkish branch wants its
+  `0`/`+90` prefix *before* the parenthesis and nothing matched at the opening one.
+  The span came back as `0212) 680 18 33` — opening paren outside it, closing paren
+  inside — so the text redacted to `([PHONE]`. The `(212) 680 18 33` spelling has no
+  prefix to find at all and was missed outright, which is the form printed on
+  letterheads and shop signs. A branch now matches the parentheses as a unit; the
+  area code is restricted to the ranges Türk Telekom issues (2xx–4xx landline, 5xx
+  mobile) and the 3-2-2 tail keeps it clear of the US 3-3-4 form, so
+  `(100) 200 30 40` and `Madde (212) sayılı karar` still match nothing.
+
+- **`tr_core_news_trf` is no longer blocked.** The catalog flagged it
+  `incompatible` with a note saying the transformer component API had changed and
+  no release worked on SpaCy 3.5+, so `download_model` refused it before doing any
+  work. It loads on SpaCy 3.8 with a full `ner` component and 20 labels, and gives
+  the best Turkish PERSON accuracy in the catalog — the flag only hid it. The entry
+  now declares `spacy-transformers` as an extra package and says that loading it
+  pulls in torch, so the scan is roughly three times slower than
+  `tr_core_news_lg`. The guard itself is unchanged and still covered, now against
+  a fabricated catalog entry rather than a real model whose flag could go stale
+  the same way.
+
+- **A model answering with bare strings no longer costs the whole LLM layer.**
+  The parser checked that the response was a JSON array but not that its elements
+  were objects. Asked for `[{"type": …, "text": …}]` a small model often answers
+  `["Ali Veli", "ali@firma.com"]`; span location then called `.get()` on a `str`
+  and the `AttributeError` left the detector, so the engine dropped every span the
+  layer would have contributed to that scan — including the well-formed entries of
+  a response that mixed both forms. The backend call had already returned, so the
+  circuit breaker recorded a success and the next scan failed the same way.
+  Non-object elements are filtered out and counted at debug level.
+
+
 ## [1.2.1] — 2026-09-23
 
 ### Added
