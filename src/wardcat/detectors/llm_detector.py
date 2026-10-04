@@ -347,7 +347,22 @@ class LLMDetector(BaseDetector):
             if not isinstance(data, list):
                 logger.debug("LLM JSON response is not a list: %r", type(data).__name__)
                 return []
-            return data
+            # The list has to hold objects. Asked for [{"type": …, "text": …}] a
+            # small model will sometimes answer with bare strings instead —
+            # ["Ali Veli", "ali@firma.com"] — and _locate_spans() calls .get()
+            # on every element, so an unfiltered list raised AttributeError out
+            # of the detector and the engine dropped the layer's whole
+            # contribution to that scan. A response mixing the two forms lost
+            # its well-formed entries the same way. The backend call itself
+            # succeeded, so the circuit breaker counted it a success and the
+            # next scan repeated the failure.
+            objects = [item for item in data if isinstance(item, dict)]
+            if len(objects) != len(data):
+                logger.debug(
+                    "LLM returned %d non-object item(s) in its JSON array — skipped.",
+                    len(data) - len(objects),
+                )
+            return objects
         except json.JSONDecodeError as exc:
             logger.debug("LLM response JSON parse error: %s (%s)", exc, describe(raw))
             return []
