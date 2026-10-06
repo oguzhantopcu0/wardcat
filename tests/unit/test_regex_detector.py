@@ -697,6 +697,43 @@ class TestMultilingualPhone:
         assert any(s.entity_type == "PHONE" and s.text == number for s in spans), text
 
     @pytest.mark.parametrize(
+        "text,number",
+        [
+            # The whole code in parentheses — letterheads and shop signs.
+            ("(212) 680 18 33", "(212) 680 18 33"),
+            ("(0212) 680 18 33", "(0212) 680 18 33"),
+            ("Ofis (0212) 680 18 33 numarasından arayın.", "(0212) 680 18 33"),
+            ("(0532) 123 45 67", "(0532) 123 45 67"),
+            ("(232) 487 20 50", "(232) 487 20 50"),
+        ],
+    )
+    def test_turkish_parenthesised_phone(self, detector, text, number):
+        """The span must cover the parentheses, not start inside them.
+
+        The Turkish branch wants its 0/+90 prefix before the parenthesis, so
+        nothing matched at the opening paren of "(0212) …"; the engine advanced
+        a character and matched from the "0", producing the unbalanced span
+        "0212) 680 18 33" — which redacted to "([PHONE]". The "(212)" spelling
+        has no prefix at all and was missed outright.
+        """
+        spans = [s for s in detector.detect(text) if s.entity_type == "PHONE"]
+        assert any(s.text == number for s in spans), f"{text} -> {[s.text for s in spans]}"
+        for s in spans:
+            assert text[s.start : s.end] == s.text
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "(100) 200 30 40",  # 1xx is not an issued Turkish code
+            "(612) 345 67 89",  # nor is 6xx
+            "Madde (212) sayılı karar",  # a parenthesised number in prose
+            "(19) 45 12 34",  # two-digit code
+        ],
+    )
+    def test_parenthesised_non_phones(self, detector, text):
+        assert not [s for s in detector.detect(text) if s.entity_type == "PHONE"], text
+
+    @pytest.mark.parametrize(
         "text",
         [
             "+1 23",  # too few digits for an international number

@@ -81,6 +81,25 @@ class TestParseResponse:
         spans = det.detect("x@y.com")
         assert spans == []
 
+    def test_bare_strings_in_array_are_skipped(self):
+        """Strings where objects were asked for must not take the layer down.
+
+        _locate_spans() calls .get() on every element, so the AttributeError
+        propagated out of the detector and the engine dropped every span the
+        layer would have produced for that scan.
+        """
+        det = _detector('["Ali Veli", "x@y.com"]', {"PERSON", "EMAIL"})
+        assert det.detect("Ali Veli — x@y.com") == []
+
+    def test_objects_survive_alongside_bare_strings(self):
+        """A mixed response keeps the entries that were well formed."""
+        det = _detector(
+            '["gurultu", {"type":"EMAIL","text":"x@y.com"}, 42, null]',
+            {"PERSON", "EMAIL"},
+        )
+        spans = det.detect("Ali Veli — x@y.com")
+        assert [(s.entity_type, s.text) for s in spans] == [("EMAIL", "x@y.com")]
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Span location

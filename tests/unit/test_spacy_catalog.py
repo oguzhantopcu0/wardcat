@@ -47,10 +47,18 @@ class TestSpacyCatalog:
         expected = {"en", "tr", "de", "fr", "es", "it", "nl", "pt"}
         assert expected == lang_codes
 
-    def test_incompatible_model_flagged(self):
-        incompatible = [m for m in SPACY_CATALOG if m.incompatible]
-        # Turkish trf is the known incompatible model
-        assert any(m.name == "tr_core_news_trf" for m in incompatible)
+    def test_incompatible_entries_state_their_compat_range(self):
+        """An incompatibility claim has to say which SpaCy versions it applies to.
+
+        No catalog entry is flagged today: tr_core_news_trf carried the flag with
+        a note saying the transformer API had changed and no release worked on
+        3.8.x, but it loads on 3.8 with a full NER component, so the claim was
+        wrong and blocked the most accurate Turkish model. Pinning the invariant
+        rather than a model name keeps the next claim checkable.
+        """
+        for m in SPACY_CATALOG:
+            if m.incompatible:
+                assert m.spacy_compat, f"{m.name} is flagged incompatible without a compat range"
 
     def test_incompatible_model_has_note(self):
         for m in SPACY_CATALOG:
@@ -93,11 +101,19 @@ class TestGetSpacyModel:
         assert m.recommended is True
         assert m.wheel_url != ""
 
-    def test_found_incompatible_model(self):
+    def test_found_turkish_trf(self):
+        """The Turkish transformer is a usable model, not a blocked one.
+
+        It was flagged ``incompatible`` with a note claiming no release worked
+        on SpaCy 3.5+, which made ``download_model`` refuse it outright. It
+        loads on 3.8 with a full NER component, so the flag only hid the most
+        accurate Turkish model in the catalog.
+        """
         m = get_spacy_model("tr_core_news_trf")
         assert m is not None
-        assert m.incompatible is True
+        assert m.incompatible is False
         assert m.note != ""
+        assert "spacy-transformers" in m.extra_packages
 
     def test_not_found_returns_none(self):
         assert get_spacy_model("nonexistent_xyz_model") is None
