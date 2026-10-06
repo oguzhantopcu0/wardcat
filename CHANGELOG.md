@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **anyio raised to `>=4.14.2` — a TLS certificate-spoofing path in our own
+  async calls.** `httpx` hands async I/O to `httpcore`, whose AnyIO backend
+  wraps the socket with `anyio.streams.tls.TLSStream`, so every `scan_async()`
+  against an `https` LLM endpoint goes through it. Below 4.14.2 that wrapper
+  encodes host names with IDNA 2003 (CVE-2026-63374, critical): a name that maps
+  differently under IDNA 2003 and 2008 can be validated against a certificate
+  issued for a different host. `httpx` puts no upper bound on anyio, so a fresh
+  install already resolves a patched release — the floor is declared so an older
+  one cannot be resolved underneath wardcat without notice. A second advisory on
+  the same release fixes process-pool workers blocking on undrained stderr
+  (CVE-2026-64847); wardcat does not use anyio's process pools.
+
+  The lock file also moves `setuptools` 81.0.0 → 84.0.0 for CVE-2026-59890. No
+  floor is declared for it: wardcat builds with hatchling and never imports
+  setuptools, which reaches the lock only as a runtime dependency of spacy,
+  thinc and torch, and the advisory concerns `MANIFEST.in` handling when
+  *building* an sdist on macOS — not a path a wardcat scan takes.
+
 ### Fixed
 
 - **A Turkish phone number written with its code in parentheses.** `(0212) 680 18 33`

@@ -31,6 +31,16 @@ classifiers = [
 dependencies = [
     "pyyaml>=6.0,<7",
     "httpx>=0.28.1,<1",
+    # Not imported here — a security floor on a transitive dependency that sits
+    # in our own TLS path. httpx delegates async I/O to httpcore, whose AnyIO
+    # backend wraps the socket with anyio.streams.tls.TLSStream, so every
+    # scan_async() against an https LLM endpoint goes through it. Below 4.14.2
+    # that wrapper encodes host names with IDNA 2003 (CVE-2026-63374, critical):
+    # a name that maps differently under 2003 and 2008 can be matched against a
+    # certificate issued for a different host. httpx itself puts no upper bound
+    # on anyio, so a fresh resolve already picks a patched release; the floor is
+    # here so an older one cannot be resolved silently underneath us.
+    "anyio>=4.14.2",
 ]
 
 [project.optional-dependencies]
