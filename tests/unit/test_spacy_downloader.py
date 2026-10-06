@@ -65,12 +65,31 @@ class TestEnsureModel:
 
 
 class TestDownloadModelGuards:
-    def test_incompatible_model_raises(self):
+    def test_incompatible_model_raises(self, monkeypatch):
+        """The guard must refuse before any network or subprocess work.
+
+        The catalog entry is fabricated rather than naming a real model: this
+        test used to pin tr_core_news_trf, which outlived its flag — the model
+        loads fine on current SpaCy, so the test was passing on a stale claim
+        instead of on the guard.
+        """
         pytest.importorskip("spacy")
-        # tr_core_news_trf is flagged incompatible in the catalog — must raise
-        # before any network/subprocess work.
+        from wardcat.ner.spacy_catalog import SpacyModelInfo
+
+        blocked = SpacyModelInfo(
+            name="xx_core_news_sm",
+            language="Example",
+            lang_code="xx",
+            size="sm",
+            ram_mb=1,
+            description="fixture",
+            note="pinned to an older SpaCy",
+            spacy_compat=">=3.4,<3.5",
+            incompatible=True,
+        )
+        monkeypatch.setattr(downloader, "get_spacy_model", lambda name: blocked)
         with pytest.raises(RuntimeError, match="not compatible"):
-            downloader.download_model("tr_core_news_trf")
+            downloader.download_model("xx_core_news_sm")
 
 
 class TestGuardLanguageSelection:

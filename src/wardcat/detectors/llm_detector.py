@@ -424,7 +424,21 @@ class LLMDetector(BaseDetector):
         if not isinstance(data, list):
             logger.debug("LLM JSON response is not a list: %r", type(data).__name__)
             raise UnreadableReply("the reply's JSON was not a list")
-        return data
+        # The list has to hold objects. Asked for [{"type": …, "text": …}] a
+        # small model will sometimes answer with bare strings instead —
+        # ["Ali Veli", "ali@firma.com"] — and _locate_spans() calls .get() on
+        # every element, so an unfiltered list raised AttributeError out of the
+        # detector. That is not one of the exceptions _chunk_failed() handles,
+        # so it escaped the layer entirely and the engine lost every span the
+        # layer would have contributed to that scan; a reply mixing the two
+        # forms lost its well-formed entries the same way.
+        objects = [item for item in data if isinstance(item, dict)]
+        if len(objects) != len(data):
+            logger.debug(
+                "LLM returned %d non-object item(s) in its JSON array — skipped.",
+                len(data) - len(objects),
+            )
+        return objects
 
     def _locate_spans(self, text: str, entities: list[dict]) -> list[DetectedSpan]:
         """
