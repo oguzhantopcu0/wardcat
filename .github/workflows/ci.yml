@@ -209,3 +209,37 @@ jobs:
           output: wardcat.sarif
       - name: The SARIF report is valid JSON
         run: python3 -c "import json; d=json.load(open('wardcat.sarif')); assert d['version']=='2.1.0'"
+
+  docker:
+    # The image builds, refuses to start without a key (it listens on 0.0.0.0),
+    # serves an authenticated scan with one, and stays small.
+    name: Container image
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        run: docker build -t wardcat:ci .
+      - name: Size stays under 200 MB uncompressed
+        run: |
+          size=$(docker image inspect wardcat:ci --format '{{.Size}}')
+          echo "image size: $((size / 1000000)) MB"
+          [ "$size" -lt 200000000 ]
+      - name: No key, no service
+        run: |
+          if docker run --rm wardcat:ci --entity EMAIL; then
+            echo "the container started on 0.0.0.0 without an API key"; exit 1
+          fi
+      - name: With a key it scans
+        run: |
+          key=$(python3 -c "import secrets; print(secrets.token_hex(16))")
+          docker run -d --name wc -p 8787:8787 -e WARDCAT_API_KEY="$key" wardcat:ci --entity EMAIL,CREDIT_CARD
+          for i in $(seq 1 30); do curl -sf localhost:8787/healthz >/dev/null && break; sleep 1; done
+          [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8787/scan -H 'content-type: application/json' -d '{"text":"x"}')" = 401 ]
+          out=$(curl -s -X POST localhost:8787/scan -H "x-api-key: $key" -H 'content-type: application/json' \
+                -d '{"text":"mail ali@example.com card 4111 1111 1111 1111"}')
+          echo "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['sanitized_text']=='mail [EMAIL] card [CREDIT_CARD]', d"
+          ! echo "$out" | grep -q '4111'
+          docker logs wc 2>&1 | tail -5
+          ! docker logs wc 2>&1 | grep -q 'ali@example.com'
+          docker rm -f wc
