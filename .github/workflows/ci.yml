@@ -155,7 +155,7 @@ jobs:
           set +e
           out=$(printf 'mail ali@example.com\n' | "$BARE/wardcat" scan --entity EMAIL); code=$?
           set -e
-          [ "$code" = 1 ] && [ "$out" = "[EMAIL]" ] || { echo "scan: exit $code, got '$out'"; exit 1; }
+          [ "$code" = 1 ] && [ "$out" = "mail [EMAIL]" ] || { echo "scan: exit $code, got '$out'"; exit 1; }
           set +e; "$BARE/wardcat" check tests/fixtures/cli/leaky --quiet; code=$?; set -e
           [ "$code" = 1 ] || { echo "check leaky: exit $code"; exit 1; }
           "$BARE/wardcat" check tests/fixtures/cli/clean --quiet
