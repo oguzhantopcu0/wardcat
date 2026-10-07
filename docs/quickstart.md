@@ -108,6 +108,6 @@ Runnable scripts in [`examples/`](https://github.com/oguzhantopcu0/wardcat/tree/
 | `llm_hybrid.py` | regex + NER + LLM with ensemble adjudication (needs Ollama) |
 | `all_layers.py` | all three layers on one guard, with adjudication (needs Ollama + a SpaCy model) |
 | `reversible_roundtrip.py` | `Action.TOKENIZE` out, `restore()` back — regex-only, stubbed model, runs offline |
-| `asgi_middleware.py` | Copy-paste ASGI middleware (FastAPI/Starlette) that scans request bodies — wardcat ships no web-framework code; this is a self-contained example |
+| `asgi_middleware.py` | Copy-paste ASGI middleware (FastAPI/Starlette) that scans your own app's request bodies, failing closed; for a standalone service see `wardcat serve` |
 
 Next: enable the [detection layers](guide/layers.md) you need.

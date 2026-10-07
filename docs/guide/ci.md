@@ -99,8 +99,8 @@ virtual environment. Inputs: `paths` (space-separated, default `.`), `entities`
 
 ## Moving from wardcat-cli
 
-The separate `wardcat-cli` package is retired; its `check`, `scan` and
-`is-sensitive` commands are part of `wardcat` from 1.3.0. If it is installed,
+The separate `wardcat-cli` package is retired; its `check`, `scan`,
+`is-sensitive` and `serve` commands are part of `wardcat` from 1.3.0. If it is installed,
 remove it (`pip uninstall wardcat-cli`): both install a `wardcat` command.
 
 | wardcat-cli 0.5 | wardcat 1.3 |
@@ -115,7 +115,7 @@ remove it (`pip uninstall wardcat-cli`): both install a `wardcat` command.
 | `--reveal-raw`, `--fail-on-violation` | removed: values are never printed, and finding something already exits 1 |
 | `.wardcat.yaml` found automatically | pass `--config policy.yaml` (the policy YAML format) |
 | `interactive`, `sessions`, `install-service`, `serve --docker` | not carried over |
-| `serve` | planned for a later release, with authentication required off loopback |
+| `serve` | `wardcat serve` with `wardcat[serve]`: no runtime policy changes, a key required off loopback ([HTTP service](server.md)) |
 
 A `.wardcat.yaml` written for wardcat-cli does not load as a policy file: its
 `scan:` and `check:` sections become `entities:` entries, and `denylist` and

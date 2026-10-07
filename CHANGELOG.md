@@ -23,6 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   See the [command line](https://docs.wardcat.com/guide/cli/) and
   [pre-commit and CI](https://docs.wardcat.com/guide/ci/) guides, which include
   a table for moving from wardcat-cli.
+- **`wardcat serve`, an HTTP service** (`pip install "wardcat[serve]"`):
+  `POST /scan`, `POST /is-sensitive`, `GET /info`, `/healthz`, `/readyz` and
+  `/metrics`, plus a `Dockerfile` for a small non-root image. It replaces
+  wardcat-cli's `serve`, without what made that one dangerous: the policy is
+  fixed at start (wardcat-cli's `POST /layers` let any local process point the
+  LLM layer at its own server and receive every text scanned after, and
+  `POST /filters` turned masking off for everyone); a key from the environment
+  is required off loopback, accepted as `Authorization: Bearer` or `x-api-key`;
+  without one the service answers only loopback `Host` headers, IPv6 included;
+  bodies must be JSON and are refused at the size limit while being read;
+  concurrency and request time are bounded; error bodies are fixed codes and
+  the access log carries method, path, status and duration only. See the
+  [HTTP service guide](https://docs.wardcat.com/guide/server/).
 - **`Wardcat.max_text_bytes`**, the input limit a policy sets, so a caller that
   splits a large document respects a smaller one.
 
