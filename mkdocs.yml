@@ -110,6 +110,7 @@ nav:
       - Presets: guide/presets.md
       - Command line: guide/cli.md
       - pre-commit and CI: guide/ci.md
+      - HTTP service: guide/server.md
       - Reversible masking: guide/reversible.md
       - Extending: guide/extending.md
       - MCP server: guide/mcp-server.md

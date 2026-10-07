@@ -9,6 +9,7 @@ text, a PII-free summary, or positions and entity types.
 | `wardcat scan` | sanitize one file or standard input |
 | `wardcat check` | find secrets and PII across files, for pre-commit and CI ([guide](ci.md)) |
 | `wardcat is-sensitive` | ask the LLM layer whether a text is sensitive at all |
+| `wardcat serve` | run the guard as an HTTP service, with `wardcat[serve]` ([guide](server.md)) |
 | `wardcat check-config` | load a policy file through every validation |
 | `wardcat entities` | list what can be detected |
 | `wardcat --version` | print the version |

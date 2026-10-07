@@ -1,8 +1,9 @@
 """
 Example: a self-contained ASGI middleware built on top of wardcat.
 
-wardcat is a *library* — it deliberately ships no web-framework code. If you
-want to scan request bodies automatically, copy this middleware into your app.
+wardcat ships an HTTP service (`wardcat serve`, see docs/guide/server.md) but
+no middleware for your own app. To scan your app's request bodies, copy this
+middleware into it.
 It is pure ASGI (works with FastAPI, Starlette, Quart, …) and only depends on
 the public wardcat API.
 
