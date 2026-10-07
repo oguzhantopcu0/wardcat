@@ -1,0 +1,27 @@
+# Lets other projects run wardcat from their .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/oguzhantopcu0/wardcat
+#       rev: v1.3.0
+#       hooks:
+#         - id: wardcat
+#
+# pre-commit installs this repository without extras and appends the staged
+# filenames, so `wardcat check` scans exactly what is about to be committed and
+# fails the commit (exit 1) if anything is found. Override `args` to widen or
+# narrow what counts; pass `--config policy.yaml` for a policy file.
+- id: wardcat
+  name: wardcat — block secrets and PII
+  description: Scan staged files for secrets and PII; fail the commit if any are found.
+  entry: wardcat check
+  language: python
+  language_version: python3
+  minimum_pre_commit_version: "3.0.0"
+  types: [text]
+  # One process sees every file, so --write-baseline is never split across workers.
+  require_serial: true
+  # High-signal defaults: things that almost never belong in a commit. Emails,
+  # phones and IP addresses are left out because they appear legitimately in code.
+  args:
+    - --entity
+    - CUSTOM_SECRET,JWT,CREDIT_CARD,IBAN,SSN,NIN,TC_ID,EU_NATIONAL_ID,CODICE_FISCALE,PASSPORT
