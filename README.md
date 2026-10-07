@@ -115,7 +115,8 @@ scores wardcat against Microsoft Presidio on public corpora.
 - [Entity types](https://docs.wardcat.com/reference/entities/) — every entity, its default action and which layer finds it.
 - [Configuration & policy](https://docs.wardcat.com/guide/configuration/) — the confidence floor, propagation, allow/deny lists, strict mode, the circuit breaker, YAML reference.
 - [Presets](https://docs.wardcat.com/guide/presets/) — `kvkk`, `gdpr`, `pci_dss`, `hipaa_lite`, `secrets_only` as starting policies.
-- [Command line](https://docs.wardcat.com/guide/cli/) — `wardcat scan`, `check-config`, `entities`.
+- [Command line](https://docs.wardcat.com/guide/cli/) — `wardcat scan`, `check`, `is-sensitive`, `check-config`, `entities`.
+- [pre-commit and CI](https://docs.wardcat.com/guide/ci/) — block secrets and PII in commits and pipelines, with a pre-commit hook and a GitHub Action.
 - [Reversible masking](https://docs.wardcat.com/guide/reversible/) — tokens, surrogates, `restore()` and the reverse map.
 - [Extending](https://docs.wardcat.com/guide/extending/) — custom actions and detectors.
 - [MCP server](https://docs.wardcat.com/guide/mcp-server/) — wardcat as a tool for an agent.

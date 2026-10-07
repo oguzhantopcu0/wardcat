@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`wardcat check`, `wardcat is-sensitive` and more of `wardcat scan`, folded
+  in from the retired wardcat-cli.** `check` walks files for pre-commit and CI,
+  reports `file:line:col ENTITY` and never a value, with `text`, `jsonl` and
+  `sarif` output and a baseline for accepted findings. `scan` gains `--group`,
+  comma-separated `--entity` items (each with its own `=ACTION`), `--output`,
+  `--quiet`, `--ner-language` and the LLM options. `is-sensitive` asks the LLM
+  layer for a yes/no verdict and fails closed. `wardcat --version` prints the
+  version. The repository root now carries a pre-commit hook
+  (`id: wardcat`) and a GitHub Action (`uses: oguzhantopcu0/wardcat@v1.3.0`).
+  See the [command line](https://docs.wardcat.com/guide/cli/) and
+  [pre-commit and CI](https://docs.wardcat.com/guide/ci/) guides, which include
+  a table for moving from wardcat-cli.
+- **`Wardcat.max_text_bytes`**, the input limit a policy sets, so a caller that
+  splits a large document respects a smaller one.
+
+### Changed
+
+- **wardcat-cli's ways of letting a file through unscanned are gone.** A file
+  that cannot be read is an error, not a skip; a non-UTF-8 file is read rather
+  than skipped; a large document is split at line breaks under the policy's own
+  limit, never at a fixed size, and a piece that fails stops the run instead of
+  being reported clean; a line longer than the limit is an error. Configuration
+  is never picked up from a `.wardcat.yaml` in a parent directory or
+  `WARDCAT_CONFIG`; pass `--config`. Secrets are never taken as arguments.
+- **The `wardcat` command reads and writes UTF-8 everywhere.** On Windows a
+  console or pipe used the ANSI code page, which turned ş, ğ and İ into question
+  marks; a byte-order mark on input is dropped.
+- **Long options must be written in full.** argparse accepted unambiguous
+  abbreviations (`--ent` for `--entity`); with the new options several became
+  ambiguous, so abbreviations are refused everywhere.
+- **A `hash`, `tokenize` or `surrogate` action with no salt prints a warning.**
+- **Custom pattern names** may only use letters, digits, `_`, `.` and `-`, since
+  the name is selected with `--entity`, which splits on commas and `=`.
+
+
 ### Security
 
 - **anyio raised to `>=4.14.2` — a TLS certificate-spoofing path in our own
