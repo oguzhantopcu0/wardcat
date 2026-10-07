@@ -1,9 +1,10 @@
 name: CI
 
 on:
-  # Post-merge verification on the trunk.
+  # Every branch of the promotion path runs the full suite on push:
+  # dev (work in progress) -> test/* (integration) -> staging (passed) -> main.
   push:
-    branches: ["main"]
+    branches: ["main", "staging", "dev", "test/**"]
   # The gate: run on every pull request (any base branch) so nothing reaches
   # main without a green lint + test + build run.
   pull_request:
