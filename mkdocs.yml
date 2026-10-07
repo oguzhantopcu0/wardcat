@@ -109,6 +109,7 @@ nav:
       - Configuration & policy: guide/configuration.md
       - Presets: guide/presets.md
       - Command line: guide/cli.md
+      - pre-commit and CI: guide/ci.md
       - Reversible masking: guide/reversible.md
       - Extending: guide/extending.md
       - MCP server: guide/mcp-server.md
