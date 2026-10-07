@@ -1,0 +1,97 @@
+"""The ``wardcat`` command.
+
+::
+
+    wardcat scan     [FILE|-] [guard options] [--json] [--output PATH] [--quiet]
+    wardcat check    PATH... [guard options] [--format text|jsonl|sarif] [--baseline FILE]
+    wardcat is-sensitive [FILE|-] --llm MODEL [LLM options]
+    wardcat check-config policy.yaml
+    wardcat entities [--layer regex|ner|llm]
+    wardcat --version
+
+Exit codes: ``0`` clean, ``1`` something was found (or the text is sensitive),
+``2`` a configuration, usage or input error, ``3`` the scan could not be
+completed — degraded under ``--strict``, or the LLM backend unreachable for
+``is-sensitive``.
+
+The salt and API keys are never taken on the command line — a process list
+and a shell history would keep them; ``--salt-env`` and ``--llm-api-key-env``
+name the environment variables to read. Output never carries a value that was
+found.
+
+This package is not public API: import :func:`main` and the ``EXIT_*`` codes,
+nothing else. Every subcommand imports what it needs when it runs, so
+``import wardcat`` never loads it and ``wardcat --help`` loads no detector.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from collections.abc import Sequence
+
+from wardcat.exceptions import ConfigError, DegradedScanError, WardcatError
+
+EXIT_CLEAN, EXIT_FOUND, EXIT_CONFIG, EXIT_DEGRADED = 0, 1, 2, 3
+
+
+class BackendUnavailable(Exception):
+    """A layer the command depends on could not be reached (exit 3)."""
+
+
+def _version() -> str:
+    from wardcat import __version__
+
+    return f"wardcat {__version__}"
+
+
+def _parser() -> argparse.ArgumentParser:
+    from wardcat.cli import check, check_config, entities, is_sensitive, scan
+
+    parser = argparse.ArgumentParser(
+        prog="wardcat",
+        description="PII detection and anonymization.",
+        allow_abbrev=False,
+    )
+    parser.add_argument("--version", "-V", action="version", version=_version())
+    sub = parser.add_subparsers(dest="command", required=True)
+    for module in (scan, check, is_sensitive, check_config, entities):
+        module.register(sub)
+    return parser
+
+
+def _warn_about_the_old_cli() -> None:
+    """The retired wardcat-cli package installed a ``wardcat`` command too."""
+    from importlib.metadata import PackageNotFoundError, distribution
+
+    try:
+        distribution("wardcat-cli")
+    except PackageNotFoundError:
+        return
+    print(
+        "warning: the old wardcat-cli package is installed and also provides a "
+        "`wardcat` command; its features are part of wardcat now. Remove it with: "
+        "pip uninstall wardcat-cli",
+        file=sys.stderr,
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = _parser()
+    args = parser.parse_args(argv)
+    _warn_about_the_old_cli()
+    try:
+        return int(args.run(args))
+    except DegradedScanError as exc:
+        for warning in exc.warnings:
+            print(f"error: {warning}", file=sys.stderr)
+        return EXIT_DEGRADED
+    except BackendUnavailable as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_DEGRADED
+    except (ConfigError, WardcatError, ValueError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_CONFIG
+
+
+__all__ = ["EXIT_CLEAN", "EXIT_CONFIG", "EXIT_DEGRADED", "EXIT_FOUND", "main"]

@@ -350,6 +350,15 @@ class Wardcat(EntityPolicyMixin):
             verdicts.append(parse_classification(reply))
         return _merge_verdicts(verdicts)
 
+    @property
+    def max_text_bytes(self) -> int:
+        """The largest input, in UTF-8 bytes, a scan accepts (YAML ``max_text_bytes``).
+
+        A caller splitting a large document reads this instead of assuming the
+        default, so a policy with a smaller limit is respected.
+        """
+        return int(self._config.get("max_text_bytes", _DEFAULT_MAX_TEXT_BYTES))
+
     def _check_text_size(self, text: str) -> None:
         """Reject oversized input (mirrors the engine's DoS guard for scan())."""
         limit = self._config.get("max_text_bytes", _DEFAULT_MAX_TEXT_BYTES)

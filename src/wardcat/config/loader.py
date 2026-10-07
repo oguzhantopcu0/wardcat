@@ -239,6 +239,13 @@ def _validate_entity_map(entities: dict[str, Any], label: str) -> None:
 
 def _validate_custom_patterns(custom_patterns: dict[str, Any]) -> None:
     for pattern_name, pattern_cfg in custom_patterns.items():
+        # The name becomes an entity type, which `--entity A,B=mask` splits on
+        # commas and "=" — a name holding either could not be selected.
+        if not isinstance(pattern_name, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", pattern_name):
+            raise ConfigError(
+                f"Custom pattern name {pattern_name!r} may only use letters, digits, "
+                "'_', '.' and '-'."
+            )
         if not isinstance(pattern_cfg, dict):
             raise ConfigError(
                 f"Invalid custom_patterns entry '{pattern_name}': expected dict, "
