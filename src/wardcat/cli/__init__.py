@@ -5,6 +5,7 @@
     wardcat scan     [FILE|-] [guard options] [--json] [--output PATH] [--quiet]
     wardcat check    PATH... [guard options] [--format text|jsonl|sarif] [--baseline FILE]
     wardcat is-sensitive [FILE|-] --llm MODEL [LLM options]
+    wardcat serve    [guard options] [--host 127.0.0.1] [--port 8787]   (wardcat[serve])
     wardcat check-config policy.yaml
     wardcat entities [--layer regex|ner|llm]
     wardcat --version
@@ -46,7 +47,7 @@ def _version() -> str:
 
 
 def _parser() -> argparse.ArgumentParser:
-    from wardcat.cli import check, check_config, entities, is_sensitive, scan
+    from wardcat.cli import check, check_config, entities, is_sensitive, scan, serve
 
     parser = argparse.ArgumentParser(
         prog="wardcat",
@@ -55,7 +56,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", "-V", action="version", version=_version())
     sub = parser.add_subparsers(dest="command", required=True)
-    for module in (scan, check, is_sensitive, check_config, entities):
+    for module in (scan, check, is_sensitive, serve, check_config, entities):
         module.register(sub)
     return parser
 

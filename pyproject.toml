@@ -52,6 +52,12 @@ ner = [
 phone = [
     "phonenumbers>=8.13,<10",
 ]
+# `wardcat serve`: the HTTP service. Starlette rather than FastAPI so the
+# request body can be counted while it is read and refused at the limit.
+serve = [
+    "starlette>=1.3,<2",
+    "uvicorn>=0.51,<1",
+]
 # HuggingFace Transformers backend (GPU/CPU inference)
 transformers = [
     "transformers>=5.13.0,<6",
@@ -104,6 +110,8 @@ markers = [
 
 [dependency-groups]
 dev = [
+    "starlette>=1.3,<2",   # server tests and mypy over wardcat.server
+    "uvicorn>=0.51,<1",
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
     "pytest-timeout>=2.0",
