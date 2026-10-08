@@ -87,6 +87,10 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     return EXIT_CLEAN
 
 
+class _Cancelled(Exception):
+    """The user left a question with Ctrl-C or Ctrl-D."""
+
+
 class _Help(Exception):
     """A command's -h was answered; nothing else to do."""
 
@@ -112,6 +116,12 @@ def _parser(prog: str, *arguments: tuple[tuple[str, ...], dict[str, Any]]) -> _P
 
 class Shell:
     def __init__(self, state: dict[str, Any], *, salt: str = "", interactive: bool = False):
+        import warnings
+
+        # SpaCy's W094 (a model's loose version pin) is noise on a screen; a
+        # model loads when the guard is built or first scans, so it is
+        # silenced for the screen's whole life rather than around one call.
+        warnings.filterwarnings("ignore", message=r"\[W094\]")
         self.state = state
         self.salt = salt
         self.api_key = ""  # typed into the screen; memory only
@@ -188,14 +198,9 @@ class Shell:
         state = state or self.state
         guard = Wardcat(salt=self.salt) if self.salt else Wardcat()
         if state["ner"]:
-            import warnings
-
             ner = state["ner"]
             sized = {"spacy_size": ner["size"]} if ner.get("size") else {}
-            with warnings.catch_warnings():
-                # SpaCy's W094 (a model's loose version pin) is noise on a screen.
-                warnings.filterwarnings("ignore", message=r"\[W094\]")
-                guard.with_ner(language=ner["language"], auto_download=False, **sized)
+            guard.with_ner(language=ner["language"], auto_download=False, **sized)
         if state["llm"]:
             guard.with_llm(**self._llm_kwargs(state["llm"]))
         if state["filters"]:
@@ -245,6 +250,14 @@ class Shell:
     # ---------------------------------------------------------------- input
 
     def ask(self, question: str, *, default: str = "", secret: bool = False) -> str:
+        """An answer; Ctrl-C or Ctrl-D cancels the command that asked."""
+        try:
+            return self._ask(question, default=default, secret=secret)
+        except (EOFError, KeyboardInterrupt):
+            print()
+            raise _Cancelled from None
+
+    def _ask(self, question: str, *, default: str, secret: bool) -> str:
         shown = f"{question} [{default}]: " if default and not secret else f"{question}: "
         if self.interactive:
             from prompt_toolkit import prompt
@@ -295,6 +308,8 @@ class Shell:
             handler(self, rest)
         except _Help:
             pass
+        except _Cancelled:
+            print(paint("cancelled", "yellow"))
         except KeyboardInterrupt:
             print(paint("interrupted", "yellow"))
         except (ConfigError, WardcatError, ValueError, OSError) as exc:
@@ -385,6 +400,12 @@ class Shell:
             (name.upper(), action.lower())
             for name, action in parse_entity_specs(ns.entity, ns.action)
         ]
+        from wardcat.core.actions import registered_actions
+
+        actions = sorted(registered_actions())
+        for _, action in specs:
+            if action not in actions:
+                raise ConfigError(f"unknown action {action!r}; choose from {', '.join(actions)}")
         known = Wardcat.supported_entities()
         for name, _ in specs:
             if name not in known:
@@ -429,9 +450,12 @@ class Shell:
 
         self._apply(change)
         print(paint(f"preset {preset.name}: {len(preset.entities)} filters", "green"))
-        missing = sorted(set(preset.needs_layers) - set(self.state["layers"]))
+        missing = [
+            x for x in sessions.LAYERS if x in preset.needs_layers and x not in self.state["layers"]
+        ]
         if missing:
-            print(paint(f"note: some of its types need the {', '.join(missing)} layer", "yellow"))
+            needed = " and ".join(missing) + (" layers" if len(missing) > 1 else " layer")
+            print(paint(f"note: some of its types are only found with the {needed}", "yellow"))
         if not self.salt and _SALTED & set(preset.entities.values()):
             print(paint("note: no salt; start with --salt-env VAR to salt hashes", "yellow"))
 
@@ -513,6 +537,10 @@ class Shell:
         ).parse_args(shlex.split(rest))
         layer = ns.layer
         ner, llm = self.state["ner"], self.state["llm"]
+        reconfigure = (layer == "ner" and ns.language) or (layer == "llm" and ns.model)
+        if layer in self.state["layers"] and not reconfigure:
+            print(f"layer {layer} is already on")
+            return
         if layer == "ner" and ns.language:
             ner = {"language": ns.language, "size": ns.size}
         elif layer == "ner" and ner is None:
@@ -607,6 +635,8 @@ class Shell:
         ns = _parser("serve", (("--port",), {"type": int, "default": 8787})).parse_args(
             shlex.split(rest)
         )
+        if not 1 <= ns.port <= 65535:
+            raise ConfigError("--port must be between 1 and 65535")
         self._start_server(ns.port)
         print(
             paint(f"serving on http://127.0.0.1:{self.port}", "green")
@@ -630,18 +660,26 @@ class Shell:
         # The service gets a guard of its own, built from the session as it is
         # now: it is never changed under a request, and a later change here
         # restarts it rather than editing it live.
+        _check_port_free(port)
         app = create_app(self._make_guard(), ServerConfig())
         server = uvicorn.Server(
-            uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", access_log=False)
+            uvicorn.Config(app, host="127.0.0.1", port=port, log_level="critical", access_log=False)
         )
-        thread = threading.Thread(target=server.run, daemon=True)
+
+        def serve() -> None:
+            try:
+                server.run()
+            except BaseException:  # noqa: BLE001 - surfaces below as "did not start"
+                pass
+
+        thread = threading.Thread(target=serve, daemon=True)
         thread.start()
         deadline = time.monotonic() + 5
         while not server.started and thread.is_alive() and time.monotonic() < deadline:
             time.sleep(0.05)
         if not server.started:
             server.should_exit = True
-            raise ConfigError(f"the service did not start on port {port} (in use?)")
+            raise ConfigError(f"the service did not start on port {port}")
         self._server, self._server_thread, self.port = server, thread, port
 
     def _stop_server(self) -> None:
@@ -687,6 +725,16 @@ _COMMANDS: dict[str, Callable[[Shell, str], None]] = {
     "clear": Shell.cmd_clear,
     "help": Shell.cmd_help,
 }
+
+
+def _check_port_free(port: int) -> None:
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError:
+            raise ConfigError(f"port {port} is in use; try serve --port N") from None
 
 
 def _highlight(result: Any) -> str:
@@ -745,19 +793,20 @@ def _prompt_session(shell: Shell) -> Any:
 
     @keys.add("enter", filter=has_completions)
     def _take(event: Any) -> None:
-        # Enter on an open menu takes the highlighted item — or, on a `/` line,
-        # the first one — instead of submitting what was typed so far. A line
-        # that already reads as the item runs.
+        # On a `/` line Enter takes the highlighted item, or the first, so the
+        # command's arguments can follow. Elsewhere an item Tab has already put
+        # on the line runs with it, and an untouched menu is simply closed.
         buffer = event.current_buffer
         state = buffer.complete_state
+        palette = buffer.document.text_before_cursor.lstrip().startswith("/")
         chosen = state.current_completion
-        if chosen is None and buffer.text.startswith("/") and state.completions:
-            chosen = state.completions[0]
-        if chosen is None or buffer.text.lstrip("/").strip() == chosen.text:
-            buffer.complete_state = None
-            buffer.validate_and_handle()
-            return
-        buffer.apply_completion(chosen)
+        if palette:
+            chosen = chosen or (state.completions[0] if state.completions else None)
+            if chosen is not None and buffer.text.lstrip("/").strip() != chosen.text:
+                buffer.apply_completion(chosen)
+                return
+        buffer.complete_state = None
+        buffer.validate_and_handle()
 
     return PromptSession(
         completer=Palette(),
