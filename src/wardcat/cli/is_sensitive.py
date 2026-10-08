@@ -10,6 +10,7 @@ The check fails closed: a backend that cannot answer never yields ``clean``.
 from __future__ import annotations
 
 import argparse
+import json
 
 from wardcat.cli._guard_args import add_llm_args, llm_kwargs
 from wardcat.cli._io import read_input
@@ -29,6 +30,11 @@ def register(sub: argparse._SubParsersAction) -> None:
         metavar="LANG",
         help="ask in this language (tr, de, fr); others use the multilingual English prompt",
     )
+    p.add_argument(
+        "--categories",
+        action="store_true",
+        help="also name the kinds of sensitive content (pii, credentials, health, ...) as JSON",
+    )
     p.set_defaults(run=run)
 
 
@@ -45,10 +51,18 @@ def run(args: argparse.Namespace) -> int:
         kwargs["language"] = args.llm_language
     guard = Wardcat().with_llm(model=args.llm, **kwargs)  # type: ignore[arg-type]
     try:
-        sensitive = guard.is_sensitive(text)
+        if args.categories:
+            verdict = guard.classify(text)
+            sensitive = verdict.sensitive
+        else:
+            sensitive = guard.is_sensitive(text)
     except (ConnectionError, TimeoutError, httpx.HTTPError, CircuitOpen) as exc:
         raise BackendUnavailable(
             f"the LLM backend could not answer ({type(exc).__name__}); not judged"
         ) from None
-    print("sensitive" if sensitive else "clean")
+    if args.categories:
+        # The model's one-line reason may quote the text, so it is not printed.
+        print(json.dumps({"sensitive": sensitive, "categories": list(verdict.categories)}))
+    else:
+        print("sensitive" if sensitive else "clean")
     return EXIT_FOUND if sensitive else EXIT_CLEAN

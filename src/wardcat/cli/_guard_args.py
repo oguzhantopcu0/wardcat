@@ -53,10 +53,43 @@ def add_guard_args(parser: argparse.ArgumentParser, *, default_action: str = "re
         help="enable the NER layer with the catalog model for a language (e.g. tr); "
         "the model must already be installed",
     )
+    layers.add_argument(
+        "--ner-size",
+        choices=["sm", "md", "lg", "trf"],
+        help="model size for --ner-language (default: the catalog's choice)",
+    )
     layers.add_argument("--llm", metavar="MODEL", help="enable the LLM layer with this model")
+    layers.add_argument(
+        "--llm-timeout", type=float, metavar="SECONDS", help="seconds per LLM call (default: 60)"
+    )
     add_llm_args(layers)
     layers.add_argument(
         "--adjudicate", action="store_true", help="let the LLM confirm the other layers' finds"
+    )
+
+    tune = parser.add_argument_group("detection")
+    tune.add_argument(
+        "--min-confidence",
+        type=float,
+        metavar="0..1",
+        help="act only on matches at least this confident (default: 0.8)",
+    )
+    tune.add_argument(
+        "--phone-region",
+        action="append",
+        default=[],
+        metavar="CODE[,CODE]",
+        help="national phone formats for these regions (e.g. GB,US); needs wardcat[phone]",
+    )
+    tune.add_argument(
+        "--propagate",
+        action="store_true",
+        help="also replace every other occurrence of a detected value",
+    )
+    tune.add_argument(
+        "--locale",
+        choices=["en", "tr", "de", "fr"],
+        help="names and formats for the surrogate action",
     )
 
     run = parser.add_argument_group("running")
@@ -120,7 +153,9 @@ def llm_kwargs(args: argparse.Namespace) -> dict[str, object]:
     return kwargs
 
 
-def build_guard(args: argparse.Namespace, *, scope_required: bool = True) -> Wardcat:
+def build_guard(
+    args: argparse.Namespace, *, scope_required: bool = True, warn: bool = True
+) -> Wardcat:
     """The guard the options describe.
 
     With *scope_required* (``scan``) a guard that would look for nothing is a
@@ -142,17 +177,37 @@ def build_guard(args: argparse.Namespace, *, scope_required: bool = True) -> War
         guard.add_entity(name, action)
     if scope_required and not (args.config or args.preset or args.entity or args.group):
         raise ConfigError("nothing to scan for: pass --preset, --entity, --group or --config")
+    if args.ner_size and not args.ner_language:
+        raise ConfigError("--ner-size goes with --ner-language")
     if args.ner:
         guard.with_ner(spacy_model=args.ner, auto_download=False)
     elif args.ner_language:
-        guard.with_ner(language=args.ner_language, auto_download=False)
+        sized = {"spacy_size": args.ner_size} if args.ner_size else {}
+        guard.with_ner(language=args.ner_language, auto_download=False, **sized)
+    if args.min_confidence is not None:
+        if not 0 <= args.min_confidence <= 1:
+            raise ConfigError("--min-confidence must be between 0 and 1")
+        guard.with_min_confidence(args.min_confidence)
+    regions = [
+        r.strip().upper() for spec in args.phone_region for r in spec.split(",") if r.strip()
+    ]
+    if regions:
+        guard.with_phone_regions(*regions)
+    if args.propagate:
+        guard.with_propagation()
+    if args.locale:
+        guard.with_locale(args.locale)
     if args.llm:
-        guard.with_llm(model=args.llm, adjudicate=args.adjudicate, **llm_kwargs(args))  # type: ignore[arg-type]
+        extra: dict[str, object] = {"timeout": int(args.llm_timeout)} if args.llm_timeout else {}
+        guard.with_llm(model=args.llm, adjudicate=args.adjudicate, **llm_kwargs(args), **extra)  # type: ignore[arg-type]
+    elif args.llm_timeout:
+        raise ConfigError("--llm-timeout needs the LLM layer: pass --llm MODEL")
     elif args.adjudicate:
         raise ConfigError("--adjudicate needs the LLM layer: pass --llm MODEL")
     if args.strict:
         guard.with_strict()
-    _warn_on_unsalted(guard, salt)
+    if warn:
+        _warn_on_unsalted(guard, salt)
     return guard
 
 
