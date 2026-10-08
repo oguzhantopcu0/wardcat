@@ -1114,7 +1114,8 @@ class RegexDetector(BaseDetector):
         # regions instead of the built-in pattern. The pattern covers TR/FR/DE plus
         # E.164 and is precision-first; a per-country library is the only way to
         # reach the national formats of everywhere else without guessing. Opt-in,
-        # so a base install behaves exactly as before.
+        # so a guard without regions behaves exactly as before. phonenumbers is a
+        # core dependency; the check below covers an install made without it.
         #
         # Availability is settled here rather than on first use: detect() skips the
         # built-in pattern whenever regions are configured, so discovering the
@@ -1128,7 +1129,7 @@ class RegexDetector(BaseDetector):
                 message = (
                     "phone_regions is set but the 'phonenumbers' package is missing, so "
                     "PHONE detection falls back to the built-in pattern. "
-                    "Install with: pip install 'wardcat[phone]'"
+                    "Install with: pip install phonenumbers"
                 )
                 logger.warning(message)
                 self.build_warnings = (message,)

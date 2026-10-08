@@ -29,7 +29,6 @@ Python 3.11+.
 ```bash
 pip install wardcat              # regex layer + Ollama / OpenAI-compatible LLM backend
 pip install "wardcat[ner]"       # + SpaCy NER (names, organisations, places)
-pip install "wardcat[phone]"     # + national phone formats worldwide (libphonenumber)
 pip install "wardcat[all]"       # everything, including the in-process Transformers backend
 ```
 

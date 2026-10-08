@@ -84,6 +84,10 @@ Includes the fixes prepared as 1.2.2, which was never published.
 - **The `wardcat` command reads and writes UTF-8 everywhere.** On Windows a
   console or pipe used the ANSI code page, which turned ş, ğ and İ into question
   marks; a byte-order mark on input is dropped.
+- **libphonenumber ships with every install.** `phonenumbers` is now a core
+  dependency, so `with_phone_regions()` and `--phone-region` work without an
+  extra. `wardcat[phone]` is kept, empty, so existing install commands still
+  work.
 - **Long options must be written in full.** argparse accepted unambiguous
   abbreviations (`--ent` for `--entity`); with the new options several became
   ambiguous, so abbreviations are refused everywhere.

@@ -4,12 +4,8 @@ from __future__ import annotations
 
 import logging
 
-import pytest
-
 from wardcat import Action, Entity, Wardcat
 from wardcat.detectors.regex_detector import CONF_FUZZY, CONF_STRUCTURAL, RegexDetector
-
-phonenumbers = pytest.importorskip("phonenumbers", reason="needs the [phone] extra")
 
 # National formats the built-in pattern does not reach, one per numbering plan.
 NATIONAL = {
@@ -120,4 +116,4 @@ def test_a_missing_library_falls_back_to_the_pattern(monkeypatch, caplog) -> Non
 
     # The very first scan already falls back — the pattern is not skipped.
     assert [s.text for s in spans] == ["+90 532 123 45 67"]
-    assert "wardcat[phone]" in caplog.text
+    assert "pip install phonenumbers" in caplog.text
