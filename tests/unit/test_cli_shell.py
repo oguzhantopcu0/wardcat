@@ -114,7 +114,7 @@ class TestFiltersAndLayers:
 
     def test_ner_needs_a_language_the_first_time(self, capsys) -> None:
         shell, out = screen(capsys, "add layer ner")
-        assert "--language" in out and shell.state["ner"] is None
+        assert "add layer ner tr" in out and shell.state["ner"] is None
 
     def test_llm_by_flags_reads_the_key_from_the_environment(self, capsys, monkeypatch) -> None:
         monkeypatch.setenv("LLM_KEY", "sk-test-value")
@@ -412,3 +412,52 @@ class TestSweepFixes:
         text = table(["Name", "Covers"], [["kvkk", "word " * 30]])
         assert all(len(line) <= 60 for line in text.splitlines())
         assert text.splitlines()[3].startswith(" " * 6)
+
+
+class TestNerAsPeopleTypeIt:
+    @pytest.mark.parametrize(
+        ("words", "expected"),
+        [
+            (["tr"], ("tr", None)),
+            (["turkish", "sm"], ("tr", "sm")),
+            (["Türkçe", "md"], ("tr", "md")),
+            (["english"], ("en", None)),
+        ],
+    )
+    def test_language_and_size_as_words(self, words, expected) -> None:
+        from wardcat.cli.shell import _ner_words
+
+        assert _ner_words(words, None, None) == expected
+
+    def test_flags_take_names_too(self) -> None:
+        from wardcat.cli.shell import _ner_words
+
+        assert _ner_words([], "turkish", "lg") == ("tr", "lg")
+
+    @pytest.mark.parametrize("words", [["tr", "md", "lg"], ["md"]])
+    def test_what_does_not_parse(self, words) -> None:
+        from wardcat.cli.shell import _ner_words
+        from wardcat.exceptions import ConfigError
+
+        with pytest.raises(ConfigError):
+            _ner_words(words, None, None)
+
+    def test_ner_with_nothing_to_find_gets_the_person_types(self, capsys, monkeypatch) -> None:
+        from wardcat import Wardcat
+
+        monkeypatch.setattr(Wardcat, "with_ner", lambda self, **kw: self)
+        shell, out = screen(capsys, "add layer ner turkish sm")
+        assert shell.state["ner"] == {"language": "tr", "size": "sm"}
+        assert {"PERSON", "ORG", "LOCATION"} <= set(shell.state["filters"])
+        assert "no filter used the ner layer" in out
+
+    def test_existing_person_filters_are_left_alone(self, capsys, monkeypatch) -> None:
+        from wardcat import Wardcat
+
+        monkeypatch.setattr(Wardcat, "with_ner", lambda self, **kw: self)
+        shell, out = screen(capsys, "add filter PERSON=mask", "add layer ner tr")
+        assert shell.state["filters"]["PERSON"] == "mask" and "ORG" not in shell.state["filters"]
+        assert "no filter used" not in out
+
+    def test_words_only_belong_to_ner(self, capsys) -> None:
+        assert "unexpected 'tr'" in screen(capsys, "add layer regex tr")[1]

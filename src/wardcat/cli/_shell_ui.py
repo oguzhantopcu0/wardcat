@@ -80,7 +80,7 @@ HELP = [
     ("list filters [--active|--inactive]", "every type wardcat knows, and which layer finds it"),
     ("Layers", "the detectors that do the finding"),
     ("add layer regex", "patterns and checksums: cards, IBAN, TC, e-mail, keys"),
-    ("add layer ner --language tr", "names, organisations, places, with a SpaCy model"),
+    ("add layer ner tr [SIZE]", "names, organisations, places, with a SpaCy model"),
     ("add layer llm", "a local LLM; asks for backend, model and address"),
     ("remove layer LAYER", "switch one off (one must stay on)"),
     ("layers", "the active layers"),

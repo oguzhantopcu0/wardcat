@@ -45,6 +45,36 @@ DEFAULT_FILTERS = (
     "VEHICLE_PLATE",
 )
 _SALTED = {"hash", "tokenize", "surrogate"}
+_SIZES = ["sm", "md", "lg", "trf"]
+_NER_TYPES = {"PERSON", "ORG", "LOCATION", "ADDRESS", "NRP"}
+# Language names a person types, in English and Turkish, for the NER layer.
+_LANGUAGES = {
+    "turkish": "tr",
+    "türkçe": "tr",
+    "turkce": "tr",
+    "english": "en",
+    "ingilizce": "en",
+    "i̇ngilizce": "en",
+    "german": "de",
+    "deutsch": "de",
+    "almanca": "de",
+    "french": "fr",
+    "français": "fr",
+    "francais": "fr",
+    "fransızca": "fr",
+    "spanish": "es",
+    "español": "es",
+    "ispanyolca": "es",
+    "italian": "it",
+    "italiano": "it",
+    "italyanca": "it",
+    "dutch": "nl",
+    "nederlands": "nl",
+    "felemenkçe": "nl",
+    "portuguese": "pt",
+    "português": "pt",
+    "portekizce": "pt",
+}
 _BACKENDS = {
     "ollama": ("11434", False),
     "vllm": ("8000", True),
@@ -526,8 +556,9 @@ class Shell:
         ns = _parser(
             "add layer",
             (("layer",), {"choices": list(sessions.LAYERS)}),
-            (("--language",), {"help": "ner: the language, e.g. tr"}),
-            (("--size",), {"choices": ["sm", "md", "lg", "trf"], "help": "ner: model size"}),
+            (("words",), {"nargs": "*", "metavar": "LANGUAGE [SIZE]", "help": "ner: e.g. tr md"}),
+            (("--language",), {"help": "ner: the language, e.g. tr or turkish"}),
+            (("--size",), {"choices": _SIZES, "help": "ner: model size"}),
             (("--backend",), {"choices": ["ollama", "vllm", "openai_compatible", "transformers"]}),
             (("--model",), {"help": "llm: the model; without it the screen asks"}),
             (("--base-url",), {"dest": "base_url"}),
@@ -536,28 +567,46 @@ class Shell:
             (("--adjudicate",), {"action": "store_true"}),
         ).parse_args(shlex.split(rest))
         layer = ns.layer
+        if ns.words and layer != "ner":
+            raise ConfigError(f"unexpected {' '.join(ns.words)!r}; see add layer -h")
+        language, size = _ner_words(ns.words, ns.language, ns.size)
         ner, llm = self.state["ner"], self.state["llm"]
-        reconfigure = (layer == "ner" and ns.language) or (layer == "llm" and ns.model)
+        reconfigure = (layer == "ner" and language) or (layer == "llm" and ns.model)
         if layer in self.state["layers"] and not reconfigure:
             print(f"layer {layer} is already on")
             return
-        if layer == "ner" and ns.language:
-            ner = {"language": ns.language, "size": ns.size}
+        if layer == "ner" and language:
+            ner = {"language": language, "size": size}
         elif layer == "ner" and ner is None:
-            raise ConfigError("the first time, say which language: add layer ner --language tr")
+            raise ConfigError("say which language the first time: add layer ner tr")
         if layer == "llm" and (ns.model or llm is None):
             llm = self._llm_setup(ns)
             if llm is None:
                 print(paint("cancelled", "yellow"))
                 return
+        # A layer with nothing to look for finds nothing, silently: NER on with
+        # only regex types as filters is the commonest way to get there.
+        added = []
+        if layer == "ner" and not set(self.state["filters"]) & _NER_TYPES:
+            added = ["PERSON", "ORG", "LOCATION"]
 
         def change(state: dict[str, Any]) -> None:
             state["ner"], state["llm"] = ner, llm
             if layer not in state["layers"]:
                 state["layers"] = [x for x in sessions.LAYERS if x in {*state["layers"], layer}]
+            for name in added:
+                state["filters"].setdefault(name, "redact")
 
         self._apply(change)
         print(paint(f"layer {layer} on", "green"))
+        if added:
+            print(
+                paint(
+                    f"no filter used the ner layer, so {', '.join(added)} are on (redact); "
+                    "change them with add filter / remove filter",
+                    "yellow",
+                )
+            )
 
     def _llm_setup(self, ns: argparse.Namespace) -> dict[str, Any] | None:
         backend = ns.backend or (
@@ -725,6 +774,28 @@ _COMMANDS: dict[str, Callable[[Shell, str], None]] = {
     "clear": Shell.cmd_clear,
     "help": Shell.cmd_help,
 }
+
+
+def _ner_words(
+    words: list[str], language: str | None, size: str | None
+) -> tuple[str | None, str | None]:
+    """``add layer ner tr md`` and ``--language turkish --size md`` alike."""
+    words = [w.lower() for w in words]
+    if len(words) > 2:
+        raise ConfigError("add layer ner takes a language and a size: add layer ner tr md")
+    if words and words[-1] in _SIZES:
+        if size and size != words[-1]:
+            raise ConfigError("two sizes given")
+        size = words.pop()
+    if words:
+        if language:
+            raise ConfigError("two languages given")
+        language = words[0]
+    if language:
+        language = _LANGUAGES.get(language.lower(), language.lower())
+    if size and not language:
+        raise ConfigError("a size goes with a language: add layer ner tr md")
+    return language, size
 
 
 def _check_port_free(port: int) -> None:
