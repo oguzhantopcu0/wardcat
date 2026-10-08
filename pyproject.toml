@@ -34,6 +34,9 @@ dependencies = [
     # libphonenumber, for PHONE in national formats (with_phone_regions). Pure
     # Python with no dependencies of its own, so it ships with every install.
     "phonenumbers>=8.13,<10",
+    # The interactive screen (`wardcat` alone in a terminal): line editing, the
+    # `/` palette, completion and the status line. Pure Python.
+    "prompt-toolkit>=3.0.43,<4",
     # Not imported here — a security floor on a transitive dependency that sits
     # in our own TLS path. httpx delegates async I/O to httpcore, whose AnyIO
     # backend wraps the socket with anyio.streams.tls.TLSStream, so every

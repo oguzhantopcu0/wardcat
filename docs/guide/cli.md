@@ -6,6 +6,7 @@ text, a PII-free summary, or positions and entity types.
 
 | Command | Does |
 |---|---|
+| `wardcat` | in a terminal, open the [interactive screen](#interactive-screen) |
 | `wardcat scan` | sanitize standard input, files or a JSON Lines dataset |
 | `wardcat restore` | put tokenized values back into a model's answer |
 | `wardcat check` | find secrets and PII across files, for pre-commit and CI ([guide](ci.md)) |
@@ -16,8 +17,69 @@ text, a PII-free summary, or positions and entity types.
 | `wardcat entities` | list what can be detected |
 | `wardcat presets` | list the presets, or show what one covers and leaves out |
 | `wardcat models` | list the NER models per language, or install one |
+| `wardcat sessions` | list or delete the screen's saved sessions |
 | `wardcat completion SHELL` | print a completion script for bash, zsh or fish |
 | `wardcat --version` | print the version |
+
+## Interactive screen
+
+`wardcat` on its own, in a terminal, opens a prompt for trying a policy by
+hand: switch layers and filters on and off, load a preset, scan text, and
+serve the result while you work.
+
+```text
+New session 9ad021ae
+session 9ad021ae · layers: regex · 8 filters · type / for the menu, help for every command
+
+wardcat ❯ scan Kartım 4111 1111 1111 1111, TC 10000000146
+Kartım [CREDIT_CARD], TC [TC_ID]
+
+Entity       Action  Replacement    Confidence  Layer
+───────────  ──────  ─────────────  ──────────  ─────
+CREDIT_CARD  redact  [CREDIT_CARD]  1.00        regex
+TC_ID        redact  [TC_ID]        1.00        regex
+
+wardcat ❯ preset kvkk
+wardcat ❯ add layer ner --language tr
+wardcat ❯ serve --port 8787
+```
+
+Type `/` for a menu of commands that narrows as you type, and Tab to complete
+commands, entity types and preset names; a status line under the prompt shows
+the session, the layers, the filter count and the service. `help` lists every
+command:
+
+| Command | Does |
+|---|---|
+| `scan [TEXT]` | sanitize the text and list what was found — types, actions, replacements, never the values |
+| `add filter ENTITY[,ENTITY=ACTION] [--action A]` / `remove filter ENTITY` | look for a type, with an action (default `redact`), or stop |
+| `preset NAME` | replace the filters with a preset's |
+| `filters`, `list filters [--active\|--inactive]` | the active filters; every type and which layer finds it |
+| `add layer regex\|ner\|llm` / `remove layer LAYER` / `layers` | switch detectors; `ner` takes `--language` the first time, `llm` asks for backend, model, address and key |
+| `serve [--port P]` / `stop-serve` | serve the session's policy on 127.0.0.1; a change restarts it with the new policy |
+| `clear`, `help`, `quit` | Ctrl-D leaves too; Ctrl-C clears the line |
+
+A new session starts with the regex layer and `CREDIT_CARD`, `CUSTOM_SECRET`,
+`EMAIL`, `IBAN`, `JWT`, `PHONE`, `TC_ID` and `VEHICLE_PLATE` redacted. Each
+session is saved as you go and can be picked up again:
+
+```bash
+wardcat sessions                      # the saved sessions, latest first
+wardcat --resume 9ad021ae             # resume one
+wardcat --continue                    # resume the latest
+wardcat --salt-env WARDCAT_SALT       # salt hash, tokenize and surrogate
+```
+
+What stays out of files: a session holds the filters and layer setup, not a
+scanned text; the salt is referred to by its variable's name; an LLM API key
+comes from `--api-key-env VAR` or a hidden prompt and is kept in memory only, so
+a resumed session asks for it again. The prompt history leaves out every `scan`
+line. Sessions and history live under `$XDG_STATE_HOME/wardcat`
+(`~/.local/state/wardcat`, or `%LOCALAPPDATA%\wardcat` on Windows), readable
+by their owner alone.
+
+Outside a terminal — a script, a pipe, CI — `wardcat` with no command prints
+its usage and exits 2.
 
 ## scan
 

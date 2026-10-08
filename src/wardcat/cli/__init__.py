@@ -12,6 +12,8 @@
     wardcat entities [--layer regex|ner|llm]
     wardcat presets  [NAME]
     wardcat models   list | pull MODEL
+    wardcat          [--resume ID|--continue] [--salt-env VAR]   (a terminal: the interactive screen)
+    wardcat sessions [--delete ID]
     wardcat --version
 
 Exit codes: ``0`` clean, ``1`` something was found (or the text is sensitive),
@@ -52,6 +54,7 @@ def _version() -> str:
 
 def _parser() -> argparse.ArgumentParser:
     from wardcat.cli import (
+        _sessions,
         check,
         check_config,
         completion,
@@ -63,6 +66,7 @@ def _parser() -> argparse.ArgumentParser:
         restore,
         scan,
         serve,
+        shell,
     )
 
     parser = argparse.ArgumentParser(
@@ -71,7 +75,8 @@ def _parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     parser.add_argument("--version", "-V", action="version", version=_version())
-    sub = parser.add_subparsers(dest="command", required=True)
+    shell.add_arguments(parser)
+    sub = parser.add_subparsers(dest="command")
     for module in (
         scan,
         restore,
@@ -84,6 +89,7 @@ def _parser() -> argparse.ArgumentParser:
         models,
         hook,
         completion,
+        _sessions,
     ):
         module.register(sub)
     return parser
@@ -109,7 +115,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     _warn_about_the_old_cli()
+    screen = args.screen_resume or args.screen_continue or args.screen_salt_env
     try:
+        if args.command is None:
+            from wardcat.cli import shell
+
+            return shell.run(args, parser)
+        if screen:
+            raise ConfigError(
+                "--resume, --continue and --salt-env before a command open the screen"
+            )
         return int(args.run(args))
     except DegradedScanError as exc:
         for warning in exc.warnings:

@@ -112,7 +112,8 @@ virtual environment. Inputs: `paths` (space-separated, default `.`), `entities`
 ## Moving from wardcat-cli
 
 The separate `wardcat-cli` package is retired; its `check`, `scan`,
-`is-sensitive` and `serve` commands are part of `wardcat` from 1.3.0. If it is installed,
+`is-sensitive` and `serve` commands and its interactive screen are part of
+`wardcat` from 1.3.0. If it is installed,
 remove it (`pip uninstall wardcat-cli`): both install a `wardcat` command.
 
 | wardcat-cli 0.5 | wardcat 1.3 |
@@ -126,7 +127,11 @@ remove it (`pip uninstall wardcat-cli`): both install a `wardcat` command.
 | `--format json` (check) | `--format jsonl` |
 | `--reveal-raw`, `--fail-on-violation` | removed: values are never printed, and finding something already exits 1 |
 | `.wardcat.yaml` found automatically | pass `--config policy.yaml` (the policy YAML format) |
-| `interactive`, `sessions`, `install-service`, `serve --docker` | not carried over |
+| `wardcat` / `wardcat interactive` (the shell) | `wardcat` in a terminal ([interactive screen](cli.md#interactive-screen)) |
+| `--resume ID`, `--continue`, `sessions` | the same; a wardcat-cli session loads, without its salt |
+| shell `add layer llm --api-key K` | `--api-key-env VAR`, or the hidden prompt of `add layer llm` |
+| shell `serve --host H --reveal-raw` | `serve --port P`, loopback only; values are never shown |
+| `install-service`, `serve --docker` | not carried over: see the [container and systemd recipes](server.md) |
 | `serve` | `wardcat serve` with `wardcat[serve]`: no runtime policy changes, a key required off loopback ([HTTP service](server.md)) |
 
 A `.wardcat.yaml` written for wardcat-cli does not load as a policy file: its

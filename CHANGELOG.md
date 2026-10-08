@@ -51,6 +51,14 @@ Includes the fixes prepared as 1.2.2, which was never published.
   kinds of sensitive content; `wardcat check --jobs N` scans in N processes.
   `wardcat presets` shows what a preset covers and leaves out; `wardcat models`
   lists the NER catalog and installs a model from it.
+- **The interactive screen from wardcat-cli.** `wardcat` alone in a terminal
+  opens a prompt with a `/` command palette, completion and a status line:
+  scan text, switch layers and filters, load a preset, serve the session's
+  policy on loopback. Sessions are saved and resumed (`--resume`, `--continue`,
+  `wardcat sessions`). Unlike wardcat-cli's shell, scanned text never reaches
+  the prompt history, the salt and API keys are never written to a file, and
+  the files are readable by their owner alone. Outside a terminal `wardcat`
+  still prints its usage and exits 2. `prompt-toolkit` is now a dependency.
 - **`wardcat hook claude-code`**, a Claude Code hook: a prompt with a finding is
   blocked, a tool call carrying one is denied (or asked about), and a tool's
   output is sanitized before the model reads it. It fails closed per event — an
