@@ -51,6 +51,15 @@ Includes the fixes prepared as 1.2.2, which was never published.
   kinds of sensitive content; `wardcat check --jobs N` scans in N processes.
   `wardcat presets` shows what a preset covers and leaves out; `wardcat models`
   lists the NER catalog and installs a model from it.
+- **`wardcat hook claude-code`**, a Claude Code hook: a prompt with a finding is
+  blocked, a tool call carrying one is denied (or asked about), and a tool's
+  output is sanitized before the model reads it. It fails closed per event — an
+  input it cannot read or a text it cannot scan blocks the prompt or tool call
+  and withholds the output.
+- **`wardcat check --git-diff [REF]`** scans only the lines a change adds,
+  staged by default, reported at their line in the new file.
+- **`wardcat completion bash|zsh|fish`** prints a completion script generated
+  from the installed version.
 - **`wardcat serve` scans batches and classifies.** `POST /scan` also takes
   `{"texts": [...]}` (up to 1000) and refuses the whole batch if any text
   cannot be scanned; `POST /classify` returns the verdict and its categories,

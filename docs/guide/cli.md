@@ -10,11 +10,13 @@ text, a PII-free summary, or positions and entity types.
 | `wardcat restore` | put tokenized values back into a model's answer |
 | `wardcat check` | find secrets and PII across files, for pre-commit and CI ([guide](ci.md)) |
 | `wardcat is-sensitive` | ask the LLM layer whether a text is sensitive at all |
+| `wardcat hook claude-code` | keep PII out of a Claude Code session, as a hook |
 | `wardcat serve` | run the guard as an HTTP service, with `wardcat[serve]` ([guide](server.md)) |
 | `wardcat check-config` | load a policy file through every validation |
 | `wardcat entities` | list what can be detected |
 | `wardcat presets` | list the presets, or show what one covers and leaves out |
 | `wardcat models` | list the NER models per language, or install one |
+| `wardcat completion SHELL` | print a completion script for bash, zsh or fish |
 | `wardcat --version` | print the version |
 
 ## scan
@@ -110,6 +112,53 @@ in parts.
 instead. The model's one-line reason is not printed, since it may quote the
 text.
 
+## hook claude-code
+
+`wardcat hook claude-code` is a [Claude Code hook](https://code.claude.com/docs/en/hooks).
+It reads each event on standard input and answers in Claude Code's format:
+
+| Event | With a finding |
+|---|---|
+| `UserPromptSubmit` | the prompt is blocked before it reaches the model; the reason names the entity types. Claude Code cannot rewrite a prompt, so it is not masked and sent on. |
+| `PreToolUse` | the tool call is denied — a Bash command, a file a Write would create, a URL. `--tool-decision ask` puts it to you instead. |
+| `PostToolUse` | the tool has already run, so its output is replaced with the sanitized text before the model reads it, using each type's `--action` (default `redact`). |
+
+Register it in `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "timeout": 10,
+      "command": "wardcat hook claude-code --entity CUSTOM_SECRET,JWT,CREDIT_CARD,IBAN,TC_ID"}]}],
+    "PreToolUse": [{"hooks": [{"type": "command", "timeout": 10,
+      "command": "wardcat hook claude-code --entity CUSTOM_SECRET,JWT,CREDIT_CARD,IBAN,TC_ID"}]}],
+    "PostToolUse": [{"hooks": [{"type": "command", "timeout": 10,
+      "command": "wardcat hook claude-code --entity CUSTOM_SECRET,JWT,CREDIT_CARD,IBAN,TC_ID"}]}]
+  }
+}
+```
+
+The same policy options as `scan` apply; a `--config` file keeps the three
+entries short. Pick the types with care: with `EMAIL`, a `git config user.email`
+command is denied too. A `matcher` narrows `PreToolUse` and `PostToolUse` to
+some tools.
+
+The hook fails closed, event by event: if its input cannot be read or a text
+cannot be scanned, the prompt or tool call is blocked (exit 2) and a tool's
+output is withheld. A few failures are outside its reach, and Claude Code
+lets the event through: a hook that times out, a `wardcat` that is
+not on the `PATH`, and — for `PostToolUse` only — an option the command line
+rejects. Keep to the regex layer, whose scans take milliseconds, and try the
+command once by hand after setting it up:
+
+```bash
+echo '{"hook_event_name": "UserPromptSubmit", "prompt": "card 4111 1111 1111 1111"}' \
+  | wardcat hook claude-code --entity CREDIT_CARD
+```
+
+Images in tool output are passed through unread. Registered for any other event, the hook
+reports an error (exit 1) and changes nothing.
+
 ## check-config, entities, presets and models
 
 `wardcat check-config policy.yaml` loads the file through every validation the
@@ -122,6 +171,17 @@ types and actions one enables, what it covers, what it does not, and which layer
 it needs. `wardcat models list [--language tr]` shows the catalog's NER models
 and which are installed; `wardcat models pull tr_core_news_md` installs one. Only
 catalog models with an NER component can be pulled.
+
+## Shell completion
+
+```bash
+eval "$(wardcat completion bash)"                               # in ~/.bashrc
+eval "$(wardcat completion zsh)"                                # in ~/.zshrc
+wardcat completion fish > ~/.config/fish/completions/wardcat.fish
+```
+
+The script is generated from the installed version: commands, options, and the
+values `--format`, `--group`, `--preset` and `--entity` take.
 
 ## Exit codes
 
