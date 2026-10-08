@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # wardcat serve as a container. The service listens on 0.0.0.0, so it refuses
 # to start without an API key: pass WARDCAT_API_KEY (16+ characters).
 #
@@ -18,9 +19,14 @@ RUN pip wheel --no-cache-dir --no-deps --wheel-dir /wheels . \
 
 FROM python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f
 RUN useradd --create-home --uid 10001 wardcat
-COPY --from=build /wheels /wheels
-RUN pip install --no-cache-dir --no-index --find-links /wheels "wardcat[serve]" \
- && rm -rf /wheels
+# The wheels are mounted, not copied: a COPY would keep them in a layer of
+# their own however they are removed afterwards. phonenumbers' geocoding,
+# carrier and time-zone data (about 20 MB, more once compiled) are never
+# imported by a scan, which needs only the numbering plans, so they go.
+RUN --mount=type=bind,from=build,source=/wheels,target=/wheels \
+    pip install --no-cache-dir --no-index --find-links /wheels "wardcat[serve]" \
+ && site=$(python -c "import phonenumbers, os; print(os.path.dirname(phonenumbers.__file__))") \
+ && rm -rf "$site/geodata" "$site/carrierdata" "$site/tzdata"
 USER wardcat
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8787
