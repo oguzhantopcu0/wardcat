@@ -2614,6 +2614,7 @@ source = { editable = "." }
 dependencies = [
     { name = "anyio" },
     { name = "httpx" },
+    { name = "phonenumbers" },
     { name = "pyyaml" },
 ]
 
@@ -2621,7 +2622,6 @@ dependencies = [
 all = [
     { name = "accelerate" },
     { name = "bitsandbytes" },
-    { name = "phonenumbers" },
     { name = "protobuf" },
     { name = "sentencepiece" },
     { name = "spacy" },
@@ -2630,9 +2630,6 @@ all = [
 ]
 ner = [
     { name = "spacy" },
-]
-phone = [
-    { name = "phonenumbers" },
 ]
 serve = [
     { name = "starlette" },
@@ -2674,8 +2671,7 @@ requires-dist = [
     { name = "bitsandbytes", marker = "extra == 'all'", specifier = ">=0.43" },
     { name = "bitsandbytes", marker = "extra == 'transformers'", specifier = ">=0.43" },
     { name = "httpx", specifier = ">=0.28.1,<1" },
-    { name = "phonenumbers", marker = "extra == 'all'", specifier = ">=8.13,<10" },
-    { name = "phonenumbers", marker = "extra == 'phone'", specifier = ">=8.13,<10" },
+    { name = "phonenumbers", specifier = ">=8.13,<10" },
     { name = "protobuf", marker = "extra == 'all'", specifier = ">=7.35.1" },
     { name = "protobuf", marker = "extra == 'transformers'", specifier = ">=7.35.1" },
     { name = "pyyaml", specifier = ">=6.0,<7" },

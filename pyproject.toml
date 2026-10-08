@@ -31,6 +31,9 @@ classifiers = [
 dependencies = [
     "pyyaml>=6.0,<7",
     "httpx>=0.28.1,<1",
+    # libphonenumber, for PHONE in national formats (with_phone_regions). Pure
+    # Python with no dependencies of its own, so it ships with every install.
+    "phonenumbers>=8.13,<10",
     # Not imported here — a security floor on a transitive dependency that sits
     # in our own TLS path. httpx delegates async I/O to httpcore, whose AnyIO
     # backend wraps the socket with anyio.streams.tls.TLSStream, so every
@@ -48,10 +51,9 @@ dependencies = [
 ner = [
     "spacy>=3.8.14,<4",
 ]
-# libphonenumber-backed PHONE detection for national formats worldwide
-phone = [
-    "phonenumbers>=8.13,<10",
-]
+# Empty since 1.3.0, when phonenumbers became a core dependency; kept so that
+# `pip install "wardcat[phone]"` from 1.2 still resolves.
+phone = []
 # `wardcat serve`: the HTTP service. Starlette rather than FastAPI so the
 # request body can be counted while it is read and refused at the limit.
 serve = [
@@ -70,7 +72,6 @@ transformers = [
 # Full install — all optional backends
 all = [
     "spacy>=3.8.14,<4",
-    "phonenumbers>=8.13,<10",
     "transformers>=5.13.0,<6",
     "torch>=2.12.1",
     "accelerate>=1.14.0",

@@ -70,8 +70,7 @@ guard.with_phone_regions("GB", "ES", "US")   # CLDR codes
 guard.with_phone_regions()                   # back to the built-in pattern
 ```
 
-Needs `pip install "wardcat[phone]"`; without it the pattern is used and a warning
-is logged. Matches report `0.90` confidence rather than `0.97` — a numbering-plan
+libphonenumber ships with wardcat. Matches report `0.90` confidence rather than `0.97` — a numbering-plan
 check is weaker than a checksum, and each extra region widens what counts as a
 number, so add the regions you serve rather than all of them.
 
