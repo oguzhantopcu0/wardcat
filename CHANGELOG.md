@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-10-08
+
+Includes the fixes prepared as 1.2.2, which was never published.
+
 ### Added
 
 - **`wardcat check`, `wardcat is-sensitive` and more of `wardcat scan`, folded
@@ -58,26 +62,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Custom pattern names** may only use letters, digits, `_`, `.` and `-`, since
   the name is selected with `--entity`, which splits on commas and `=`.
 
+- **Turkish and English NER are faster.** For catalog models whose NER
+  dependencies were measured, the components NER does not read are switched
+  off. Measured on about 3,500 characters, with identical entities:
 
-### Security
+  | Model | Faster by |
+  |---|---|
+  | `tr_core_news_md` | 29% |
+  | `tr_core_news_lg` | 22% |
+  | `en_core_web_sm`, `en_core_web_lg` | about 60% |
 
-- **anyio raised to `>=4.14.2` — a TLS certificate-spoofing path in our own
-  async calls.** `httpx` hands async I/O to `httpcore`, whose AnyIO backend
-  wraps the socket with `anyio.streams.tls.TLSStream`, so every `scan_async()`
-  against an `https` LLM endpoint goes through it. Below 4.14.2 that wrapper
-  encodes host names with IDNA 2003 (CVE-2026-63374, critical): a name that maps
-  differently under IDNA 2003 and 2008 can be validated against a certificate
-  issued for a different host. `httpx` puts no upper bound on anyio, so a fresh
-  install already resolves a patched release — the floor is declared so an older
-  one cannot be resolved underneath wardcat without notice. A second advisory on
-  the same release fixes process-pool workers blocking on undrained stderr
-  (CVE-2026-64847); wardcat does not use anyio's process pools.
-
-  The lock file also moves `setuptools` 81.0.0 → 84.0.0 for CVE-2026-59890. No
-  floor is declared for it: wardcat builds with hatchling and never imports
-  setuptools, which reaches the lock only as a runtime dependency of spacy,
-  thinc and torch, and the advisory concerns `MANIFEST.in` handling when
-  *building* an sdist on macOS — not a path a wardcat scan takes.
+  Models that were not measured run their full pipeline as before.
+- **A chunk the LLM failed on is now a warning.** A timeout or an unreadable
+  reply used to be logged and skipped. It now appears in `result.warnings`,
+  without adjudication too, so strict mode raises `DegradedScanError` where it
+  used to pass. A run with a failed chunk is no longer cached.
+- **Detectors can report partial failure.** `BaseDetector` gains
+  `detect_report()` and `detect_report_async()`, returning spans plus
+  warnings. The defaults wrap `detect()`, so existing detectors are unaffected.
 
 ### Fixed
 
@@ -113,10 +115,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   circuit breaker recorded a success and the next scan failed the same way.
   Non-object elements are filtered out and counted at debug level.
 
-## [1.2.2] — 2026-10-02
-
-### Fixed
-
 - **A failing LLM no longer unmasks what NER found under adjudication.** With
   `adjudicate=True` a candidate below 0.90, which is every NER span, survives
   only when the model confirms it. A model that never answered confirmed
@@ -138,26 +136,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   untouched. Both are now refused (413 and 503), with `on_scan_error="pass"`
   as the explicit opt-out.
 
-### Changed
+### Security
 
-- **Turkish and English NER are faster.** For catalog models whose NER
-  dependencies were measured, the components NER does not read are switched
-  off. Measured on about 3,500 characters, with identical entities:
+- **anyio raised to `>=4.14.2` — a TLS certificate-spoofing path in our own
+  async calls.** `httpx` hands async I/O to `httpcore`, whose AnyIO backend
+  wraps the socket with `anyio.streams.tls.TLSStream`, so every `scan_async()`
+  against an `https` LLM endpoint goes through it. Below 4.14.2 that wrapper
+  encodes host names with IDNA 2003 (CVE-2026-63374, critical): a name that maps
+  differently under IDNA 2003 and 2008 can be validated against a certificate
+  issued for a different host. `httpx` puts no upper bound on anyio, so a fresh
+  install already resolves a patched release — the floor is declared so an older
+  one cannot be resolved underneath wardcat without notice. A second advisory on
+  the same release fixes process-pool workers blocking on undrained stderr
+  (CVE-2026-64847); wardcat does not use anyio's process pools.
 
-  | Model | Faster by |
-  |---|---|
-  | `tr_core_news_md` | 29% |
-  | `tr_core_news_lg` | 22% |
-  | `en_core_web_sm`, `en_core_web_lg` | about 60% |
-
-  Models that were not measured run their full pipeline as before.
-- **A chunk the LLM failed on is now a warning.** A timeout or an unreadable
-  reply used to be logged and skipped. It now appears in `result.warnings`,
-  without adjudication too, so strict mode raises `DegradedScanError` where it
-  used to pass. A run with a failed chunk is no longer cached.
-- **Detectors can report partial failure.** `BaseDetector` gains
-  `detect_report()` and `detect_report_async()`, returning spans plus
-  warnings. The defaults wrap `detect()`, so existing detectors are unaffected.
+  The lock file also moves `setuptools` 81.0.0 → 84.0.0 for CVE-2026-59890. No
+  floor is declared for it: wardcat builds with hatchling and never imports
+  setuptools, which reaches the lock only as a runtime dependency of spacy,
+  thinc and torch, and the advisory concerns `MANIFEST.in` handling when
+  *building* an sdist on macOS — not a path a wardcat scan takes.
 
 ### Documentation
 
@@ -1010,8 +1007,8 @@ changes only in a future 2.0.
 - **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
-[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.2...HEAD
-[1.2.2]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.1...v1.2.2
+[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.1...v1.1.2
