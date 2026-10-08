@@ -50,10 +50,19 @@ def banner(version: str) -> str:
 
 
 def table(headers: list[str], rows: list[list[str]]) -> str:
+    """Columns padded to their widest cell; the last one wraps at the terminal's edge."""
+    import textwrap
+
     widths = [max(len(h), *(len(r[i]) for r in rows)) for i, h in enumerate(headers)]
+    room = shutil.get_terminal_size((100, 24)).columns - sum(w + 2 for w in widths[:-1]) - 1
+    widths[-1] = min(widths[-1], max(room, 20))  # never squeezed below 20 to wrap
+    indent = " " * sum(w + 2 for w in widths[:-1])
 
     def line(cells: list[str]) -> str:
-        return "  ".join(c.ljust(w) for c, w in zip(cells, widths, strict=True)).rstrip()
+        head = "  ".join(c.ljust(w) for c, w in zip(cells[:-1], widths, strict=False))
+        wrapped = textwrap.wrap(cells[-1], widths[-1]) or [""]
+        first = (head + "  " if head else "") + wrapped[0]
+        return "\n".join([first.rstrip(), *(indent + more for more in wrapped[1:])])
 
     out = [paint(line(headers), "bold"), paint("  ".join("─" * w for w in widths), "dim")]
     out.extend(line(r) for r in rows)

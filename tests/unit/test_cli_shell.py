@@ -106,7 +106,7 @@ class TestFiltersAndLayers:
     def test_preset_replaces_the_filters(self, capsys) -> None:
         shell, out = screen(capsys, "preset kvkk")
         assert shell.state["filters"]["TC_ID"] == "hash" and "JWT" not in shell.state["filters"]
-        assert "need the" in out
+        assert "only found with the ner and llm layers" in out
 
     def test_one_layer_must_stay(self, capsys) -> None:
         shell, out = screen(capsys, "remove layer regex")
@@ -322,7 +322,7 @@ class TestEveryCommandAnswers:
             "not an active filter",
             "already off",
             "usage: remove layer",
-            "layer regex on",
+            "layer regex is already on",
             "not serving",
         ):
             assert expected in out, expected
@@ -366,3 +366,49 @@ class TestPromptSession:
             assert stat.S_IMODE(mode) == 0o600
         found = list(session.completer.get_completions(Document("/pre"), None))
         assert [c.text for c in found] == ["preset"]
+
+
+class TestSweepFixes:
+    def test_a_bad_action_names_the_choices(self, capsys) -> None:
+        out = screen(capsys, "add filter TC_ID --action shred")[1]
+        assert "unknown action 'shred'; choose from hash, mask, redact" in out
+        assert "register_action" not in out
+
+    @pytest.mark.parametrize("port", ["0", "70000"])
+    def test_a_port_out_of_range(self, capsys, port) -> None:
+        assert "between 1 and 65535" in screen(capsys, f"serve --port {port}")[1]
+
+    def test_a_port_in_use_is_said_plainly(self, capsys) -> None:
+        pytest.importorskip("uvicorn")
+        import socket
+
+        with socket.socket() as taken:
+            taken.bind(("127.0.0.1", 0))
+            taken.listen()
+            port = taken.getsockname()[1]
+            shell, out = screen(capsys, f"serve --port {port}")
+        assert f"port {port} is in use" in out and "Traceback" not in out and shell.port is None
+
+    def test_leaving_a_question_cancels_the_command(self, capsys, monkeypatch) -> None:
+        def eof(prompt=""):
+            raise EOFError
+
+        monkeypatch.setattr("builtins.input", eof)
+        args = argparse.Namespace(screen_resume=None, screen_continue=False, screen_salt_env=None)
+        shell = Shell.start(args, interactive=False)
+        shell.dispatch("add", "layer llm")
+        shell.dispatch("scan", "")
+        out = capsys.readouterr().out
+        assert out.count("cancelled") == 2 and shell.state["llm"] is None
+
+    def test_a_long_last_column_wraps_at_the_terminal(self, monkeypatch) -> None:
+        import os as _os
+
+        from wardcat.cli._shell_ui import table
+
+        monkeypatch.setattr(
+            "shutil.get_terminal_size", lambda fallback=None: _os.terminal_size((60, 24))
+        )
+        text = table(["Name", "Covers"], [["kvkk", "word " * 30]])
+        assert all(len(line) <= 60 for line in text.splitlines())
+        assert text.splitlines()[3].startswith(" " * 6)
