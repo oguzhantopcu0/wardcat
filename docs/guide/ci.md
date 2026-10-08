@@ -16,6 +16,10 @@ With no `--entity`, `--group`, `--preset` or `--config`, every type wardcat can
 find with the layers you enabled is checked. Directories such as `.git`,
 `node_modules` and `.venv` are skipped; `--include` and `--exclude` take globs.
 
+`--jobs N` scans files in N processes. It pays off with the NER layer, where
+each file is model-bound; the findings are the same either way. In a pre-commit
+hook, which runs on every commit, prefer the regex layer and keep NER for CI.
+
 ## Nothing passes unscanned
 
 Every way a file could slip through is loud instead:

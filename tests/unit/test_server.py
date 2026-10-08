@@ -317,3 +317,66 @@ class TestServeCommand:
         monkeypatch.setattr(builtins, "__import__", no_uvicorn)
         assert main(["serve", "--entity", "EMAIL"]) == EXIT_CONFIG
         assert "pip install 'wardcat[serve]'" in capsys.readouterr().err
+
+
+class TestBatchScan:
+    def test_texts_come_back_in_order(self) -> None:
+        r = client().post("/scan", json={"texts": [TEXT["text"], "nothing", "a@b.io"]})
+        assert r.status_code == 200
+        out = [item["sanitized_text"] for item in r.json()["results"]]
+        assert out == ["mail [EMAIL] card [CREDIT_CARD]", "nothing", "[EMAIL]"]
+        assert CARD not in r.text
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"texts": []},
+            {"texts": "one"},
+            {"texts": ["ok", 5]},
+            {"texts": ["ok"], "text": "both"},
+            {"texts": ["x"] * 1001},
+        ],
+    )
+    def test_a_bad_batch_is_400(self, payload) -> None:
+        r = client().post("/scan", json=payload)
+        assert (r.status_code, r.json()) == (400, {"error": "bad_request"})
+
+    def test_one_unscannable_item_refuses_the_batch(self, tmp_path) -> None:
+        policy = tmp_path / "p.yaml"
+        policy.write_text(
+            "max_text_bytes: 64\nentities:\n  CREDIT_CARD: {enabled: true, action: redact}\n",
+            encoding="utf-8",
+        )
+        g = Wardcat(policy, salt="s")
+        c = TestClient(create_app(g, ServerConfig()), base_url="http://127.0.0.1:8787")
+        r = c.post("/scan", json={"texts": ["a@b.io", "x" * 200 + f" {CARD}"]})
+        assert (r.status_code, r.json()) == (413, {"error": "too_large"})
+        assert CARD not in r.text
+
+
+class TestClassify:
+    def test_without_an_llm_is_409(self) -> None:
+        r = client().post("/classify", json={"text": "x"})
+        assert (r.status_code, r.json()) == (409, {"error": "llm_not_configured"})
+
+    def _llm_client(self, monkeypatch, behaviour) -> TestClient:
+        g = guard().with_llm(model="m")
+        monkeypatch.setattr(type(g), "classify_async", behaviour)
+        return TestClient(create_app(g, ServerConfig()), base_url="http://127.0.0.1:8787")
+
+    def test_categories_without_the_reason(self, monkeypatch) -> None:
+        from wardcat.core.models import SensitivityVerdict
+
+        async def fake(self, text):
+            return SensitivityVerdict(True, ("health",), reason=f"says {text}")
+
+        r = self._llm_client(monkeypatch, fake).post("/classify", json={"text": "in rehab"})
+        assert r.json() == {"sensitive": True, "categories": ["health"]}
+        assert "rehab" not in r.text
+
+    def test_an_unreachable_backend_is_503(self, monkeypatch) -> None:
+        async def down(self, text):
+            raise ConnectionError("refused")
+
+        r = self._llm_client(monkeypatch, down).post("/classify", json={"text": "x"})
+        assert (r.status_code, r.json()) == (503, {"error": "llm_unavailable"})

@@ -40,6 +40,21 @@ Includes the fixes prepared as 1.2.2, which was never published.
   concurrency and request time are bounded; error bodies are fixed codes and
   the access log carries method, path, status and duration only. See the
   [HTTP service guide](https://docs.wardcat.com/guide/server/).
+- **The command line reaches what the library offers.** `wardcat scan` takes
+  several files (`--output-dir`) and JSON Lines datasets (`--jsonl --field`),
+  all in one batch that writes nothing if any text cannot be scanned.
+  `--token-map FILE` records tokenized values in an owner-only file, and the new
+  `wardcat restore` puts them back into a model's answer, leaving ambiguous and
+  unknown placeholders in place and reporting them by type. New tuning flags:
+  `--min-confidence`, `--phone-region`, `--ner-size`, `--llm-timeout`,
+  `--propagate` and `--locale`. `wardcat is-sensitive --categories` names the
+  kinds of sensitive content; `wardcat check --jobs N` scans in N processes.
+  `wardcat presets` shows what a preset covers and leaves out; `wardcat models`
+  lists the NER catalog and installs a model from it.
+- **`wardcat serve` scans batches and classifies.** `POST /scan` also takes
+  `{"texts": [...]}` (up to 1000) and refuses the whole batch if any text
+  cannot be scanned; `POST /classify` returns the verdict and its categories,
+  never the model's reason.
 - **`Wardcat.max_text_bytes`**, the input limit a policy sets, so a caller that
   splits a large document respects a smaller one.
 

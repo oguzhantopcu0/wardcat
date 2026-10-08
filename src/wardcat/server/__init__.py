@@ -12,7 +12,9 @@ Endpoints:
 ``GET  /readyz``          open    the guard is built and not degraded under strict
 ``GET  /info``            key     enabled entity types with their actions, and layers
 ``POST /scan``            key     ``{"text": ...}`` → the ``redacted()`` dict
+``POST /scan`` (batch)    key     ``{"texts": [...]}`` → ``{"results": [redacted(), ...]}``
 ``POST /is-sensitive``    key     ``{"text": ...}`` → ``{"sensitive": bool}``
+``POST /classify``        key     ``{"text": ...}`` → ``{"sensitive": bool, "categories": [...]}``
 ``GET  /metrics``         key     request counters, Prometheus text format
 ========================  ======  ====================================================
 
@@ -52,6 +54,8 @@ logger = logging.getLogger("wardcat.server")
 # Room for the JSON envelope around a text at the guard's own size limit.
 _ENVELOPE_BYTES = 64 * 1024
 _OPEN_PATHS = frozenset({"/healthz", "/readyz"})
+# Texts in one POST /scan batch; the body limit bounds their total size too.
+_MAX_BATCH = 1000
 
 
 class _Refused(Exception):
@@ -80,6 +84,13 @@ def create_app(guard: Wardcat, config: ServerConfig | None = None) -> Starlette:
     has_llm = guard._llm_detector is not None
 
     async def read_text(request: Request) -> str:
+        payload = await read_payload(request)
+        text = payload.get("text")
+        if not isinstance(text, str):
+            raise _Refused(400, "bad_request")
+        return text
+
+    async def read_payload(request: Request) -> dict[str, Any]:
         content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
         if content_type != "application/json":
             # Requiring JSON forces a CORS preflight on any cross-origin request,
@@ -98,10 +109,9 @@ def create_app(guard: Wardcat, config: ServerConfig | None = None) -> Starlette:
             payload = json.loads(b"".join(chunks).decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise _Refused(400, "bad_request") from None
-        text = payload.get("text") if isinstance(payload, dict) else None
-        if not isinstance(text, str):
+        if not isinstance(payload, dict):
             raise _Refused(400, "bad_request")
-        return text
+        return payload
 
     async def healthz(request: Request) -> Response:
         return JSONResponse({"status": "ok"})
@@ -130,14 +140,57 @@ def create_app(guard: Wardcat, config: ServerConfig | None = None) -> Starlette:
     async def scan(request: Request) -> Response:
         from wardcat.exceptions import DegradedScanError
 
-        text = await read_text(request)
+        payload = await read_payload(request)
+        texts = payload.get("texts")
+        single = payload.get("text")
+        batch = texts is not None
+        if batch:
+            if (
+                not isinstance(texts, list)
+                or not texts
+                or len(texts) > _MAX_BATCH
+                or not all(isinstance(t, str) for t in texts)
+                or single is not None
+            ):
+                raise _Refused(400, "bad_request")
+        elif not isinstance(single, str):
+            raise _Refused(400, "bad_request")
         try:
-            result = await guard.scan_async(text)
+            if isinstance(texts, list):
+                results = await guard.scan_batch_async(texts)
+            else:
+                assert isinstance(single, str)
+                results = [await guard.scan_async(single)]
         except DegradedScanError:
             raise _Refused(503, "degraded") from None
         except ValueError:
             raise _Refused(413, "too_large") from None
-        return JSONResponse(result.redacted())
+        if any(r.scan_error for r in results):
+            # scan_batch returns an unscannable item's text unchanged; answering
+            # with it would hand the caller back its PII as if it were sanitized.
+            raise _Refused(413, "too_large")
+        if batch:
+            return JSONResponse({"results": [r.redacted() for r in results]})
+        return JSONResponse(results[0].redacted())
+
+    async def classify(request: Request) -> Response:
+        import httpx
+
+        from wardcat.llm.circuit import CircuitOpen
+
+        if not has_llm:
+            raise _Refused(409, "llm_not_configured")
+        text = await read_text(request)
+        try:
+            verdict = await guard.classify_async(text)
+        except (ConnectionError, TimeoutError, httpx.HTTPError, CircuitOpen):
+            raise _Refused(503, "llm_unavailable") from None
+        except ValueError:
+            raise _Refused(413, "too_large") from None
+        # The model's reason may quote the text; it is not returned.
+        return JSONResponse(
+            {"sensitive": verdict.sensitive, "categories": list(verdict.categories)}
+        )
 
     async def is_sensitive(request: Request) -> Response:
         import httpx
@@ -188,6 +241,7 @@ def create_app(guard: Wardcat, config: ServerConfig | None = None) -> Starlette:
         Route("/info", guarded(info), methods=["GET"]),
         Route("/scan", guarded(scan), methods=["POST"]),
         Route("/is-sensitive", guarded(is_sensitive), methods=["POST"]),
+        Route("/classify", guarded(classify), methods=["POST"]),
         Route("/metrics", metrics, methods=["GET"]),
     ]
     app = Starlette(routes=routes, debug=False)

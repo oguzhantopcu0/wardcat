@@ -113,6 +113,14 @@ def register(sub: argparse._SubParsersAction) -> None:
         metavar="NAME",
         help="name to report for content read from -",
     )
+    files.add_argument(
+        "--jobs",
+        "-j",
+        type=int,
+        default=1,
+        metavar="N",
+        help="scan in N processes; worth it with --ner or --llm (default: 1)",
+    )
     out = p.add_argument_group("output")
     out.add_argument("--format", choices=["text", "jsonl", "sarif"], default="text")
     out.add_argument("--output", "-o", metavar="PATH", help="write the report to a file")
@@ -139,11 +147,19 @@ def run(args: argparse.Namespace) -> int:
         raise ConfigError("--write-baseline needs --baseline FILE")
     guard = _guard(args)
 
+    if args.jobs < 1:
+        raise ConfigError("--jobs must be at least 1")
     findings: list[Finding] = []
     skipped: list[str] = []
     warnings: dict[str, None] = {}
-    for name, text in _inputs(args, skipped):
-        found, notes = scan_text(guard, text, name)
+    inputs = _inputs(args, skipped)
+    if args.jobs == 1:
+        scanned: Iterable[tuple[list[Finding], list[str]]] = (
+            scan_text(guard, text, name) for name, text in inputs
+        )
+    else:
+        scanned = _scan_in_processes(args, list(inputs))
+    for found, notes in scanned:
         findings.extend(found)
         warnings.update(dict.fromkeys(notes))
 
@@ -185,6 +201,35 @@ def _guard(args: argparse.Namespace) -> Wardcat:
         if missing:
             _say(args, f"note: {', '.join(missing)} need --ner or --llm and are not checked")
     return guard
+
+
+_WORKER_GUARD: Wardcat | None = None
+
+
+def _start_worker(args: argparse.Namespace) -> None:
+    global _WORKER_GUARD
+    _WORKER_GUARD = build_guard(args, scope_required=False, warn=False)
+
+
+def _scan_in_worker(item: tuple[str, str]) -> tuple[list[Finding], list[str]]:
+    name, text = item
+    assert _WORKER_GUARD is not None
+    return scan_text(_WORKER_GUARD, text, name)
+
+
+def _scan_in_processes(
+    args: argparse.Namespace, items: list[tuple[str, str]]
+) -> Iterator[tuple[list[Finding], list[str]]]:
+    """Each process builds its own guard (and loads its own model) once."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    worker_args = argparse.Namespace(**{k: v for k, v in vars(args).items() if k != "run"})
+    with ProcessPoolExecutor(
+        max_workers=min(args.jobs, max(1, len(items))),
+        initializer=_start_worker,
+        initargs=(worker_args,),
+    ) as pool:
+        yield from pool.map(_scan_in_worker, items)
 
 
 def _say(args: argparse.Namespace, message: str) -> None:

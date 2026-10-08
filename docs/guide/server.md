@@ -22,6 +22,8 @@ change it.
 | `GET /readyz` | no | — | `{"status": "ready"}`, or 503 `degraded` when a layer failed under `--strict` |
 | `GET /info` | yes | — | enabled entity types with their actions, active layers, build warnings |
 | `POST /scan` | yes | `{"text": "..."}` | the `redacted()` dict: `sanitized_text`, `is_clean`, `violations` (types, offsets, actions — no values), `warnings`, `scan_error` |
+| `POST /scan` (batch) | yes | `{"texts": ["...", ...]}`, at most 1000 | `{"results": [...]}`, one `redacted()` dict per text, in order; if any text cannot be scanned the whole batch is 413 |
+| `POST /classify` | yes | `{"text": "..."}` | `{"sensitive": true, "categories": ["health"]}`; needs `--llm`, otherwise 409; the model's reason is not returned |
 | `POST /is-sensitive` | yes | `{"text": "..."}` | `{"sensitive": true}`; needs `--llm`, otherwise 409 |
 | `GET /metrics` | yes | — | request counts by path and status, Prometheus text format |
 

@@ -2,12 +2,16 @@
 
 ::
 
-    wardcat scan     [FILE|-] [guard options] [--json] [--output PATH] [--quiet]
+    wardcat scan     [FILE...|-] [guard options] [--json] [--output PATH|--output-dir DIR]
+                     [--jsonl --field NAME] [--token-map FILE]
+    wardcat restore  [FILE|-] --token-map FILE [--strict] [--sources]
     wardcat check    PATH... [guard options] [--format text|jsonl|sarif] [--baseline FILE]
     wardcat is-sensitive [FILE|-] --llm MODEL [LLM options]
     wardcat serve    [guard options] [--host 127.0.0.1] [--port 8787]   (wardcat[serve])
     wardcat check-config policy.yaml
     wardcat entities [--layer regex|ner|llm]
+    wardcat presets  [NAME]
+    wardcat models   list | pull MODEL
     wardcat --version
 
 Exit codes: ``0`` clean, ``1`` something was found (or the text is sensitive),
@@ -47,7 +51,17 @@ def _version() -> str:
 
 
 def _parser() -> argparse.ArgumentParser:
-    from wardcat.cli import check, check_config, entities, is_sensitive, scan, serve
+    from wardcat.cli import (
+        check,
+        check_config,
+        entities,
+        is_sensitive,
+        models,
+        presets,
+        restore,
+        scan,
+        serve,
+    )
 
     parser = argparse.ArgumentParser(
         prog="wardcat",
@@ -56,7 +70,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", "-V", action="version", version=_version())
     sub = parser.add_subparsers(dest="command", required=True)
-    for module in (scan, check, is_sensitive, serve, check_config, entities):
+    for module in (
+        scan,
+        restore,
+        check,
+        is_sensitive,
+        serve,
+        check_config,
+        entities,
+        presets,
+        models,
+    ):
         module.register(sub)
     return parser
 
