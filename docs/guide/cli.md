@@ -40,7 +40,7 @@ CREDIT_CARD  redact  [CREDIT_CARD]  1.00        regex
 TC_ID        redact  [TC_ID]        1.00        regex
 
 wardcat ❯ preset kvkk
-wardcat ❯ add layer ner --language tr
+wardcat ❯ add layer ner tr
 wardcat ❯ serve --port 8787
 ```
 
@@ -55,7 +55,7 @@ command:
 | `add filter ENTITY[,ENTITY=ACTION] [--action A]` / `remove filter ENTITY` | look for a type, with an action (default `redact`), or stop |
 | `preset NAME` | replace the filters with a preset's |
 | `filters`, `list filters [--active\|--inactive]` | the active filters; every type and which layer finds it |
-| `add layer regex\|ner\|llm` / `remove layer LAYER` / `layers` | switch detectors; `ner` takes `--language` the first time, `llm` asks for backend, model, address and key |
+| `add layer regex\|ner\|llm` / `remove layer LAYER` / `layers` | switch detectors; `ner` takes a language the first time (`add layer ner tr`, `add layer ner turkish md`) and turns on `PERSON`, `ORG` and `LOCATION` if no filter uses it; `llm` asks for backend, model, address and key |
 | `serve [--port P]` / `stop-serve` | serve the session's policy on 127.0.0.1; a change restarts it with the new policy |
 | `clear`, `help`, `quit` | Ctrl-D leaves too; Ctrl-C clears the line |
 
