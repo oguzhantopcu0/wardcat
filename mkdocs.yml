@@ -38,26 +38,23 @@ theme:
 # Keep it to the handful of changes worth interrupting a reader for; the card
 # links to the changelog for the rest.
 extra:
-  whats_new_version: "1.2.1"
+  whats_new_version: "1.3.0"
   whats_new:
-    - title: Command line
-      note: wardcat scan, check-config, entities
-      link: guide/cli/
-    - title: Presets
-      note: kvkk, gdpr, pci_dss, hipaa_lite, secrets_only
-      link: guide/presets/
-    - title: Surrogates
-      note: realistic, reversible stand-ins
-      link: guide/reversible/#surrogates-realistic-stand-ins
-    - title: Strict mode and the circuit breaker
-      note: a degraded scan raises instead of passing
-      link: guide/configuration/#strict-mode-refuse-a-degraded-scan
-    - title: classify()
-      note: which kind of sensitive, not only whether
-      link: guide/layers/#semantic-sensitivity-gate-is_sensitive
-    - title: Entity types page
-      note: every entity, default action and layer
-      link: reference/entities/
+    - title: wardcat check
+      note: block secrets and PII in commits and CI
+      link: guide/ci/
+    - title: pre-commit hook and GitHub Action
+      note: from the wardcat repository itself
+      link: guide/ci/#pre-commit
+    - title: wardcat serve
+      note: an HTTP service with a fixed policy
+      link: guide/server/
+    - title: Adjudication fails closed
+      note: a broken LLM reply no longer drops NER finds
+      link: changelog/
+    - title: KVKK and generative AI
+      note: what on-prem masking changes, and what not
+      link: guide/kvkk-generative-ai/
 
 validation:
   anchors: warn
