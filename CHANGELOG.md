@@ -45,6 +45,11 @@ Includes the fixes prepared as 1.2.2, which was never published.
 
 ### Changed
 
+- **A salt or LLM API key written into a policy file is warned about.** The
+  file goes wherever the policy goes; the warning names the key, never its value,
+  and points at passing secrets from the environment. `wardcat check-config`
+  now prints every warning the loader raises, on standard error.
+
 - **wardcat-cli's ways of letting a file through unscanned are gone.** A file
   that cannot be read is an error, not a skip; a non-UTF-8 file is read rather
   than skipped; a large document is split at line breaks under the policy's own
@@ -82,6 +87,13 @@ Includes the fixes prepared as 1.2.2, which was never published.
   warnings. The defaults wrap `detect()`, so existing detectors are unaffected.
 
 ### Fixed
+
+- **A YAML policy's `layers:` is applied instead of ignored.** An entity entry
+  such as `EMAIL: {enabled: true, action: redact, layers: [llm]}` was accepted
+  and silently dropped, so the regex layer went on masking EMAIL and nothing
+  said the setting had no effect. It is now routed exactly as
+  `add_entity(layers=[...])` routes it. A key the loader does not know in an
+  entity entry (`layer:` for `layers:`, say) is now an error rather than ignored.
 
 - **A Turkish phone number written with its code in parentheses.** `(0212) 680 18 33`
   matched from the `0` rather than the `(`, because the Turkish branch wants its
