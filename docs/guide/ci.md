@@ -9,12 +9,20 @@ in a pipeline, and a secret or an identity number stops the change.
 wardcat check .                               # everything wardcat knows, recursively
 wardcat check src/ --entity CUSTOM_SECRET,JWT,CREDIT_CARD,IBAN,TC_ID
 wardcat check . --config policy.yaml --format sarif --output wardcat.sarif
-git diff --cached | wardcat check - --stdin-filename staged.diff
+wardcat check --git-diff                      # only the lines staged for the next commit
+wardcat check --git-diff origin/main...HEAD   # only what a branch adds
 ```
 
 With no `--entity`, `--group`, `--preset` or `--config`, every type wardcat can
 find with the layers you enabled is checked. Directories such as `.git`,
 `node_modules` and `.venv` are skipped; `--include` and `--exclude` take globs.
+
+`--git-diff` scans only the lines a change adds — the staged changes, or
+`git diff REF` with a ref or range — and reports them at their line in the new
+file, so a baseline written by a full `check` still applies. Paths after it
+narrow the diff. A pull-request job that checks only its own additions stays
+fast and does not fail on findings that were already there. Outside a git work
+tree, or with a ref git does not know, it is an error (exit 2).
 
 `--jobs N` scans files in N processes. It pays off with the NER layer, where
 each file is model-bound; the findings are the same either way. In a pre-commit

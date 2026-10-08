@@ -7,6 +7,11 @@ document too large for one scan is split on line breaks under the policy's own
 ``max_text_bytes`` — a single line longer than that is an error rather than a
 cut through a value. Output names entity types and positions, never the values.
 
+``--git-diff`` scans only the lines a change adds: the staged changes by
+default (what the next commit will hold), or ``git diff REF`` with a ref or
+range. Findings carry the line numbers of the new file, so a baseline written
+from a full ``check`` applies. Paths given with it narrow the diff.
+
 Exit codes: ``0`` nothing found, ``1`` findings, ``2`` usage, config or read
 error, ``3`` a degraded scan under ``--strict``.
 """
@@ -16,6 +21,8 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import re
+import subprocess
 import sys
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -84,7 +91,7 @@ def register(sub: argparse._SubParsersAction) -> None:
         help="find secrets and PII in files; exit 1 if any (pre-commit, CI)",
         allow_abbrev=False,
     )
-    p.add_argument("paths", nargs="+", metavar="PATH", help="files and directories; - for stdin")
+    p.add_argument("paths", nargs="*", metavar="PATH", help="files and directories; - for stdin")
     p.add_argument(
         "--recursive",
         action=argparse.BooleanOptionalAction,
@@ -106,6 +113,14 @@ def register(sub: argparse._SubParsersAction) -> None:
         default=[],
         metavar="GLOB",
         help="skip files matching; repeatable",
+    )
+    files.add_argument(
+        "--git-diff",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="REF",
+        help="scan only added lines: staged changes, or `git diff REF` (e.g. origin/main...HEAD)",
     )
     files.add_argument(
         "--stdin-filename",
@@ -145,14 +160,23 @@ def run(args: argparse.Namespace) -> int:
 
     if args.write_baseline and not args.baseline:
         raise ConfigError("--write-baseline needs --baseline FILE")
-    guard = _guard(args)
-
     if args.jobs < 1:
         raise ConfigError("--jobs must be at least 1")
+    if args.git_diff is None and not args.paths:
+        raise ConfigError("give a PATH to check, - for stdin, or --git-diff")
+    if args.git_diff is not None and "-" in args.paths:
+        raise ConfigError("--git-diff cannot be combined with stdin (-)")
+    guard = _guard(args)
+
     findings: list[Finding] = []
     skipped: list[str] = []
     warnings: dict[str, None] = {}
-    inputs = _inputs(args, skipped)
+    line_maps: dict[str, list[int]] = {}
+    inputs = (
+        _diff_inputs(args, skipped, line_maps)
+        if args.git_diff is not None
+        else _inputs(args, skipped)
+    )
     if args.jobs == 1:
         scanned: Iterable[tuple[list[Finding], list[str]]] = (
             scan_text(guard, text, name) for name, text in inputs
@@ -162,6 +186,8 @@ def run(args: argparse.Namespace) -> int:
     for found, notes in scanned:
         findings.extend(found)
         warnings.update(dict.fromkeys(notes))
+    if line_maps:
+        findings = [_in_file(f, line_maps[f.file]) for f in findings]
 
     if args.write_baseline:
         count = write_baseline(Path(args.baseline), findings)
@@ -249,6 +275,134 @@ def _inputs(args: argparse.Namespace, skipped: list[str]) -> Iterator[tuple[str,
             skipped.append(path.as_posix())
             continue
         yield path.as_posix(), text
+
+
+_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+
+
+def _diff_inputs(
+    args: argparse.Namespace, skipped: list[str], line_maps: dict[str, list[int]]
+) -> Iterator[tuple[str, str]]:
+    """Each changed file's added lines, joined; *line_maps* records their real numbers."""
+
+    def matches(name: str, patterns: list[str]) -> bool:
+        return any(
+            fnmatch.fnmatch(name, g) or fnmatch.fnmatch(Path(name).name, g) for g in patterns
+        )
+
+    for name, numbers, lines in parse_added_lines(_git_diff(args)):
+        if matches(name, args.exclude) or (args.include and not matches(name, args.include)):
+            continue
+        if lines is None:
+            skipped.append(name)
+            continue
+        line_maps[name] = numbers
+        yield name, "".join(lines)
+
+
+def _git_diff(args: argparse.Namespace) -> str:
+    command = [
+        "git",
+        "-c",
+        "core.quotepath=off",
+        "diff",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--unified=0",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        "--diff-filter=d",
+    ]
+    command += ["--cached"] if args.git_diff == "" else [args.git_diff]
+    command += ["--", *args.paths]
+    try:
+        inside = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"], capture_output=True, check=False
+        )
+        if inside.returncode != 0:
+            raise ConfigError("--git-diff must run inside a git work tree")
+        done = subprocess.run(command, capture_output=True, check=False)
+    except OSError:
+        raise ConfigError("--git-diff needs git on the PATH") from None
+    if done.returncode != 0:
+        reason = done.stderr.decode("utf-8", errors="replace").strip().splitlines()
+        raise ConfigError(f"git diff failed: {reason[0] if reason else done.returncode}")
+    return done.stdout.decode("utf-8", errors="replace")
+
+
+def parse_added_lines(diff: str) -> Iterator[tuple[str, list[int], list[str] | None]]:
+    """``(path, line numbers, added lines)`` per file of a ``git diff -U0``.
+
+    The lines keep their line breaks. A binary file comes back with ``None``
+    for its lines, so the caller can say it was not scanned. Inside a hunk the
+    header's count decides what is content, so an added line that itself starts
+    with ``++ `` is not taken for a file header.
+    """
+    name: str | None = None
+    numbers: list[int] = []
+    lines: list[str] = []
+    binary = False
+    number = remaining = 0
+
+    def flush() -> Iterator[tuple[str, list[int], list[str] | None]]:
+        if name is not None and (lines or binary):
+            yield name, numbers, None if binary else lines
+
+    for line in (piece + "\n" for piece in diff.split("\n")[:-1]):
+        if remaining:
+            if line.startswith("+"):
+                numbers.append(number)
+                lines.append(line[1:])
+                number += 1
+                remaining -= 1
+            continue  # a removed line, or git's "no newline at end of file" note
+        if line.startswith("diff --git "):
+            yield from flush()
+            name, numbers, lines, binary = None, [], [], False
+            head = _unquote(line[len("diff --git ") :].rstrip("\n"))
+            if head.startswith("a/") and " b/" in head:
+                name = head.split(" b/", 1)[1]  # until +++ names it exactly
+        elif line.startswith("+++ "):
+            target = _unquote(line[4:].rstrip("\n"))
+            name = target[2:] if target.startswith("b/") else name
+        elif line.startswith("Binary files "):
+            binary = True
+        elif match := _HUNK.match(line):
+            number = int(match.group(1))
+            remaining = int(match.group(2)) if match.group(2) is not None else 1
+    yield from flush()
+
+
+def _unquote(path: str) -> str:
+    """Undo git's C-style quoting of a path with special characters."""
+    if not (path.startswith('"') and path.endswith('"')):
+        return path
+    raw = bytearray()
+    body = path[1:-1]
+    i = 0
+    escapes = {"n": 10, "t": 9, '"': 34, "\\": 92, "a": 7, "b": 8, "f": 12, "r": 13, "v": 11}
+    while i < len(body):
+        char = body[i]
+        if char == "\\" and i + 1 < len(body):
+            nxt = body[i + 1]
+            if nxt in "01234567" and i + 3 < len(body) + 1:
+                raw.append(int(body[i + 1 : i + 4], 8))
+                i += 4
+                continue
+            raw.append(escapes.get(nxt, ord(nxt)))
+            i += 2
+            continue
+        raw += char.encode("utf-8")
+        i += 1
+    return raw.decode("utf-8", errors="replace")
+
+
+def _in_file(finding: Finding, numbers: list[int]) -> Finding:
+    """Move a finding from its place among the added lines to its line in the file."""
+    from dataclasses import replace
+
+    return replace(finding, line=numbers[finding.line - 1])
 
 
 def iter_files(

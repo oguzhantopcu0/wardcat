@@ -54,7 +54,9 @@ def _parser() -> argparse.ArgumentParser:
     from wardcat.cli import (
         check,
         check_config,
+        completion,
         entities,
+        hook,
         is_sensitive,
         models,
         presets,
@@ -80,6 +82,8 @@ def _parser() -> argparse.ArgumentParser:
         entities,
         presets,
         models,
+        hook,
+        completion,
     ):
         module.register(sub)
     return parser
