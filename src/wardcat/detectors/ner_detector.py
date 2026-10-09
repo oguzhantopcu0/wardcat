@@ -6,6 +6,7 @@ import threading
 from typing import Any
 
 from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.exceptions import ConfigError
 from wardcat.utils.logsafe import describe
 from wardcat.utils.text import strip_name_suffix
 
@@ -391,15 +392,43 @@ _CACHE_LOCK = threading.Lock()
 
 
 def _load_model(model_name: str) -> Any:
-    """Return the SpaCy model from cache; load and cache it if not present."""
+    """Return the SpaCy model from cache; load and cache it if not present.
+
+    A pipeline with no ``ner`` component is refused: it would load cleanly and
+    find nothing, which reads as a clean scan. For a catalog model whose NER
+    dependencies were measured (``ner_pipes``) the other components are
+    disabled, which returns the same entities in a fraction of the time; the
+    detector only reads ``doc.ents``.
+    """
     with _CACHE_LOCK:
         if model_name not in _MODEL_CACHE:
             import spacy  # lazy import — SpaCy is optional
 
             logger.info("Loading SpaCy model: %s", model_name)
-            _MODEL_CACHE[model_name] = spacy.load(model_name)
+            nlp = spacy.load(model_name)
+            if "ner" not in nlp.pipe_names:
+                raise ConfigError(
+                    f"SpaCy model {model_name!r} has no NER component (pipeline: "
+                    f"{', '.join(nlp.pipe_names) or 'empty'}), so it would find no "
+                    "names. Choose a model with NER, e.g. the lg size of the language."
+                )
+            _disable_unused_pipes(nlp, model_name)
+            _MODEL_CACHE[model_name] = nlp
             logger.info("SpaCy model ready: %s", model_name)
         return _MODEL_CACHE[model_name]
+
+
+def _disable_unused_pipes(nlp: Any, model_name: str) -> None:
+    """Disable what the catalog measured NER does not need; else leave all on."""
+    from wardcat.ner.spacy_catalog import get_spacy_model
+
+    info = get_spacy_model(model_name)
+    keep = set(info.ner_pipes) if info else set()
+    if not keep or not keep.issubset(nlp.pipe_names):
+        return  # unmeasured, or a pipeline that differs from the measured one
+    for name in list(nlp.pipe_names):
+        if name not in keep:
+            nlp.disable_pipe(name)
 
 
 class NERDetector(BaseDetector):

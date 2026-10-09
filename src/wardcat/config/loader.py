@@ -168,9 +168,52 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
             with file_path.open("r", encoding="utf-8") as fh:
                 user_config = yaml.safe_load(fh) or {}
         config = _deep_merge(config, user_config)
+        _warn_on_secrets_in_file(user_config, path)
 
     validate_config(config)
+    _route_entity_layers(config)
     return config
+
+
+# Keys an entity entry in the YAML ``entities:`` map may carry.
+_ENTITY_KEYS = frozenset({"enabled", "action", "min_confidence", "layers"})
+_LLM_ENTITY_KEYS = frozenset({"enabled", "action"})
+
+
+def _warn_on_secrets_in_file(user_config: dict[str, Any], path: str | Path) -> None:
+    """A salt or API key written into a policy file travels wherever the file goes."""
+    found = []
+    if user_config.get("salt"):
+        found.append("salt")
+    llm = user_config.get("llm_detector")
+    if isinstance(llm, dict) and llm.get("api_key"):
+        found.append("llm_detector.api_key")
+    if found:
+        logger.warning(
+            "%s holds %s in plain text; keep secrets out of policy files and pass them "
+            "from the environment instead (Wardcat(salt=...), with_llm(api_key=...), "
+            "or the CLI's --salt-env / --llm-api-key-env).",
+            Path(str(path)).name,
+            " and ".join(found),
+        )
+
+
+def _route_entity_layers(config: dict[str, Any]) -> None:
+    """Apply ``layers:`` from YAML entity entries the way ``add_entity(layers=...)`` does.
+
+    The regex and NER layers share the ``entities`` map; the LLM layer keeps its
+    own under ``llm_detector.entities``. An entity limited to ``[llm]`` is
+    therefore switched off in the shared map and on in the LLM's.
+    """
+    llm_entities = config.setdefault("llm_detector", {}).setdefault("entities", {})
+    for name, spec in config.get("entities", {}).items():
+        layers = spec.pop("layers", None)
+        if layers is None:
+            continue
+        enabled = bool(spec.get("enabled", True))
+        spec["enabled"] = enabled and bool({"regex", "ner"} & set(layers))
+        if "llm" in layers:
+            llm_entities[name] = {"enabled": enabled, "action": spec.get("action", "warn")}
 
 
 def validate_config(config: dict[str, Any]) -> None:
@@ -232,13 +275,44 @@ def _validate_entity_map(entities: dict[str, Any], label: str) -> None:
                 f"Invalid {label} configuration '{entity_name}': expected dict, "
                 f"got {type(entity_cfg).__name__}."
             )
+        allowed = _LLM_ENTITY_KEYS if label == "llm_detector.entities" else _ENTITY_KEYS
+        unknown = set(entity_cfg) - allowed
+        if unknown:
+            raise ConfigError(
+                f"Unknown key(s) {sorted(unknown)} for {label} '{entity_name}'. "
+                f"Valid keys: {sorted(allowed)}"
+            )
         _validate_action(entity_cfg.get("action", "warn"), f"{label}: {entity_name}")
         if "min_confidence" in entity_cfg:
             _validate_min_confidence(entity_cfg["min_confidence"])
+        if "layers" in entity_cfg:
+            _validate_layers(entity_cfg["layers"], entity_name)
+
+
+def _validate_layers(layers: Any, entity_name: str) -> None:
+    from wardcat.core.registry import VALID_LAYERS
+
+    if not isinstance(layers, list) or not layers or not all(isinstance(x, str) for x in layers):
+        raise ConfigError(
+            f"'layers' for entity '{entity_name}' must be a non-empty list of layer names."
+        )
+    invalid = set(layers) - set(VALID_LAYERS)
+    if invalid:
+        raise ConfigError(
+            f"Invalid layer(s) {sorted(invalid)} for entity '{entity_name}'. "
+            f"Valid: {sorted(VALID_LAYERS)}"
+        )
 
 
 def _validate_custom_patterns(custom_patterns: dict[str, Any]) -> None:
     for pattern_name, pattern_cfg in custom_patterns.items():
+        # The name becomes an entity type, which `--entity A,B=mask` splits on
+        # commas and "=" — a name holding either could not be selected.
+        if not isinstance(pattern_name, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", pattern_name):
+            raise ConfigError(
+                f"Custom pattern name {pattern_name!r} may only use letters, digits, "
+                "'_', '.' and '-'."
+            )
         if not isinstance(pattern_cfg, dict):
             raise ConfigError(
                 f"Invalid custom_patterns entry '{pattern_name}': expected dict, "

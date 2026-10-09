@@ -9,6 +9,215 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-10-08
+
+Includes the fixes prepared as 1.2.2, which was never published.
+
+### Added
+
+- **`wardcat check`, `wardcat is-sensitive` and more of `wardcat scan`, folded
+  in from the retired wardcat-cli.** `check` walks files for pre-commit and CI,
+  reports `file:line:col ENTITY` and never a value, with `text`, `jsonl` and
+  `sarif` output and a baseline for accepted findings. `scan` gains `--group`,
+  comma-separated `--entity` items (each with its own `=ACTION`), `--output`,
+  `--quiet`, `--ner-language` and the LLM options. `is-sensitive` asks the LLM
+  layer for a yes/no verdict and fails closed. `wardcat --version` prints the
+  version. The repository root now carries a pre-commit hook
+  (`id: wardcat`) and a GitHub Action (`uses: oguzhantopcu0/wardcat@v1.3.0`).
+  See the [command line](https://docs.wardcat.com/guide/cli/) and
+  [pre-commit and CI](https://docs.wardcat.com/guide/ci/) guides, which include
+  a table for moving from wardcat-cli.
+- **`wardcat serve`, an HTTP service** (`pip install "wardcat[serve]"`):
+  `POST /scan`, `POST /is-sensitive`, `GET /info`, `/healthz`, `/readyz` and
+  `/metrics`, plus a `Dockerfile` for a small non-root image. It replaces
+  wardcat-cli's `serve`, without what made that one dangerous: the policy is
+  fixed at start (wardcat-cli's `POST /layers` let any local process point the
+  LLM layer at its own server and receive every text scanned after, and
+  `POST /filters` turned masking off for everyone); a key from the environment
+  is required off loopback, accepted as `Authorization: Bearer` or `x-api-key`;
+  without one the service answers only loopback `Host` headers, IPv6 included;
+  bodies must be JSON and are refused at the size limit while being read;
+  concurrency and request time are bounded; error bodies are fixed codes and
+  the access log carries method, path, status and duration only. See the
+  [HTTP service guide](https://docs.wardcat.com/guide/server/).
+- **The command line reaches what the library offers.** `wardcat scan` takes
+  several files (`--output-dir`) and JSON Lines datasets (`--jsonl --field`),
+  all in one batch that writes nothing if any text cannot be scanned.
+  `--token-map FILE` records tokenized values in an owner-only file, and the new
+  `wardcat restore` puts them back into a model's answer, leaving ambiguous and
+  unknown placeholders in place and reporting them by type. New tuning flags:
+  `--min-confidence`, `--phone-region`, `--ner-size`, `--llm-timeout`,
+  `--propagate` and `--locale`. `wardcat is-sensitive --categories` names the
+  kinds of sensitive content; `wardcat check --jobs N` scans in N processes.
+  `wardcat presets` shows what a preset covers and leaves out; `wardcat models`
+  lists the NER catalog and installs a model from it.
+- **The interactive screen from wardcat-cli.** `wardcat` alone in a terminal
+  opens a prompt with a `/` command palette, completion and a status line:
+  scan text, switch layers and filters, load a preset, serve the session's
+  policy on loopback. Sessions are saved and resumed (`--resume`, `--continue`,
+  `wardcat sessions`). Unlike wardcat-cli's shell, scanned text never reaches
+  the prompt history, the salt and API keys are never written to a file, and
+  the files are readable by their owner alone. Outside a terminal `wardcat`
+  still prints its usage and exits 2. `prompt-toolkit` is now a dependency.
+- **`wardcat hook claude-code`**, a Claude Code hook: a prompt with a finding is
+  blocked, a tool call carrying one is denied (or asked about), and a tool's
+  output is sanitized before the model reads it. It fails closed per event — an
+  input it cannot read or a text it cannot scan blocks the prompt or tool call
+  and withholds the output.
+- **`wardcat check --git-diff [REF]`** scans only the lines a change adds,
+  staged by default, reported at their line in the new file.
+- **`wardcat completion bash|zsh|fish`** prints a completion script generated
+  from the installed version.
+- **`wardcat serve` scans batches and classifies.** `POST /scan` also takes
+  `{"texts": [...]}` (up to 1000) and refuses the whole batch if any text
+  cannot be scanned; `POST /classify` returns the verdict and its categories,
+  never the model's reason.
+- **`Wardcat.max_text_bytes`**, the input limit a policy sets, so a caller that
+  splits a large document respects a smaller one.
+
+### Changed
+
+- **A salt or LLM API key written into a policy file is warned about.** The
+  file goes wherever the policy goes; the warning names the key, never its value,
+  and points at passing secrets from the environment. `wardcat check-config`
+  now prints every warning the loader raises, on standard error.
+
+- **wardcat-cli's ways of letting a file through unscanned are gone.** A file
+  that cannot be read is an error, not a skip; a non-UTF-8 file is read rather
+  than skipped; a large document is split at line breaks under the policy's own
+  limit, never at a fixed size, and a piece that fails stops the run instead of
+  being reported clean; a line longer than the limit is an error. Configuration
+  is never picked up from a `.wardcat.yaml` in a parent directory or
+  `WARDCAT_CONFIG`; pass `--config`. Secrets are never taken as arguments.
+- **The `wardcat` command reads and writes UTF-8 everywhere.** On Windows a
+  console or pipe used the ANSI code page, which turned ş, ğ and İ into question
+  marks; a byte-order mark on input is dropped.
+- **libphonenumber ships with every install.** `phonenumbers` is now a core
+  dependency, so `with_phone_regions()` and `--phone-region` work without an
+  extra. `wardcat[phone]` is kept, empty, so existing install commands still
+  work.
+- **A SpaCy model downloaded through wardcat lands in wardcat's own
+  environment.** `uv pip install` was run without `--python`, so it installed
+  into whichever virtual environment the working directory or `VIRTUAL_ENV`
+  named; the model then stayed missing for the wardcat that asked for it.
+  `is_installed()` now also sees a model installed while the process runs.
+- **Long options must be written in full.** argparse accepted unambiguous
+  abbreviations (`--ent` for `--entity`); with the new options several became
+  ambiguous, so abbreviations are refused everywhere.
+- **A `hash`, `tokenize` or `surrogate` action with no salt prints a warning.**
+- **Custom pattern names** may only use letters, digits, `_`, `.` and `-`, since
+  the name is selected with `--entity`, which splits on commas and `=`.
+
+- **Turkish and English NER are faster.** For catalog models whose NER
+  dependencies were measured, the components NER does not read are switched
+  off. Measured on about 3,500 characters, with identical entities:
+
+  | Model | Faster by |
+  |---|---|
+  | `tr_core_news_md` | 29% |
+  | `tr_core_news_lg` | 22% |
+  | `en_core_web_sm`, `en_core_web_lg` | about 60% |
+
+  Models that were not measured run their full pipeline as before.
+- **A chunk the LLM failed on is now a warning.** A timeout or an unreadable
+  reply used to be logged and skipped. It now appears in `result.warnings`,
+  without adjudication too, so strict mode raises `DegradedScanError` where it
+  used to pass. A run with a failed chunk is no longer cached.
+- **Detectors can report partial failure.** `BaseDetector` gains
+  `detect_report()` and `detect_report_async()`, returning spans plus
+  warnings. The defaults wrap `detect()`, so existing detectors are unaffected.
+
+### Fixed
+
+- **A YAML policy's `layers:` is applied instead of ignored.** An entity entry
+  such as `EMAIL: {enabled: true, action: redact, layers: [llm]}` was accepted
+  and silently dropped, so the regex layer went on masking EMAIL and nothing
+  said the setting had no effect. It is now routed exactly as
+  `add_entity(layers=[...])` routes it. A key the loader does not know in an
+  entity entry (`layer:` for `layers:`, say) is now an error rather than ignored.
+
+- **A Turkish phone number written with its code in parentheses.** `(0212) 680 18 33`
+  matched from the `0` rather than the `(`, because the Turkish branch wants its
+  `0`/`+90` prefix *before* the parenthesis and nothing matched at the opening one.
+  The span came back as `0212) 680 18 33` — opening paren outside it, closing paren
+  inside — so the text redacted to `([PHONE]`. The `(212) 680 18 33` spelling has no
+  prefix to find at all and was missed outright, which is the form printed on
+  letterheads and shop signs. A branch now matches the parentheses as a unit; the
+  area code is restricted to the ranges Türk Telekom issues (2xx–4xx landline, 5xx
+  mobile) and the 3-2-2 tail keeps it clear of the US 3-3-4 form, so
+  `(100) 200 30 40` and `Madde (212) sayılı karar` still match nothing.
+
+- **`tr_core_news_trf` is no longer blocked.** The catalog flagged it
+  `incompatible` with a note saying the transformer component API had changed and
+  no release worked on SpaCy 3.5+, so `download_model` refused it before doing any
+  work. It loads on SpaCy 3.8 with a full `ner` component and 20 labels, and gives
+  the best Turkish PERSON accuracy in the catalog — the flag only hid it. The entry
+  now declares `spacy-transformers` as an extra package and says that loading it
+  pulls in torch, so the scan is roughly three times slower than
+  `tr_core_news_lg`. The guard itself is unchanged and still covered, now against
+  a fabricated catalog entry rather than a real model whose flag could go stale
+  the same way.
+
+- **A model answering with bare strings no longer costs the whole LLM layer.**
+  The parser checked that the response was a JSON array but not that its elements
+  were objects. Asked for `[{"type": …, "text": …}]` a small model often answers
+  `["Ali Veli", "ali@firma.com"]`; span location then called `.get()` on a `str`
+  and the `AttributeError` left the detector, so the engine dropped every span the
+  layer would have contributed to that scan — including the well-formed entries of
+  a response that mixed both forms. The backend call had already returned, so the
+  circuit breaker recorded a success and the next scan failed the same way.
+  Non-object elements are filtered out and counted at debug level.
+
+- **A failing LLM no longer unmasks what NER found under adjudication.** With
+  `adjudicate=True` a candidate below 0.90, which is every NER span, survives
+  only when the model confirms it. A model that never answered confirmed
+  nothing, so the name went out in clear text: silently when the reply held no
+  JSON list or a chunk timed out, and with only a warning when the backend was
+  down or the circuit open. The same guard without an LLM would have masked it.
+  Now a chunk the model never judged keeps its candidates and records a
+  warning, a whole-layer failure keeps every unjudged candidate, and strict
+  mode refuses the scan. An empty list is still an answer: limiting how much
+  the model may drop is planned for the next minor release.
+- **Parser-only SpaCy pipelines no longer leave NER empty without a word.**
+  `with_ner(language="de"|"fr"|"es", spacy_size="trf")` loaded the
+  `*_dep_news_trf` package, which has no `ner` component, and found no names.
+  Those sizes now load the `lg` model, and every result says which model was
+  used instead. Loading any pipeline without `ner` raises `ConfigError`, which
+  the guard records as a build warning (and strict mode refuses).
+- **The ASGI example fails closed.** `examples/asgi_middleware.py` forwarded a
+  body over `max_body_bytes`, and a body whose scan raised, to the route
+  untouched. Both are now refused (413 and 503), with `on_scan_error="pass"`
+  as the explicit opt-out.
+
+### Security
+
+- **anyio raised to `>=4.14.2` — a TLS certificate-spoofing path in our own
+  async calls.** `httpx` hands async I/O to `httpcore`, whose AnyIO backend
+  wraps the socket with `anyio.streams.tls.TLSStream`, so every `scan_async()`
+  against an `https` LLM endpoint goes through it. Below 4.14.2 that wrapper
+  encodes host names with IDNA 2003 (CVE-2026-63374, critical): a name that maps
+  differently under IDNA 2003 and 2008 can be validated against a certificate
+  issued for a different host. `httpx` puts no upper bound on anyio, so a fresh
+  install already resolves a patched release — the floor is declared so an older
+  one cannot be resolved underneath wardcat without notice. A second advisory on
+  the same release fixes process-pool workers blocking on undrained stderr
+  (CVE-2026-64847); wardcat does not use anyio's process pools.
+
+  The lock file also moves `setuptools` 81.0.0 → 84.0.0 for CVE-2026-59890. No
+  floor is declared for it: wardcat builds with hatchling and never imports
+  setuptools, which reaches the lock only as a runtime dependency of spacy,
+  thinc and torch, and the advisory concerns `MANIFEST.in` handling when
+  *building* an sdist on macOS — not a path a wardcat scan takes.
+
+### Documentation
+
+- **KVKK and generative AI.** A new guide page, in English and Turkish, on
+  what on-prem masking changes about sending text to a model abroad and what
+  it does not, drawn from Article 9 and the KVKK generative-AI guide of
+  24 November 2025. A test now fails on any positive compliance claim in the
+  repository. The security guide says a surrogate TC number, card or IBAN
+  passes its checksum and can belong to a real person.
+
 ## [1.2.1] — 2026-09-23
 
 ### Added
@@ -851,7 +1060,8 @@ changes only in a future 2.0.
 - **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
-[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.1...v1.1.2

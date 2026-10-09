@@ -62,16 +62,41 @@ class TestUnsupportedLanguage:
 
 
 class TestModelDownloadError:
-    def test_incompatible_model_raises_model_download_error(self):
-        pytest.importorskip("spacy")
-        from wardcat.ner.downloader import download_model
+    """The incompatibility guard, on a fabricated catalog entry.
 
+    These used to name tr_core_news_trf, whose flag was stale — it loads on
+    current SpaCy with a full NER component, so the assertions were resting on a
+    wrong catalog claim rather than on the guard they were written for.
+    """
+
+    @staticmethod
+    def _blocked_entry():
+        from wardcat.ner.spacy_catalog import SpacyModelInfo
+
+        return SpacyModelInfo(
+            name="xx_core_news_sm",
+            language="Example",
+            lang_code="xx",
+            size="sm",
+            ram_mb=1,
+            description="fixture",
+            note="pinned to an older SpaCy",
+            spacy_compat=">=3.4,<3.5",
+            incompatible=True,
+        )
+
+    def test_incompatible_model_raises_model_download_error(self, monkeypatch):
+        pytest.importorskip("spacy")
+        from wardcat.ner import downloader
+
+        monkeypatch.setattr(downloader, "get_spacy_model", lambda name: self._blocked_entry())
         with pytest.raises(ModelDownloadError, match="not compatible"):
-            download_model("tr_core_news_trf")
+            downloader.download_model("xx_core_news_sm")
 
-    def test_still_catchable_as_runtime_error(self):
+    def test_still_catchable_as_runtime_error(self, monkeypatch):
         pytest.importorskip("spacy")
-        from wardcat.ner.downloader import download_model
+        from wardcat.ner import downloader
 
+        monkeypatch.setattr(downloader, "get_spacy_model", lambda name: self._blocked_entry())
         with pytest.raises(RuntimeError):
-            download_model("tr_core_news_trf")
+            downloader.download_model("xx_core_news_sm")

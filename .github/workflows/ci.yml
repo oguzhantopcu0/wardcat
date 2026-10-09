@@ -1,9 +1,10 @@
 name: CI
 
 on:
-  # Post-merge verification on the trunk.
+  # Every branch of the promotion path runs the full suite on push:
+  # dev (work in progress) -> test/* (integration) -> staging (passed) -> main.
   push:
-    branches: ["main"]
+    branches: ["main", "staging", "dev", "test/**"]
   # The gate: run on every pull request (any base branch) so nothing reaches
   # main without a green lint + test + build run.
   pull_request:
@@ -117,3 +118,128 @@ jobs:
 
       - name: Build docs (strict — fails on broken links/refs)
         run: uv run --group docs mkdocs build --strict
+
+  minimal-install:
+    # The wheel in a bare virtual environment, no extras, no dev tools: the
+    # `wardcat` command must work there, and `import wardcat` must stay lean.
+    # The dev environment cannot show this — SpaCy brings typer and rich along.
+    name: Minimal install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@v7
+        with:
+          name: dist
+          path: dist/
+      - name: Install the wheel alone
+        shell: bash
+        run: |
+          python -m venv bare
+          bin=bare/bin; [ -d "$bin" ] || bin=bare/Scripts
+          echo "BARE=$bin" >> "$GITHUB_ENV"
+          "$bin/python" -m pip install --quiet dist/*.whl
+      - name: The command works without extras
+        shell: bash
+        run: |
+          set -u
+          "$BARE/wardcat" --version
+          "$BARE/wardcat" --help > /dev/null
+          set +e
+          out=$(printf 'mail ali@example.com\n' | "$BARE/wardcat" scan --entity EMAIL); code=$?
+          set -e
+          [ "$code" = 1 ] && [ "$out" = "mail [EMAIL]" ] || { echo "scan: exit $code, got '$out'"; exit 1; }
+          set +e; "$BARE/wardcat" check tests/fixtures/cli/leaky --quiet; code=$?; set -e
+          [ "$code" = 1 ] || { echo "check leaky: exit $code"; exit 1; }
+          "$BARE/wardcat" check tests/fixtures/cli/clean --quiet
+      - name: Turkish text survives a pipe
+        shell: bash
+        run: |
+          set +e
+          out=$(printf 'Şükrü, İzmir: 4111 1111 1111 1111\n' | "$BARE/wardcat" scan --entity CREDIT_CARD); code=$?
+          set -e
+          [ "$code" = 1 ] && [ "$out" = "Şükrü, İzmir: [CREDIT_CARD]" ] || { echo "got '$out' (exit $code)"; exit 1; }
+      - name: import wardcat loads no CLI or server code
+        shell: bash
+        run: |
+          "$BARE/python" -c "import sys, wardcat; bad=[m for m in sys.modules if m.startswith(('wardcat.cli','argparse','starlette','uvicorn','typer','rich'))]; assert not bad, bad"
+
+  pre-commit-hook:
+    name: pre-commit hook
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: The hook blocks a leaky file and passes a clean one
+        run: |
+          python -m pip install --quiet pre-commit
+          if pre-commit try-repo . wardcat --files tests/fixtures/cli/leaky/settings.py; then
+            echo "the hook passed a file with a secret and a card"; exit 1
+          fi
+          pre-commit try-repo . wardcat --files tests/fixtures/cli/clean/readme.txt
+
+  action-selftest:
+    name: GitHub Action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run the action on a leaky directory
+        id: leaky
+        continue-on-error: true
+        uses: ./
+        with:
+          paths: tests/fixtures/cli/leaky
+      - name: It must have failed
+        if: steps.leaky.outcome != 'failure'
+        run: echo "the action passed a directory with a secret and a card" && exit 1
+      - name: Run the action on a clean directory, writing SARIF
+        uses: ./
+        with:
+          paths: tests/fixtures/cli/clean
+          format: sarif
+          output: wardcat.sarif
+      - name: The SARIF report is valid JSON
+        run: python3 -c "import json; d=json.load(open('wardcat.sarif')); assert d['version']=='2.1.0'"
+
+  docker:
+    # The image builds, refuses to start without a key (it listens on 0.0.0.0),
+    # serves an authenticated scan with one, and stays small.
+    name: Container image
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        run: docker build -t wardcat:ci .
+      - name: Size stays under 200 MB uncompressed
+        run: |
+          size=$(docker image inspect wardcat:ci --format '{{.Size}}')
+          echo "image size: $((size / 1000000)) MB"
+          [ "$size" -lt 200000000 ]
+      - name: No key, no service
+        run: |
+          if docker run --rm wardcat:ci --entity EMAIL; then
+            echo "the container started on 0.0.0.0 without an API key"; exit 1
+          fi
+      - name: With a key it scans
+        run: |
+          key=$(python3 -c "import secrets; print(secrets.token_hex(16))")
+          docker run -d --name wc -p 8787:8787 -e WARDCAT_API_KEY="$key" wardcat:ci --entity EMAIL,CREDIT_CARD
+          for i in $(seq 1 30); do curl -sf localhost:8787/healthz >/dev/null && break; sleep 1; done
+          [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8787/scan -H 'content-type: application/json' -d '{"text":"x"}')" = 401 ]
+          out=$(curl -s -X POST localhost:8787/scan -H "x-api-key: $key" -H 'content-type: application/json' \
+                -d '{"text":"mail ali@example.com card 4111 1111 1111 1111"}')
+          echo "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['sanitized_text']=='mail [EMAIL] card [CREDIT_CARD]', d"
+          ! echo "$out" | grep -q '4111'
+          docker logs wc 2>&1 | tail -5
+          ! docker logs wc 2>&1 | grep -q 'ali@example.com'
+          docker rm -f wc

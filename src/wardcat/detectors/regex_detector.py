@@ -110,6 +110,19 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         # US/NANP national, area code parenthesised: (415) 555-0142 / (415)555-0142
         r"\(\d{3}\)[\s\-.]?\d{3}[\s\-.]?\d{4}"
         r"|"
+        # Turkish with the whole code in parentheses, the form printed on
+        # letterheads and shop signs: (212) 680 18 33 / (0212) 680 18 33.
+        # The Turkish branch above wants its 0/+90 prefix *before* the
+        # parenthesis, so at "(0212) …" nothing matched at the opening paren and
+        # the engine advanced one character and matched from the "0" instead —
+        # yielding the unbalanced span "0212) 680 18 33", which redacted to
+        # "([PHONE]". Matching the parentheses as a unit fixes the span and
+        # also picks up the "(212)" spelling, which has no prefix to find.
+        # The code is restricted to the ranges Türk Telekom issues (2xx-4xx
+        # landline, 5xx mobile) instead of any three digits, and the 3-2-2 tail
+        # keeps it clear of the US 3-3-4 shape handled above.
+        r"\(0?[2-5]\d{2}\)[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}"
+        r"|"
         # International E.164 (non-Turkish): +1..., +44..., +49..., etc.
         # The country code is 1–4 digits: `\d{0,3}` (not `{1,3}`) so a
         # single-digit code followed by a separator — "+1 415 555 0142" — is not
@@ -1101,7 +1114,8 @@ class RegexDetector(BaseDetector):
         # regions instead of the built-in pattern. The pattern covers TR/FR/DE plus
         # E.164 and is precision-first; a per-country library is the only way to
         # reach the national formats of everywhere else without guessing. Opt-in,
-        # so a base install behaves exactly as before.
+        # so a guard without regions behaves exactly as before. phonenumbers is a
+        # core dependency; the check below covers an install made without it.
         #
         # Availability is settled here rather than on first use: detect() skips the
         # built-in pattern whenever regions are configured, so discovering the
@@ -1115,7 +1129,7 @@ class RegexDetector(BaseDetector):
                 message = (
                     "phone_regions is set but the 'phonenumbers' package is missing, so "
                     "PHONE detection falls back to the built-in pattern. "
-                    "Install with: pip install 'wardcat[phone]'"
+                    "Install with: pip install phonenumbers"
                 )
                 logger.warning(message)
                 self.build_warnings = (message,)

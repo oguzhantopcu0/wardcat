@@ -49,7 +49,10 @@ that fall inside some prediction of any type, which is what redaction removes.
 
 Only the eight types both engines offer are scored: `PERSON`, `ORGANIZATION`,
 `CREDIT_CARD`, `PHONE_NUMBER`, `EMAIL_ADDRESS`, `IBAN_CODE`, `US_SSN`, `IP_ADDRESS`.
-Turkish ID numbers are a wardcat-only type and are reported separately as coverage.
+Turkish ID numbers are reported separately as coverage. Presidio added a
+`TR_NATIONAL_ID` recognizer in 2.2.363 (June 2026), but it is off by default and
+this benchmark runs Presidio's default `AnalyzerEngine`, so the type is not scored
+head to head.
 
 Both engines use the same spaCy model: `en_core_web_lg` for English (the model
 Presidio's documentation recommends) and `tr_core_news_md` for Turkish. Neither

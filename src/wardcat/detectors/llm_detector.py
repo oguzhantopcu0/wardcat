@@ -22,7 +22,7 @@ import threading
 import time
 from dataclasses import dataclass
 
-from wardcat.detectors.base import BaseDetector, DetectedSpan
+from wardcat.detectors.base import BaseDetector, DetectedSpan, DetectionReport
 from wardcat.detectors.regex_detector import CHECKSUM_VALIDATORS
 from wardcat.llm.backends.base import BaseLLMBackend
 from wardcat.llm.circuit import CircuitBreaker
@@ -34,6 +34,17 @@ logger = logging.getLogger(__name__)
 
 # For extracting the JSON array from the LLM response
 _JSON_RE = re.compile(r"\[.*?\]", re.DOTALL)
+
+
+class UnreadableReply(ValueError):
+    """The model answered, but not with a JSON list.
+
+    Distinct from an empty list, which is a real answer ("nothing here"). An
+    unreadable reply means the chunk was never judged, so the scan is degraded
+    and, under adjudication, the other layers' candidates are kept.
+    """
+
+
 # (paragraph chunking now lives in wardcat.utils.text.chunk_by_paragraph)
 
 
@@ -135,23 +146,39 @@ class LLMDetector(BaseDetector):
         text: str,
         candidates: list[DetectedSpan] | None = None,
     ) -> list[DetectedSpan]:
+        return self.detect_report(text, candidates).spans
+
+    async def detect_async(
+        self,
+        text: str,
+        candidates: list[DetectedSpan] | None = None,
+    ) -> list[DetectedSpan]:
+        """Async variant — chunks are scanned concurrently via asyncio.gather."""
+        return (await self.detect_report_async(text, candidates)).spans
+
+    def detect_report(
+        self,
+        text: str,
+        candidates: list[DetectedSpan] | None = None,
+    ) -> DetectionReport:
+        """Scan *text* chunk by chunk; a chunk that fails is reported, not hidden.
+
+        A chunk whose call times out, errors, or comes back without a JSON list
+        adds a warning to the report. Under adjudication its candidates are
+        returned as they came, because the model never judged them and dropping
+        them would let a name through on the strength of a broken reply. A
+        ``ConnectionError`` (or an open circuit) still propagates: the whole
+        layer is down, and the engine handles that case.
+        """
         if not text.strip():
-            return []
+            return DetectionReport([])
+        key, cached = self._cache_lookup(text, candidates)
+        if cached is not None:
+            return DetectionReport(cached)
 
-        if self._cache_ttl > 0:
-            key = self._cache_key(text, candidates)
-            with self._cache_lock:
-                entry = self._cache.get(key)
-                if entry is not None and time.monotonic() < entry.expires_at:
-                    logger.debug("LLM detector: cache hit for text of length %d", len(text))
-                    return entry.spans
-        else:
-            key = None
-
-        chunks = self._to_chunks(text)
         spans: list[DetectedSpan] = []
-
-        for chunk_text, offset in chunks:
+        warnings: list[str] = []
+        for chunk_text, offset in self._to_chunks(text):
             if not chunk_text.strip():
                 continue
             chunk_cands = self._candidates_for_chunk(candidates, offset, len(chunk_text))
@@ -173,71 +200,116 @@ class LLMDetector(BaseDetector):
             # explicitly before the transient-error catch below.)
             except ConnectionError:
                 raise
-            # Per-chunk transient errors are swallowed to keep scanning.
             except (TimeoutError, ValueError, OSError) as exc:
-                logger.warning("LLM detector failed (offset=%d): %s", offset, exc)
+                self._chunk_failed(exc, offset, len(chunk_text), candidates, spans, warnings)
 
-        if self._cache_ttl > 0 and key is not None:
-            with self._cache_lock:
-                self._cache[key] = _CacheEntry(
-                    spans=spans,
-                    expires_at=time.monotonic() + self._cache_ttl,
-                )
+        spans.extend(self._unchunked_candidates(text, candidates))
+        if not warnings:
+            self._cache_store(key, spans)
+        return DetectionReport(spans, warnings)
 
-        return spans
-
-    async def detect_async(
+    async def detect_report_async(
         self,
         text: str,
         candidates: list[DetectedSpan] | None = None,
-    ) -> list[DetectedSpan]:
-        """Async variant — chunks are scanned concurrently via asyncio.gather."""
+    ) -> DetectionReport:
+        """Async :meth:`detect_report`; chunks run concurrently."""
         if not text.strip():
-            return []
+            return DetectionReport([])
+        key, cached = self._cache_lookup(text, candidates)
+        if cached is not None:
+            return DetectionReport(cached)
 
-        if self._cache_ttl > 0:
-            key = self._cache_key(text, candidates)
-            with self._cache_lock:
-                entry = self._cache.get(key)
-                if entry is not None and time.monotonic() < entry.expires_at:
-                    logger.debug("LLM detector: cache hit for text of length %d", len(text))
-                    return entry.spans
-        else:
-            key = None
-
-        chunks = self._to_chunks(text)
-
-        async def _scan_chunk(chunk_text: str, offset: int) -> list[DetectedSpan]:
+        async def _scan_chunk(chunk_text: str, offset: int) -> tuple[list[DetectedSpan], list[str]]:
             if not chunk_text.strip():
-                return []
+                return [], []
             chunk_cands = self._candidates_for_chunk(candidates, offset, len(chunk_text))
             messages = build_messages(chunk_text, self.enabled_entities, chunk_cands)
             try:
                 raw = await self.complete_messages_async(messages)
                 entities = self._parse_llm_response(raw)
-                return self._offset_spans(self._locate_spans(chunk_text, entities), offset)
+                return self._offset_spans(self._locate_spans(chunk_text, entities), offset), []
             # ConnectionError propagates (the whole layer is unavailable); the
             # engine records it as a scan warning. (It is an OSError subclass, so
             # re-raise before the transient-error catch below.)
             except ConnectionError:
                 raise
-            # Transient per-chunk errors are swallowed so one bad chunk does not
-            # lose the rest.
             except (TimeoutError, ValueError, OSError) as exc:
-                logger.warning("LLM detector failed (offset=%d): %s", offset, exc)
-                return []
+                kept: list[DetectedSpan] = []
+                problems: list[str] = []
+                self._chunk_failed(exc, offset, len(chunk_text), candidates, kept, problems)
+                return kept, problems
 
-        results = await asyncio.gather(*[_scan_chunk(ct, off) for ct, off in chunks])
-        spans: list[DetectedSpan] = [s for chunk_spans in results for s in chunk_spans]
+        results = await asyncio.gather(*[_scan_chunk(ct, off) for ct, off in self._to_chunks(text)])
+        spans = [s for chunk_spans, _ in results for s in chunk_spans]
+        warnings = [w for _, chunk_warnings in results for w in chunk_warnings]
+        spans.extend(self._unchunked_candidates(text, candidates))
+        if not warnings:
+            self._cache_store(key, spans)
+        return DetectionReport(spans, warnings)
 
-        if self._cache_ttl > 0 and key is not None:
-            with self._cache_lock:
-                self._cache[key] = _CacheEntry(
-                    spans=spans,
-                    expires_at=time.monotonic() + self._cache_ttl,
-                )
+    def _chunk_failed(
+        self,
+        exc: Exception,
+        offset: int,
+        length: int,
+        candidates: list[DetectedSpan] | None,
+        spans: list[DetectedSpan],
+        warnings: list[str],
+    ) -> None:
+        """Record a chunk the model never judged; keep its candidates if any.
 
-        return spans
+        The warning names the exception type and the chunk's position, never
+        its text or the model's reply.
+        """
+        kept = [s for s in (candidates or ()) if s.start >= offset and s.end <= offset + length]
+        spans.extend(kept)
+        note = f"; kept {len(kept)} candidate span(s) from the other layers" if candidates else ""
+        warnings.append(
+            f"LLMDetector: the chunk at offset {offset} was not judged ({type(exc).__name__}){note}"
+        )
+        logger.warning(
+            "LLM detector failed (offset=%d): %s; kept %d candidate(s)",
+            offset,
+            type(exc).__name__,
+            len(kept),
+        )
+
+    def _unchunked_candidates(
+        self, text: str, candidates: list[DetectedSpan] | None
+    ) -> list[DetectedSpan]:
+        """Candidates no chunk fully contains — never shown to the model, so kept."""
+        if not candidates:
+            return []
+        bounds = [(off, off + len(chunk)) for chunk, off in self._to_chunks(text)]
+        return [
+            s
+            for s in candidates
+            if not any(start <= s.start and s.end <= end for start, end in bounds)
+        ]
+
+    def _cache_lookup(
+        self, text: str, candidates: list[DetectedSpan] | None
+    ) -> tuple[str | None, list[DetectedSpan] | None]:
+        if self._cache_ttl <= 0:
+            return None, None
+        key = self._cache_key(text, candidates)
+        with self._cache_lock:
+            entry = self._cache.get(key)
+            if entry is not None and time.monotonic() < entry.expires_at:
+                logger.debug("LLM detector: cache hit for text of length %d", len(text))
+                return key, entry.spans
+        return key, None
+
+    def _cache_store(self, key: str | None, spans: list[DetectedSpan]) -> None:
+        """Cache a complete answer. A run with a failed chunk is never cached."""
+        if self._cache_ttl <= 0 or key is None:
+            return
+        with self._cache_lock:
+            self._cache[key] = _CacheEntry(
+                spans=spans,
+                expires_at=time.monotonic() + self._cache_ttl,
+            )
 
     # ------------------------------------------------------------------
     # Backend calls, through the circuit breaker
@@ -331,7 +403,9 @@ class LLMDetector(BaseDetector):
         Extract the JSON array from the LLM response.
 
         Small models sometimes add ```json ... ``` blocks or
-        explanatory text; these are cleaned up with regex.
+        explanatory text; these are cleaned up with regex. A reply with no
+        readable JSON list raises :class:`UnreadableReply` — an empty list is
+        an answer, an unreadable reply is not.
         """
         # Drop inline reasoning first: a bracketed aside in it would be taken for
         # the answer. Then strip the markdown code block.
@@ -340,17 +414,31 @@ class LLMDetector(BaseDetector):
         match = _JSON_RE.search(raw)
         if not match:
             logger.debug("No JSON array found in LLM response (%s)", describe(raw))
-            return []
+            raise UnreadableReply("the reply held no JSON list")
 
         try:
             data = json.loads(match.group())
-            if not isinstance(data, list):
-                logger.debug("LLM JSON response is not a list: %r", type(data).__name__)
-                return []
-            return data
         except json.JSONDecodeError as exc:
             logger.debug("LLM response JSON parse error: %s (%s)", exc, describe(raw))
-            return []
+            raise UnreadableReply("the reply's JSON list did not parse") from None
+        if not isinstance(data, list):
+            logger.debug("LLM JSON response is not a list: %r", type(data).__name__)
+            raise UnreadableReply("the reply's JSON was not a list")
+        # The list has to hold objects. Asked for [{"type": …, "text": …}] a
+        # small model will sometimes answer with bare strings instead —
+        # ["Ali Veli", "ali@firma.com"] — and _locate_spans() calls .get() on
+        # every element, so an unfiltered list raised AttributeError out of the
+        # detector. That is not one of the exceptions _chunk_failed() handles,
+        # so it escaped the layer entirely and the engine lost every span the
+        # layer would have contributed to that scan; a reply mixing the two
+        # forms lost its well-formed entries the same way.
+        objects = [item for item in data if isinstance(item, dict)]
+        if len(objects) != len(data):
+            logger.debug(
+                "LLM returned %d non-object item(s) in its JSON array — skipped.",
+                len(data) - len(objects),
+            )
+        return objects
 
     def _locate_spans(self, text: str, entities: list[dict]) -> list[DetectedSpan]:
         """

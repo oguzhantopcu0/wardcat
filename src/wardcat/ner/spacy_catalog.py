@@ -65,6 +65,14 @@ class SpacyModelInfo:
     incompatible: bool = False
     """``True`` if this model cannot be loaded on the currently supported SpaCy versions.
     Download will be blocked with a clear error message."""
+    has_ner: bool = True
+    """``False`` for a pipeline with no ``ner`` component — the ``dep_news_trf``
+    models for German, French and Spanish ship a parser only. Language
+    resolution skips them; naming one explicitly is a configuration error."""
+    ner_pipes: tuple[str, ...] = ()
+    """The components the NER output depends on, measured: running only these
+    gives the same entities as the full pipeline, faster. Empty means not
+    measured, and the full pipeline runs."""
 
 
 SPACY_CATALOG: list[SpacyModelInfo] = [
@@ -77,6 +85,7 @@ SPACY_CATALOG: list[SpacyModelInfo] = [
         ram_mb=15,
         description="Small · CNN pipeline · ~15 MB · Best for dev/testing",
         recommended=True,
+        ner_pipes=("ner",),
     ),
     SpacyModelInfo(
         name="en_core_web_md",
@@ -93,6 +102,7 @@ SPACY_CATALOG: list[SpacyModelInfo] = [
         size="lg",
         ram_mb=750,
         description="Large · Full word vectors · ~750 MB · High accuracy",
+        ner_pipes=("ner",),
     ),
     SpacyModelInfo(
         name="en_core_web_trf",
@@ -106,6 +116,8 @@ SPACY_CATALOG: list[SpacyModelInfo] = [
     # Hosted on HuggingFace by turkish-nlp-suite; requires SpaCy >=3.4,<3.5.
     # No sm model exists. No SpaCy 3.7/3.8 compatible release as of 2026-03.
     # Install with: uv pip install <wheel_url> --no-deps
+    # ner_pipes keeps the parser: with it disabled the Turkish NER returns
+    # different entities (measured), though spaCy lists no dependency.
     SpacyModelInfo(
         name="tr_core_news_md",
         language="Turkish",
@@ -117,6 +129,7 @@ SPACY_CATALOG: list[SpacyModelInfo] = [
         wheel_url="https://huggingface.co/turkish-nlp-suite/tr_core_news_md/resolve/main/tr_core_news_md-1.0-py3-none-any.whl",
         spacy_compat=">=3.4,<3.5",
         note="Hosted on HuggingFace (v1.0). Built for SpaCy 3.4.x — installed with --no-deps on newer versions.",
+        ner_pipes=("tok2vec", "parser", "ner"),
     ),
     SpacyModelInfo(
         name="tr_core_news_lg",
@@ -128,6 +141,7 @@ SPACY_CATALOG: list[SpacyModelInfo] = [
         wheel_url="https://huggingface.co/turkish-nlp-suite/tr_core_news_lg/resolve/main/tr_core_news_lg-1.0-py3-none-any.whl",
         spacy_compat=">=3.4,<3.5",
         note="Hosted on HuggingFace (v1.0). Built for SpaCy 3.4.x — installed with --no-deps on newer versions.",
+        ner_pipes=("tok2vec", "parser", "ner"),
     ),
     SpacyModelInfo(
         name="tr_core_news_trf",
@@ -135,13 +149,14 @@ SPACY_CATALOG: list[SpacyModelInfo] = [
         lang_code="tr",
         size="trf",
         ram_mb=850,
-        description="Transformer (BERTurk) · NOT compatible with SpaCy 3.5+",
+        description="Transformer (BERTurk) · ~850 MB · Most accurate Turkish model",
         wheel_url="https://huggingface.co/turkish-nlp-suite/tr_core_news_trf/resolve/main/tr_core_news_trf-1.0-py3-none-any.whl",
-        spacy_compat=">=3.4,<3.5",
-        note="INCOMPATIBLE with SpaCy 3.5+: the transformer component API changed. "
-        "This model requires SpaCy >=3.4.2,<3.5.0 — no compatible release exists for 3.8.x. "
-        "Use tr_core_news_lg for the best available Turkish accuracy.",
-        incompatible=True,
+        spacy_compat=">=3.4",
+        note="Hosted on HuggingFace (v1.0). Built for SpaCy 3.4.x — installed with --no-deps "
+        "on newer versions, and verified to load with a full NER component on SpaCy 3.8. "
+        "Needs spacy-transformers, which pulls in torch: expect a slow first load and a "
+        "scan roughly three times slower than tr_core_news_lg.",
+        extra_packages=("spacy-transformers",),
     ),
     # ── German ───────────────────────────────────────────────────────────
     SpacyModelInfo(
@@ -176,6 +191,7 @@ SPACY_CATALOG: list[SpacyModelInfo] = [
         size="trf",
         ram_mb=450,
         description="Transformer · Best German accuracy · Requires GPU for speed",
+        has_ner=False,
     ),
     # ── French ───────────────────────────────────────────────────────────
     SpacyModelInfo(
@@ -210,6 +226,7 @@ SPACY_CATALOG: list[SpacyModelInfo] = [
         size="trf",
         ram_mb=450,
         description="Transformer · Best French accuracy · Requires GPU for speed",
+        has_ner=False,
     ),
     # ── Spanish ──────────────────────────────────────────────────────────
     SpacyModelInfo(
@@ -244,6 +261,7 @@ SPACY_CATALOG: list[SpacyModelInfo] = [
         size="trf",
         ram_mb=450,
         description="Transformer · Best Spanish accuracy · Requires GPU for speed",
+        has_ner=False,
     ),
     # ── Italian ──────────────────────────────────────────────────────────
     SpacyModelInfo(
@@ -359,10 +377,12 @@ def recommended_for_language(lang_code: str) -> SpacyModelInfo | None:
 def resolve_model(lang_code: str, size: str = "sm") -> SpacyModelInfo | None:
     """Resolve a language code (+ size tier) to a concrete catalog model.
 
-    Picks the compatible model matching ``size`` (``"sm"``/``"md"``/``"lg"``/
-    ``"trf"``). If that exact size is unavailable for the language, falls back
-    to the recommended model, then to any other compatible model. Returns
-    ``None`` if the language is not supported at all.
+    Picks the compatible model with an NER component matching ``size``
+    (``"sm"``/``"md"``/``"lg"``/``"trf"``). If that size has no such model —
+    absent for the language, incompatible, or a parser-only ``trf`` pipeline —
+    falls back to ``lg`` when the requested size exists without NER, then to the
+    recommended model, then to any other usable one. Returns ``None`` if the
+    language has no usable model at all.
 
     :param lang_code: ISO 639-1 code, e.g. ``"en"``, ``"de"``, ``"tr"``.
     :param size:      Desired size tier; defaults to ``"sm"``.
@@ -371,15 +391,40 @@ def resolve_model(lang_code: str, size: str = "sm") -> SpacyModelInfo | None:
     if not candidates:
         return None
 
+    def usable(m: SpacyModelInfo) -> bool:
+        return m.has_ner and not m.incompatible
+
     for m in candidates:
-        if m.size == size and not m.incompatible:
+        if m.size == size and usable(m):
             return m
 
+    # A parser-only pipeline at the requested size: the closest model that
+    # recognises entities is the large one.
+    if any(m.size == size and not m.has_ner for m in candidates):
+        for m in candidates:
+            if m.size == "lg" and usable(m):
+                return m
+
     rec = recommended_for_language(lang_code)
-    if rec and not rec.incompatible:
+    if rec and usable(rec):
         return rec
 
     for m in candidates:
-        if not m.incompatible:
+        if usable(m):
             return m
     return None
+
+
+def no_ner_substitute(lang_code: str, size: str) -> tuple[str, str] | None:
+    """``(requested, used)`` when *size* names a parser-only model for the language.
+
+    Lets the caller say why the model it got is not the one the size asked for.
+    """
+    wanted = next(
+        (m for m in get_models_by_language(lang_code) if m.size == size and not m.has_ner),
+        None,
+    )
+    used = resolve_model(lang_code, size)
+    if wanted is None or used is None:
+        return None
+    return wanted.name, used.name

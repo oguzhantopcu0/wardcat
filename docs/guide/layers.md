@@ -96,7 +96,14 @@ guard = Wardcat().with_ner(language=Language.EN, auto_download=False)  # never d
 ```
 
 If the requested size is unavailable for a language, the recommended model is
-used. Selecting a language implies auto-download; `auto_download=False` turns
+used. The German, French and Spanish `trf` pipelines have no NER component, so
+asking for `trf` in those languages loads the `lg` model and every result's
+`warnings` says so; naming one of them with `spacy_model=` is refused.
+
+Only the components NER depends on run. For the catalog models where that was
+measured (the English `sm`/`lg` and Turkish `md`/`lg` models) the rest of the
+pipeline is switched off, which returns the same entities in roughly a third
+less time for Turkish and less than half the time for English. Selecting a language implies auto-download; `auto_download=False` turns
 it off. `tr_core_news_trf` is incompatible with SpaCy 3.5+ — use `md` or `lg`.
 
 A model that cannot be loaded — SpaCy is not installed, or the model is missing

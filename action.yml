@@ -1,0 +1,51 @@
+name: "wardcat secret and PII scan"
+description: "Scan the repository for secrets and PII and fail the job if any are found. Writes SARIF for code scanning on request."
+branding:
+  icon: "shield"
+  color: "green"
+
+inputs:
+  paths:
+    description: "Files or directories to scan, separated by spaces"
+    required: false
+    default: "."
+  entities:
+    description: "Comma-separated entity types to look for"
+    required: false
+    default: "CUSTOM_SECRET,JWT,CREDIT_CARD,IBAN,SSN,NIN,TC_ID,EU_NATIONAL_ID,CODICE_FISCALE,PASSPORT"
+  format:
+    description: "text | jsonl | sarif"
+    required: false
+    default: "text"
+  output:
+    description: "File to write the report to (for example wardcat.sarif); empty prints it"
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # The action installs the wardcat at the ref you pinned in `uses:`, into its
+    # own virtual environment, so it never depends on the runner's Python packages.
+    - name: Install wardcat
+      shell: bash
+      run: |
+        py=$(command -v python3 || command -v python)
+        "$py" -m venv "$RUNNER_TEMP/wardcat-venv"
+        bin="$RUNNER_TEMP/wardcat-venv/bin"; [ -d "$bin" ] || bin="$RUNNER_TEMP/wardcat-venv/Scripts"
+        echo "WARDCAT_BIN=$bin" >> "$GITHUB_ENV"
+        "$bin/python" -m pip install --quiet "$GITHUB_ACTION_PATH"
+    # Inputs reach the shell as environment variables, never interpolated into
+    # the script, so a path or pattern cannot inject commands.
+    - name: Scan for secrets and PII
+      shell: bash
+      env:
+        WARDCAT_PATHS: ${{ inputs.paths }}
+        WARDCAT_ENTITIES: ${{ inputs.entities }}
+        WARDCAT_FORMAT: ${{ inputs.format }}
+        WARDCAT_OUTPUT: ${{ inputs.output }}
+      run: |
+        read -r -a paths <<< "$WARDCAT_PATHS"
+        args=(check "${paths[@]}" --entity "$WARDCAT_ENTITIES" --format "$WARDCAT_FORMAT")
+        if [ -n "$WARDCAT_OUTPUT" ]; then args+=(--output "$WARDCAT_OUTPUT"); fi
+        "$WARDCAT_BIN/wardcat" "${args[@]}"

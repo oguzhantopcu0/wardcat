@@ -75,15 +75,14 @@ if guard.is_sensitive(text):
   it's recorded on `ScanResult.warnings` instead of failing silently.
 - **Safe logging** — `result.redacted()` returns a PII-free dict.
 
-!!! tip "New in 1.2.1"
-    A `wardcat` command line, [presets](guide/presets.md) for KVKK, GDPR,
-    PCI DSS and secrets, the reversible `surrogate` action, `classify()` beside
-    `is_sensitive()`, and scans that refuse to fail quietly: `with_strict()`,
-    a circuit breaker for a dead LLM backend, `Violation.source` naming the
-    layer that found each span, and a per-entity `min_confidence`. Batched
-    `scan_batch` runs SpaCy in one pass, and an opt-in `HIGH_ENTROPY_STRING`
-    catches secrets with no known prefix. The [changelog](changelog.md) has the
-    reasoning behind each one.
+!!! tip "New in 1.3.0"
+    The retired wardcat-cli is folded into the `wardcat` command:
+    [`wardcat check`](guide/ci.md) blocks secrets and PII in pre-commit and CI,
+    with a pre-commit hook and a GitHub Action, and
+    [`wardcat serve`](guide/server.md) runs the guard as an HTTP service with a
+    fixed policy and a key required off loopback. Under adjudication, an LLM
+    that fails no longer unmasks what NER found. The [changelog](changelog.md)
+    has the reasoning behind each one.
 
 ## Where next
 

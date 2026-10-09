@@ -350,6 +350,15 @@ class Wardcat(EntityPolicyMixin):
             verdicts.append(parse_classification(reply))
         return _merge_verdicts(verdicts)
 
+    @property
+    def max_text_bytes(self) -> int:
+        """The largest input, in UTF-8 bytes, a scan accepts (YAML ``max_text_bytes``).
+
+        A caller splitting a large document reads this instead of assuming the
+        default, so a policy with a smaller limit is respected.
+        """
+        return int(self._config.get("max_text_bytes", _DEFAULT_MAX_TEXT_BYTES))
+
     def _check_text_size(self, text: str) -> None:
         """Reject oversized input (mirrors the engine's DoS guard for scan())."""
         limit = self._config.get("max_text_bytes", _DEFAULT_MAX_TEXT_BYTES)
@@ -495,8 +504,10 @@ class Wardcat(EntityPolicyMixin):
                 "with_ner() requires a model — pass language=... (e.g. Language.EN) "
                 "or spacy_model=...; wardcat ships no default model."
             )
+        self._config["spacy_model_notes"] = []
         if language is not None:
             models = self._resolve_language_models(language, spacy_size)
+            self._config["spacy_model_notes"] = self._parser_only_notes(language, spacy_size)
         else:
             models = [spacy_model] if isinstance(spacy_model, str) else list(spacy_model)  # type: ignore[arg-type]
             models = list(dict.fromkeys(models))
@@ -649,6 +660,26 @@ class Wardcat(EntityPolicyMixin):
                 )
             models.append(info.name)
         return list(dict.fromkeys(models))  # dedupe, preserve order
+
+    @staticmethod
+    def _parser_only_notes(
+        language: str | Language | list[str | Language], spacy_size: str
+    ) -> list[str]:
+        """Say so when a size named a parser-only model and a different one is used."""
+        from wardcat.ner.spacy_catalog import no_ner_substitute
+
+        items = [language] if isinstance(language, str) else list(language)
+        notes: list[str] = []
+        for lang in items:
+            code = (lang.value if isinstance(lang, Language) else str(lang)).lower()
+            swap = no_ner_substitute(code, spacy_size)
+            if swap is not None:
+                wanted, used = swap
+                notes.append(
+                    f"SpaCy model {wanted!r} has no NER component, so the NER layer "
+                    f"is using {used!r} for {code!r} instead."
+                )
+        return notes
 
     def with_phone_regions(self, *regions: str) -> Wardcat:
         """Detect national phone formats for *regions* via libphonenumber.
@@ -1035,6 +1066,7 @@ class Wardcat(EntityPolicyMixin):
                     [self._config["spacy_model"]] if self._config.get("spacy_model") else []
                 )
                 auto_download = self._config.get("spacy_auto_download", False)
+                build_warnings.extend(self._config.get("spacy_model_notes") or ())
                 loaded: set[str] = set()
                 for model in models:
                     # Each model is loaded independently — one failure must not

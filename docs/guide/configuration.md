@@ -70,8 +70,7 @@ guard.with_phone_regions("GB", "ES", "US")   # CLDR codes
 guard.with_phone_regions()                   # back to the built-in pattern
 ```
 
-Needs `pip install "wardcat[phone]"`; without it the pattern is used and a warning
-is logged. Matches report `0.90` confidence rather than `0.97` — a numbering-plan
+libphonenumber ships with wardcat. Matches report `0.90` confidence rather than `0.97` — a numbering-plan
 check is weaker than a checksum, and each extra region widens what counts as a
 number, so add the regions you serve rather than all of them.
 
@@ -182,6 +181,11 @@ backend at once, across `scan_batch` threads and async chunk fan-out; a local
 model server queues what it cannot run, so more only adds latency.
 
 ## YAML reference
+
+An entity entry takes `enabled`, `action`, `min_confidence` and `layers`
+(`[regex]`, `[ner]`, `[llm]` or a combination, as `add_entity(layers=...)`);
+any other key is an error. Keep the salt and API keys out of the file — the
+loader warns when it finds one — and pass them from the environment instead.
 
 ```yaml
 salt: ""                 # read it from the environment in your application

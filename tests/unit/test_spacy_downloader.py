@@ -65,12 +65,31 @@ class TestEnsureModel:
 
 
 class TestDownloadModelGuards:
-    def test_incompatible_model_raises(self):
+    def test_incompatible_model_raises(self, monkeypatch):
+        """The guard must refuse before any network or subprocess work.
+
+        The catalog entry is fabricated rather than naming a real model: this
+        test used to pin tr_core_news_trf, which outlived its flag — the model
+        loads fine on current SpaCy, so the test was passing on a stale claim
+        instead of on the guard.
+        """
         pytest.importorskip("spacy")
-        # tr_core_news_trf is flagged incompatible in the catalog — must raise
-        # before any network/subprocess work.
+        from wardcat.ner.spacy_catalog import SpacyModelInfo
+
+        blocked = SpacyModelInfo(
+            name="xx_core_news_sm",
+            language="Example",
+            lang_code="xx",
+            size="sm",
+            ram_mb=1,
+            description="fixture",
+            note="pinned to an older SpaCy",
+            spacy_compat=">=3.4,<3.5",
+            incompatible=True,
+        )
+        monkeypatch.setattr(downloader, "get_spacy_model", lambda name: blocked)
         with pytest.raises(RuntimeError, match="not compatible"):
-            downloader.download_model("tr_core_news_trf")
+            downloader.download_model("xx_core_news_sm")
 
 
 class TestGuardLanguageSelection:
@@ -168,3 +187,85 @@ class TestGuardMultiLanguage:
         persons = {v.original for v in result.violations if v.entity_type == "PERSON"}
         assert "John Smith" in persons  # English model
         assert "Ahmet Yılmaz" in persons  # Turkish model
+
+
+class TestInstallsIntoThisPython:
+    """uv without --python installs into whatever venv the cwd or VIRTUAL_ENV names,
+    so a model "downloaded" from one environment was missing in the one asking."""
+
+    def _capture(self, monkeypatch, *, pip_ok: bool) -> list[list[str]]:
+        import subprocess
+        import sys as _sys
+
+        from wardcat.ner import downloader
+
+        calls: list[list[str]] = []
+
+        class Done:
+            def __init__(self, code: int) -> None:
+                self.returncode = code
+
+        def run(cmd, **kwargs):
+            calls.append(list(cmd))
+            if cmd[:3] == [_sys.executable, "-m", "pip"]:
+                return Done(0 if pip_ok else 1)
+            return Done(0)
+
+        monkeypatch.setattr(subprocess, "run", run)
+        monkeypatch.setattr(downloader.shutil, "which", lambda name: "/usr/bin/uv")
+        return calls
+
+    def test_uv_targets_the_running_interpreter_for_a_wheel_model(self, monkeypatch) -> None:
+        import sys as _sys
+
+        pytest.importorskip("spacy")
+        from wardcat.ner.downloader import download_model
+
+        calls = self._capture(monkeypatch, pip_ok=False)
+        download_model("tr_core_news_md")
+        uv = [c for c in calls if c[0] == "/usr/bin/uv"]
+        assert uv and all(c[3:5] == ["--python", _sys.executable] for c in uv)
+
+    def test_uv_targets_the_running_interpreter_for_a_github_model(self, monkeypatch) -> None:
+        import sys as _sys
+
+        pytest.importorskip("spacy")
+        from wardcat.ner.downloader import download_model
+
+        calls = self._capture(monkeypatch, pip_ok=False)
+        download_model("en_core_web_sm")
+        uv = [c for c in calls if c[0] == "/usr/bin/uv"]
+        assert uv and all(c[3:5] == ["--python", _sys.executable] for c in uv)
+
+    def test_import_caches_are_refreshed(self, monkeypatch) -> None:
+        import importlib
+
+        pytest.importorskip("spacy")
+        from wardcat.ner.downloader import download_model
+
+        self._capture(monkeypatch, pip_ok=True)
+        refreshed = []
+        monkeypatch.setattr(importlib, "invalidate_caches", lambda: refreshed.append(True))
+        download_model("tr_core_news_md")
+        assert refreshed
+
+
+class TestIsInstalledSeesNewPackages:
+    def test_an_importable_model_counts_even_if_spacy_has_not_listed_it(self, monkeypatch) -> None:
+        import importlib.util
+
+        from wardcat.ner.downloader import is_installed
+
+        real = importlib.util.find_spec
+        monkeypatch.setattr(
+            importlib.util,
+            "find_spec",
+            lambda name, *a: object() if name == "xx_fresh_model_sm" else real(name, *a),
+        )
+        assert is_installed("xx_fresh_model_sm") is True
+
+    @pytest.mark.parametrize("bad", ["os.path", "../x", "", "a b"])
+    def test_an_invalid_name_is_never_looked_up(self, bad) -> None:
+        from wardcat.ner.downloader import is_installed
+
+        assert is_installed(bad) is False

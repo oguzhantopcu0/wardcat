@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -23,6 +23,20 @@ class DetectedSpan:
     source: str = ""
     """The layer that produced the span. A detector may leave it empty; the
     engine then stamps :attr:`BaseDetector.layer`."""
+
+
+@dataclass
+class DetectionReport:
+    """What one detector run found, and what went wrong along the way.
+
+    ``warnings`` carries problems that left the run covering less than it
+    should have — a chunk the model never answered, say — without failing the
+    whole layer. They never contain a scanned value. The engine copies them
+    onto the result, where strict mode turns them into an error.
+    """
+
+    spans: list[DetectedSpan]
+    warnings: list[str] = field(default_factory=list)
 
 
 class BaseDetector(ABC):
@@ -79,3 +93,25 @@ class BaseDetector(ABC):
         thread. I/O-bound detectors should override this with native async I/O.
         """
         return await asyncio.to_thread(self.detect, text, candidates)
+
+    def detect_report(
+        self, text: str, candidates: list[DetectedSpan] | None = None
+    ) -> DetectionReport:
+        """:meth:`detect`, plus the problems that degraded the run.
+
+        The engine calls this. The default wraps :meth:`detect` and reports no
+        problems; a detector that can partly fail — the LLM layer, one chunk at
+        a time — overrides it so a partial failure is not mistaken for a clean
+        result.
+        """
+        if candidates is None:
+            return DetectionReport(self.detect(text))
+        return DetectionReport(self.detect(text, candidates=candidates))
+
+    async def detect_report_async(
+        self, text: str, candidates: list[DetectedSpan] | None = None
+    ) -> DetectionReport:
+        """Async :meth:`detect_report`; the default wraps :meth:`detect_async`."""
+        if candidates is None:
+            return DetectionReport(await self.detect_async(text))
+        return DetectionReport(await self.detect_async(text, candidates=candidates))

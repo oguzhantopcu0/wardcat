@@ -29,7 +29,6 @@ Python 3.11+.
 ```bash
 pip install wardcat              # regex layer + Ollama / OpenAI-compatible LLM backend
 pip install "wardcat[ner]"       # + SpaCy NER (names, organisations, places)
-pip install "wardcat[phone]"     # + national phone formats worldwide (libphonenumber)
 pip install "wardcat[all]"       # everything, including the in-process Transformers backend
 ```
 
@@ -115,11 +114,14 @@ scores wardcat against Microsoft Presidio on public corpora.
 - [Entity types](https://docs.wardcat.com/reference/entities/) — every entity, its default action and which layer finds it.
 - [Configuration & policy](https://docs.wardcat.com/guide/configuration/) — the confidence floor, propagation, allow/deny lists, strict mode, the circuit breaker, YAML reference.
 - [Presets](https://docs.wardcat.com/guide/presets/) — `kvkk`, `gdpr`, `pci_dss`, `hipaa_lite`, `secrets_only` as starting policies.
-- [Command line](https://docs.wardcat.com/guide/cli/) — `wardcat scan`, `check-config`, `entities`.
+- [Command line](https://docs.wardcat.com/guide/cli/) — `wardcat` alone opens an interactive screen; `wardcat scan`, `restore`, `check`, `is-sensitive`, `serve`, `check-config`, `entities`, `presets`, `models`, `hook claude-code`, `completion`.
+- [pre-commit and CI](https://docs.wardcat.com/guide/ci/) — block secrets and PII in commits and pipelines, with a pre-commit hook and a GitHub Action.
+- [HTTP service](https://docs.wardcat.com/guide/server/) — `wardcat serve` for callers in any language, with a container image.
 - [Reversible masking](https://docs.wardcat.com/guide/reversible/) — tokens, surrogates, `restore()` and the reverse map.
 - [Extending](https://docs.wardcat.com/guide/extending/) — custom actions and detectors.
 - [MCP server](https://docs.wardcat.com/guide/mcp-server/) — wardcat as a tool for an agent.
 - [Known limitations](https://docs.wardcat.com/guide/limitations/) — what is not caught, and what to do about it.
+- [KVKK and generative AI](https://docs.wardcat.com/guide/kvkk-generative-ai/) — what on-prem masking changes about sending text to a model abroad, and what it does not ([Türkçe](https://docs.wardcat.com/guide/kvkk-generative-ai.tr/)).
 - [API reference](https://docs.wardcat.com/reference/wardcat/) · [Examples](https://github.com/oguzhantopcu0/wardcat/tree/main/examples) · [Changelog](https://github.com/oguzhantopcu0/wardcat/blob/main/CHANGELOG.md)
 
 <a name="security"></a>
