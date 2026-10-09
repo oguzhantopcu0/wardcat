@@ -640,6 +640,13 @@ class Shell:
         from wardcat.ner.downloader import download_model
 
         download_model(model, verbose=True)
+        still = _ner_missing(ner["language"], ner.get("size"))
+        if still is not None:  # installed somewhere this Python does not look
+            raise ConfigError(
+                f"{model} was downloaded but this wardcat ({sys.executable}) cannot load it; "
+                f"run: {sys.executable} -m wardcat.cli models pull {model}"
+            )
+        print(paint(f"installed {model}", "green"))
         return True
 
     def _llm_setup(self, ns: argparse.Namespace) -> dict[str, Any] | None:

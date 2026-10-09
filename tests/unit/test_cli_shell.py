@@ -493,7 +493,7 @@ class TestWithoutTheNerLayerInstalled:
         from wardcat.ner import downloader
 
         pulled = []
-        monkeypatch.setattr(downloader, "is_installed", lambda name: False)
+        monkeypatch.setattr(downloader, "is_installed", lambda name: name in pulled)
         monkeypatch.setattr(
             downloader, "download_model", lambda name, verbose=False: pulled.append(name)
         )
@@ -525,3 +525,13 @@ class TestHints:
 
     def test_nothing_found_without_a_model_layer_mentions_ner(self, capsys) -> None:
         assert "add layer ner tr" in screen(capsys, "scan ahmet yılmaz")[1]
+
+
+def test_a_download_this_python_still_cannot_load_is_refused(capsys, monkeypatch) -> None:
+    from wardcat.ner import downloader
+
+    monkeypatch.setattr(downloader, "is_installed", lambda name: False)
+    monkeypatch.setattr(downloader, "download_model", lambda name, verbose=False: None)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+    shell, out = screen(capsys, "add layer ner tr")
+    assert "cannot load it" in out and "ner" not in shell.state["layers"]
