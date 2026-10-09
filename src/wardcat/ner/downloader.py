@@ -11,6 +11,7 @@ selected). Handles the awkward cases:
 
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 import re
@@ -40,7 +41,21 @@ def _validate_model_name(model_name: str) -> None:
 
 
 def is_installed(model_name: str) -> bool:
-    """Return ``True`` if the SpaCy model package is importable/installed."""
+    """Return ``True`` if the SpaCy model package is importable/installed.
+
+    SpaCy's own list of installed models is read once per process, so a model
+    installed after that — by :func:`download_model`, say — is missing from
+    it. The package being importable is what ``spacy.load`` needs, and it is
+    seen at once (after :func:`download_model` refreshes the import caches).
+    """
+    import importlib.util
+
+    try:
+        _validate_model_name(model_name)
+    except ModelDownloadError:
+        return False
+    if importlib.util.find_spec(model_name) is not None:
+        return True
     try:
         import spacy.util
 
@@ -125,7 +140,7 @@ def download_model(model_name: str, *, verbose: bool = False) -> None:
         if uv_bin:
             _say("Using uv pip install…")
             return _run(
-                [uv_bin, "pip", "install"] + packages + cmd_suffix,
+                [uv_bin, "pip", "install", "--python", sys.executable] + packages + cmd_suffix,
                 skip_check=True,
             )
         return 1
@@ -158,7 +173,12 @@ def download_model(model_name: str, *, verbose: bool = False) -> None:
                 f"{model_name}-{model_ver}/{model_name}-{model_ver}-py3-none-any.whl"
             )
             _say(f"Using uv pip install from GitHub ({model_ver})…")
-            result_code = _run([uv_bin, "pip", "install", gh_url])
+            result_code = _run([uv_bin, "pip", "install", "--python", sys.executable, gh_url])
+
+    # A package installed while this process runs is invisible to it until the
+    # import system's directory caches are dropped; spacy.load() would then
+    # fail on the model it was just given.
+    importlib.invalidate_caches()
 
     if result_code != 0:
         raise ModelDownloadError(

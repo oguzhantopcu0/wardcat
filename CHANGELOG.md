@@ -96,6 +96,11 @@ Includes the fixes prepared as 1.2.2, which was never published.
   dependency, so `with_phone_regions()` and `--phone-region` work without an
   extra. `wardcat[phone]` is kept, empty, so existing install commands still
   work.
+- **A SpaCy model downloaded through wardcat lands in wardcat's own
+  environment.** `uv pip install` was run without `--python`, so it installed
+  into whichever virtual environment the working directory or `VIRTUAL_ENV`
+  named; the model then stayed missing for the wardcat that asked for it.
+  `is_installed()` now also sees a model installed while the process runs.
 - **Long options must be written in full.** argparse accepted unambiguous
   abbreviations (`--ent` for `--entity`); with the new options several became
   ambiguous, so abbreviations are refused everywhere.
