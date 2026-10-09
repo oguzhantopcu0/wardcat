@@ -46,6 +46,7 @@ DEFAULT_FILTERS = (
 )
 _SALTED = {"hash", "tokenize", "surrogate"}
 _SIZES = ["sm", "md", "lg", "trf"]
+_YES = ("y", "yes", "e", "evet")
 _NER_TYPES = {"PERSON", "ORG", "LOCATION", "ADDRESS", "NRP"}
 # Language names a person types, in English and Turkish, for the NER layer.
 _LANGUAGES = {
@@ -201,6 +202,12 @@ class Shell:
             if "llm" in state["layers"]:
                 state["layers"].remove("llm")
             notes.append(f"{llm['api_key_env']} is not set; the LLM layer is off")
+        if state["ner"] and "ner" in state["layers"]:
+            missing = _ner_missing(state["ner"]["language"], state["ner"].get("size"))
+            if missing:
+                state["layers"].remove("ner")
+                notes.append(f"{missing[0]}; the ner layer is off")
+            state["layers"] = state["layers"] or ["regex"]
         if interactive:
             print(banner(__version__))
             print()
@@ -331,7 +338,11 @@ class Shell:
         handler = _COMMANDS.get(command)
         if handler is None:
             close = difflib.get_close_matches(command, list(_COMMANDS), n=1)
-            hint = f"; did you mean {close[0]}?" if close else "; type help"
+            if close:
+                hint = f"; did you mean {close[0]}?"
+            else:
+                shown = f"{command} {rest}".strip()
+                hint = f"; to scan text, start with scan: scan {shown}" if rest else "; type help"
             print(paint(f"unknown command {command!r}{hint}", "red"))
             return
         try:
@@ -394,6 +405,8 @@ class Shell:
             print(table(["Entity", "Action", "Replacement", "Confidence", "Layer"], rows))
         else:
             print(paint("nothing found", "green"))
+            if "ner" not in self.state["layers"] and "llm" not in self.state["layers"]:
+                print(paint("names and places need a model: add layer ner tr", "dim"))
         for warning in warnings:
             print(paint(f"warning: {warning}", "yellow"))
 
@@ -401,6 +414,7 @@ class Shell:
 
     def cmd_add(self, rest: str) -> None:
         what, _, rest = rest.partition(" ")
+        what = _which(what)
         if what == "filter":
             self._add_filter(rest)
         elif what == "layer":
@@ -410,6 +424,7 @@ class Shell:
 
     def cmd_remove(self, rest: str) -> None:
         what, _, rest = rest.partition(" ")
+        what = _which(what)
         if what == "filter":
             self._remove_filter(rest)
         elif what == "layer":
@@ -579,6 +594,8 @@ class Shell:
             ner = {"language": language, "size": size}
         elif layer == "ner" and ner is None:
             raise ConfigError("say which language the first time: add layer ner tr")
+        if layer == "ner" and ner is not None and not self._ner_installed(ner):
+            return
         if layer == "llm" and (ns.model or llm is None):
             llm = self._llm_setup(ns)
             if llm is None:
@@ -607,6 +624,23 @@ class Shell:
                     "yellow",
                 )
             )
+
+    def _ner_installed(self, ner: dict[str, Any]) -> bool:
+        """Whether the NER model can load; offers to download a missing catalog model."""
+        missing = _ner_missing(ner["language"], ner.get("size"))
+        if missing is None:
+            return True
+        reason, model = missing
+        if model is None:  # SpaCy itself is missing: pip, not the screen, installs it
+            raise ConfigError(reason)
+        print(paint(reason, "yellow"))
+        if self.ask(f"download {model} now? (y/N)", default="n").lower() not in _YES:
+            print(f"later, from a shell: wardcat models pull {model}")
+            return False
+        from wardcat.ner.downloader import download_model
+
+        download_model(model, verbose=True)
+        return True
 
     def _llm_setup(self, ns: argparse.Namespace) -> dict[str, Any] | None:
         backend = ns.backend or (
@@ -644,12 +678,7 @@ class Shell:
                         "yellow",
                     )
                 )
-                if self.ask("continue? (y/N)", default="n").lower() not in (
-                    "y",
-                    "yes",
-                    "e",
-                    "evet",
-                ):
+                if self.ask("continue? (y/N)", default="n").lower() not in _YES:
                     return None
                 llm["allow_http"] = True
         if not ns.api_key_env:
@@ -774,6 +803,41 @@ _COMMANDS: dict[str, Callable[[Shell, str], None]] = {
     "clear": Shell.cmd_clear,
     "help": Shell.cmd_help,
 }
+
+
+def _which(word: str) -> str:
+    """``fil`` and ``lay`` for ``filter`` and ``layer``, as add and remove take them."""
+    word = word.lower()
+    matches = [w for w in ("filter", "layer") if word and w.startswith(word)]
+    return matches[0] if len(matches) == 1 else word
+
+
+def _ner_missing(language: str, size: str | None) -> tuple[str, str | None] | None:
+    """Why the NER layer cannot load for *language*, and the model to pull; ``None`` if it can."""
+    import importlib.util
+
+    from wardcat.ner.spacy_catalog import resolve_model
+
+    info = resolve_model(language, size or "sm")
+    if importlib.util.find_spec("spacy") is None:
+        pull = f", then: wardcat models pull {info.name}" if info else ""
+        return (
+            "the ner layer needs SpaCy, which this install does not have. From a shell: "
+            f'pip install "wardcat[ner]" (or uv pip install "wardcat[ner]"){pull}',
+            None,
+        )
+    if info is None:
+        return None  # not a catalog language: with_ner() says what is supported
+    import warnings
+
+    from wardcat.ner.downloader import is_installed
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        installed = is_installed(info.name)
+    if installed:
+        return None
+    return f"the {info.name} model (~{info.ram_mb} MB) is not installed", info.name
 
 
 def _ner_words(

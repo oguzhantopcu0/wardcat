@@ -461,3 +461,63 @@ class TestNerAsPeopleTypeIt:
 
     def test_words_only_belong_to_ner(self, capsys) -> None:
         assert "unexpected 'tr'" in screen(capsys, "add layer regex tr")[1]
+
+
+class TestWithoutTheNerLayerInstalled:
+    def test_no_spacy_refuses_and_says_how_to_install(self, capsys, monkeypatch) -> None:
+        import importlib.util
+
+        real = importlib.util.find_spec
+        monkeypatch.setattr(
+            importlib.util,
+            "find_spec",
+            lambda name, *a: None if name == "spacy" else real(name, *a),
+        )
+        shell, out = screen(capsys, "add layer ner tr")
+        assert 'pip install "wardcat[ner]"' in out and "wardcat models pull tr_core_news_md" in out
+        assert "ner" not in shell.state["layers"] and "PERSON" not in shell.state["filters"]
+
+    def test_a_missing_model_is_offered_and_can_be_declined(self, capsys, monkeypatch) -> None:
+        from wardcat.ner import downloader
+
+        monkeypatch.setattr(downloader, "is_installed", lambda name: False)
+        monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+        shell, out = screen(capsys, "add layer ner tr")
+        assert "tr_core_news_md model" in out and "wardcat models pull tr_core_news_md" in out
+        assert "ner" not in shell.state["layers"]
+
+    def test_a_missing_model_can_be_downloaded_from_the_screen(self, capsys, monkeypatch) -> None:
+        from wardcat import Wardcat
+        from wardcat.ner import downloader
+
+        pulled = []
+        monkeypatch.setattr(downloader, "is_installed", lambda name: False)
+        monkeypatch.setattr(
+            downloader, "download_model", lambda name, verbose=False: pulled.append(name)
+        )
+        monkeypatch.setattr(Wardcat, "with_ner", lambda self, **kw: self)
+        monkeypatch.setattr("builtins.input", lambda prompt="": "evet")
+        shell, _ = screen(capsys, "add layer ner tr")
+        assert pulled == ["tr_core_news_md"] and "ner" in shell.state["layers"]
+
+    def test_a_saved_ner_layer_without_its_model_opens_off(self, capsys, monkeypatch) -> None:
+        from wardcat import Wardcat
+        from wardcat.ner import downloader
+
+        monkeypatch.setattr(Wardcat, "with_ner", lambda self, **kw: self)
+        first, _ = screen(capsys, "add filter PERSON", "add layer ner tr")
+        monkeypatch.setattr(downloader, "is_installed", lambda name: False)
+        again, out = screen(capsys, resume=first.state["id"])
+        assert again.state["layers"] == ["regex"] and "the ner layer is off" in out
+
+
+class TestHints:
+    def test_text_without_scan_points_at_scan(self, capsys) -> None:
+        assert "start with scan: scan ahmet yılmaz" in screen(capsys, "ahmet yılmaz")[1]
+
+    def test_short_words_for_filter_and_layer(self, capsys) -> None:
+        shell, out = screen(capsys, "add fil IBAN=mask", "remove lay regex")
+        assert shell.state["filters"]["IBAN"] == "mask" and "one layer must stay on" in out
+
+    def test_nothing_found_without_a_model_layer_mentions_ner(self, capsys) -> None:
+        assert "add layer ner tr" in screen(capsys, "scan ahmet yılmaz")[1]
