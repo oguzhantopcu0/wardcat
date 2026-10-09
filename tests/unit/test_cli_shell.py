@@ -446,6 +446,7 @@ class TestNerAsPeopleTypeIt:
         from wardcat import Wardcat
 
         monkeypatch.setattr(Wardcat, "with_ner", lambda self, **kw: self)
+        monkeypatch.setattr("wardcat.cli.shell._ner_missing", lambda language, size: None)
         shell, out = screen(capsys, "add layer ner turkish sm")
         assert shell.state["ner"] == {"language": "tr", "size": "sm"}
         assert {"PERSON", "ORG", "LOCATION"} <= set(shell.state["filters"])
@@ -455,6 +456,7 @@ class TestNerAsPeopleTypeIt:
         from wardcat import Wardcat
 
         monkeypatch.setattr(Wardcat, "with_ner", lambda self, **kw: self)
+        monkeypatch.setattr("wardcat.cli.shell._ner_missing", lambda language, size: None)
         shell, out = screen(capsys, "add filter PERSON=mask", "add layer ner tr")
         assert shell.state["filters"]["PERSON"] == "mask" and "ORG" not in shell.state["filters"]
         assert "no filter used" not in out
@@ -505,7 +507,9 @@ class TestWithoutTheNerLayerInstalled:
         from wardcat.ner import downloader
 
         monkeypatch.setattr(Wardcat, "with_ner", lambda self, **kw: self)
+        monkeypatch.setattr(downloader, "is_installed", lambda name: True)
         first, _ = screen(capsys, "add filter PERSON", "add layer ner tr")
+        assert "ner" in first.state["layers"]
         monkeypatch.setattr(downloader, "is_installed", lambda name: False)
         again, out = screen(capsys, resume=first.state["id"])
         assert again.state["layers"] == ["regex"] and "the ner layer is off" in out
