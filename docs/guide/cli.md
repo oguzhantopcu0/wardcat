@@ -59,6 +59,10 @@ command:
 | `serve [--port P]` / `stop-serve` | serve the session's policy on 127.0.0.1; a change restarts it with the new policy |
 | `clear`, `help`, `quit` | Ctrl-D leaves too; Ctrl-C clears the line |
 
+The `ner` layer needs SpaCy (`pip install "wardcat[ner]"`); without it the
+screen says so and leaves the layer off. A catalog model that is not installed
+yet is offered for download on the spot.
+
 A new session starts with the regex layer and `CREDIT_CARD`, `CUSTOM_SECRET`,
 `EMAIL`, `IBAN`, `JWT`, `PHONE`, `TC_ID` and `VEHICLE_PLATE` redacted. Each
 session is saved as you go and can be picked up again:
