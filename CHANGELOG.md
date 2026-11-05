@@ -9,61 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
-
-- **anyio raised to `>=4.14.2` — a TLS certificate-spoofing path in our own
-  async calls.** `httpx` hands async I/O to `httpcore`, whose AnyIO backend
-  wraps the socket with `anyio.streams.tls.TLSStream`, so every `scan_async()`
-  against an `https` LLM endpoint goes through it. Below 4.14.2 that wrapper
-  encodes host names with IDNA 2003 (CVE-2026-63374, critical): a name that maps
-  differently under IDNA 2003 and 2008 can be validated against a certificate
-  issued for a different host. `httpx` puts no upper bound on anyio, so a fresh
-  install already resolves a patched release — the floor is declared so an older
-  one cannot be resolved underneath wardcat without notice. A second advisory on
-  the same release fixes process-pool workers blocking on undrained stderr
-  (CVE-2026-64847); wardcat does not use anyio's process pools.
-
-  The lock file also moves `setuptools` 81.0.0 → 84.0.0 for CVE-2026-59890. No
-  floor is declared for it: wardcat builds with hatchling and never imports
-  setuptools, which reaches the lock only as a runtime dependency of spacy,
-  thinc and torch, and the advisory concerns `MANIFEST.in` handling when
-  *building* an sdist on macOS — not a path a wardcat scan takes.
-
-### Fixed
-
-- **A Turkish phone number written with its code in parentheses.** `(0212) 680 18 33`
-  matched from the `0` rather than the `(`, because the Turkish branch wants its
-  `0`/`+90` prefix *before* the parenthesis and nothing matched at the opening one.
-  The span came back as `0212) 680 18 33` — opening paren outside it, closing paren
-  inside — so the text redacted to `([PHONE]`. The `(212) 680 18 33` spelling has no
-  prefix to find at all and was missed outright, which is the form printed on
-  letterheads and shop signs. A branch now matches the parentheses as a unit; the
-  area code is restricted to the ranges Türk Telekom issues (2xx–4xx landline, 5xx
-  mobile) and the 3-2-2 tail keeps it clear of the US 3-3-4 form, so
-  `(100) 200 30 40` and `Madde (212) sayılı karar` still match nothing.
-
-- **`tr_core_news_trf` is no longer blocked.** The catalog flagged it
-  `incompatible` with a note saying the transformer component API had changed and
-  no release worked on SpaCy 3.5+, so `download_model` refused it before doing any
-  work. It loads on SpaCy 3.8 with a full `ner` component and 20 labels, and gives
-  the best Turkish PERSON accuracy in the catalog — the flag only hid it. The entry
-  now declares `spacy-transformers` as an extra package and says that loading it
-  pulls in torch, so the scan is roughly three times slower than
-  `tr_core_news_lg`. The guard itself is unchanged and still covered, now against
-  a fabricated catalog entry rather than a real model whose flag could go stale
-  the same way.
-
-- **A model answering with bare strings no longer costs the whole LLM layer.**
-  The parser checked that the response was a JSON array but not that its elements
-  were objects. Asked for `[{"type": …, "text": …}]` a small model often answers
-  `["Ali Veli", "ali@firma.com"]`; span location then called `.get()` on a `str`
-  and the `AttributeError` left the detector, so the engine dropped every span the
-  layer would have contributed to that scan — including the well-formed entries of
-  a response that mixed both forms. The backend call had already returned, so the
-  circuit breaker recorded a success and the next scan failed the same way.
-  Non-object elements are filtered out and counted at debug level.
-
-## [1.2.2] — 2026-10-02
+## [1.2.2] — 2026-11-05
 
 ### Fixed
 
@@ -87,6 +33,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   body over `max_body_bytes`, and a body whose scan raised, to the route
   untouched. Both are now refused (413 and 503), with `on_scan_error="pass"`
   as the explicit opt-out.
+- **A Turkish phone number written with its code in parentheses.** `(0212) 680 18 33`
+  matched from the `0` rather than the `(`, because the Turkish branch wants its
+  `0`/`+90` prefix *before* the parenthesis and nothing matched at the opening one.
+  The span came back as `0212) 680 18 33` — opening paren outside it, closing paren
+  inside — so the text redacted to `([PHONE]`. The `(212) 680 18 33` spelling has no
+  prefix to find at all and was missed outright, which is the form printed on
+  letterheads and shop signs. A branch now matches the parentheses as a unit; the
+  area code is restricted to the ranges Türk Telekom issues (2xx–4xx landline, 5xx
+  mobile) and the 3-2-2 tail keeps it clear of the US 3-3-4 form, so
+  `(100) 200 30 40` and `Madde (212) sayılı karar` still match nothing.
+- **`tr_core_news_trf` is no longer blocked.** The catalog flagged it
+  `incompatible` with a note saying the transformer component API had changed and
+  no release worked on SpaCy 3.5+, so `download_model` refused it before doing any
+  work. It loads on SpaCy 3.8 with a full `ner` component and 20 labels, and gives
+  the best Turkish PERSON accuracy in the catalog — the flag only hid it. The entry
+  now declares `spacy-transformers` as an extra package and says that loading it
+  pulls in torch, so the scan is roughly three times slower than
+  `tr_core_news_lg`. The guard itself is unchanged and still covered, now against
+  a fabricated catalog entry rather than a real model whose flag could go stale
+  the same way.
+- **A model answering with bare strings no longer costs the whole LLM layer.**
+  The parser checked that the response was a JSON array but not that its elements
+  were objects. Asked for `[{"type": …, "text": …}]` a small model often answers
+  `["Ali Veli", "ali@firma.com"]`; span location then called `.get()` on a `str`
+  and the `AttributeError` left the detector, so the engine dropped every span the
+  layer would have contributed to that scan — including the well-formed entries of
+  a response that mixed both forms. The backend call had already returned, so the
+  circuit breaker recorded a success and the next scan failed the same way.
+  Non-object elements are filtered out and counted at debug level.
 
 ### Changed
 
@@ -108,6 +83,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Detectors can report partial failure.** `BaseDetector` gains
   `detect_report()` and `detect_report_async()`, returning spans plus
   warnings. The defaults wrap `detect()`, so existing detectors are unaffected.
+
+### Security
+
+- **anyio raised to `>=4.14.2` — a TLS certificate-spoofing path in our own
+  async calls.** `httpx` hands async I/O to `httpcore`, whose AnyIO backend
+  wraps the socket with `anyio.streams.tls.TLSStream`, so every `scan_async()`
+  against an `https` LLM endpoint goes through it. Below 4.14.2 that wrapper
+  encodes host names with IDNA 2003 (CVE-2026-63374, critical): a name that maps
+  differently under IDNA 2003 and 2008 can be validated against a certificate
+  issued for a different host. `httpx` puts no upper bound on anyio, so a fresh
+  install already resolves a patched release — the floor is declared so an older
+  one cannot be resolved underneath wardcat without notice. A second advisory on
+  the same release fixes process-pool workers blocking on undrained stderr
+  (CVE-2026-64847); wardcat does not use anyio's process pools.
+
+  The lock file also moves `setuptools` 81.0.0 → 84.1.0 for CVE-2026-59890 and
+  GHSA-xmj3-9gf7-h52w. No floor is declared for it: wardcat builds with
+  hatchling and never imports setuptools, which reaches the lock only as a
+  runtime dependency of spacy, thinc and torch, so neither advisory touches a
+  path a wardcat scan takes.
+
+- **The lock file moves `certifi` to 2026.10.18 (PYSEC-2026-4320) and `urllib3`
+  to 2.8.0 (PYSEC-2026-4175, PYSEC-2026-4176, PYSEC-2026-4177).** Only
+  environments built from the lock — development and CI — carried the old
+  releases: wardcat pins neither, so `pip install wardcat` resolves current ones.
+  `certifi` sits on the core path through `httpx`; `urllib3` reaches the lock
+  only through `requests`, a dependency of SpaCy and the docs toolchain.
 
 ### Documentation
 
