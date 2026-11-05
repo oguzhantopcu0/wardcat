@@ -11,8 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.3.0] — 2026-10-08
 
-Includes the fixes prepared as 1.2.2, which was never published.
-
 ### Added
 
 - **`wardcat check`, `wardcat is-sensitive` and more of `wardcat scan`, folded
@@ -108,25 +106,6 @@ Includes the fixes prepared as 1.2.2, which was never published.
 - **Custom pattern names** may only use letters, digits, `_`, `.` and `-`, since
   the name is selected with `--entity`, which splits on commas and `=`.
 
-- **Turkish and English NER are faster.** For catalog models whose NER
-  dependencies were measured, the components NER does not read are switched
-  off. Measured on about 3,500 characters, with identical entities:
-
-  | Model | Faster by |
-  |---|---|
-  | `tr_core_news_md` | 29% |
-  | `tr_core_news_lg` | 22% |
-  | `en_core_web_sm`, `en_core_web_lg` | about 60% |
-
-  Models that were not measured run their full pipeline as before.
-- **A chunk the LLM failed on is now a warning.** A timeout or an unreadable
-  reply used to be logged and skipped. It now appears in `result.warnings`,
-  without adjudication too, so strict mode raises `DegradedScanError` where it
-  used to pass. A run with a failed chunk is no longer cached.
-- **Detectors can report partial failure.** `BaseDetector` gains
-  `detect_report()` and `detect_report_async()`, returning spans plus
-  warnings. The defaults wrap `detect()`, so existing detectors are unaffected.
-
 ### Fixed
 
 - **A YAML policy's `layers:` is applied instead of ignored.** An entity entry
@@ -136,37 +115,9 @@ Includes the fixes prepared as 1.2.2, which was never published.
   `add_entity(layers=[...])` routes it. A key the loader does not know in an
   entity entry (`layer:` for `layers:`, say) is now an error rather than ignored.
 
-- **A Turkish phone number written with its code in parentheses.** `(0212) 680 18 33`
-  matched from the `0` rather than the `(`, because the Turkish branch wants its
-  `0`/`+90` prefix *before* the parenthesis and nothing matched at the opening one.
-  The span came back as `0212) 680 18 33` — opening paren outside it, closing paren
-  inside — so the text redacted to `([PHONE]`. The `(212) 680 18 33` spelling has no
-  prefix to find at all and was missed outright, which is the form printed on
-  letterheads and shop signs. A branch now matches the parentheses as a unit; the
-  area code is restricted to the ranges Türk Telekom issues (2xx–4xx landline, 5xx
-  mobile) and the 3-2-2 tail keeps it clear of the US 3-3-4 form, so
-  `(100) 200 30 40` and `Madde (212) sayılı karar` still match nothing.
+## [1.2.2] — 2026-11-05
 
-- **`tr_core_news_trf` is no longer blocked.** The catalog flagged it
-  `incompatible` with a note saying the transformer component API had changed and
-  no release worked on SpaCy 3.5+, so `download_model` refused it before doing any
-  work. It loads on SpaCy 3.8 with a full `ner` component and 20 labels, and gives
-  the best Turkish PERSON accuracy in the catalog — the flag only hid it. The entry
-  now declares `spacy-transformers` as an extra package and says that loading it
-  pulls in torch, so the scan is roughly three times slower than
-  `tr_core_news_lg`. The guard itself is unchanged and still covered, now against
-  a fabricated catalog entry rather than a real model whose flag could go stale
-  the same way.
-
-- **A model answering with bare strings no longer costs the whole LLM layer.**
-  The parser checked that the response was a JSON array but not that its elements
-  were objects. Asked for `[{"type": …, "text": …}]` a small model often answers
-  `["Ali Veli", "ali@firma.com"]`; span location then called `.get()` on a `str`
-  and the `AttributeError` left the detector, so the engine dropped every span the
-  layer would have contributed to that scan — including the well-formed entries of
-  a response that mixed both forms. The backend call had already returned, so the
-  circuit breaker recorded a success and the next scan failed the same way.
-  Non-object elements are filtered out and counted at debug level.
+### Fixed
 
 - **A failing LLM no longer unmasks what NER found under adjudication.** With
   `adjudicate=True` a candidate below 0.90, which is every NER span, survives
@@ -188,6 +139,56 @@ Includes the fixes prepared as 1.2.2, which was never published.
   body over `max_body_bytes`, and a body whose scan raised, to the route
   untouched. Both are now refused (413 and 503), with `on_scan_error="pass"`
   as the explicit opt-out.
+- **A Turkish phone number written with its code in parentheses.** `(0212) 680 18 33`
+  matched from the `0` rather than the `(`, because the Turkish branch wants its
+  `0`/`+90` prefix *before* the parenthesis and nothing matched at the opening one.
+  The span came back as `0212) 680 18 33` — opening paren outside it, closing paren
+  inside — so the text redacted to `([PHONE]`. The `(212) 680 18 33` spelling has no
+  prefix to find at all and was missed outright, which is the form printed on
+  letterheads and shop signs. A branch now matches the parentheses as a unit; the
+  area code is restricted to the ranges Türk Telekom issues (2xx–4xx landline, 5xx
+  mobile) and the 3-2-2 tail keeps it clear of the US 3-3-4 form, so
+  `(100) 200 30 40` and `Madde (212) sayılı karar` still match nothing.
+- **`tr_core_news_trf` is no longer blocked.** The catalog flagged it
+  `incompatible` with a note saying the transformer component API had changed and
+  no release worked on SpaCy 3.5+, so `download_model` refused it before doing any
+  work. It loads on SpaCy 3.8 with a full `ner` component and 20 labels, and gives
+  the best Turkish PERSON accuracy in the catalog — the flag only hid it. The entry
+  now declares `spacy-transformers` as an extra package and says that loading it
+  pulls in torch, so the scan is roughly three times slower than
+  `tr_core_news_lg`. The guard itself is unchanged and still covered, now against
+  a fabricated catalog entry rather than a real model whose flag could go stale
+  the same way.
+- **A model answering with bare strings no longer costs the whole LLM layer.**
+  The parser checked that the response was a JSON array but not that its elements
+  were objects. Asked for `[{"type": …, "text": …}]` a small model often answers
+  `["Ali Veli", "ali@firma.com"]`; span location then called `.get()` on a `str`
+  and the `AttributeError` left the detector, so the engine dropped every span the
+  layer would have contributed to that scan — including the well-formed entries of
+  a response that mixed both forms. The backend call had already returned, so the
+  circuit breaker recorded a success and the next scan failed the same way.
+  Non-object elements are filtered out and counted at debug level.
+
+### Changed
+
+- **Turkish and English NER are faster.** For catalog models whose NER
+  dependencies were measured, the components NER does not read are switched
+  off. Measured on about 3,500 characters, with identical entities:
+
+  | Model | Faster by |
+  |---|---|
+  | `tr_core_news_md` | 29% |
+  | `tr_core_news_lg` | 22% |
+  | `en_core_web_sm`, `en_core_web_lg` | about 60% |
+
+  Models that were not measured run their full pipeline as before.
+- **A chunk the LLM failed on is now a warning.** A timeout or an unreadable
+  reply used to be logged and skipped. It now appears in `result.warnings`,
+  without adjudication too, so strict mode raises `DegradedScanError` where it
+  used to pass. A run with a failed chunk is no longer cached.
+- **Detectors can report partial failure.** `BaseDetector` gains
+  `detect_report()` and `detect_report_async()`, returning spans plus
+  warnings. The defaults wrap `detect()`, so existing detectors are unaffected.
 
 ### Security
 
@@ -203,11 +204,18 @@ Includes the fixes prepared as 1.2.2, which was never published.
   the same release fixes process-pool workers blocking on undrained stderr
   (CVE-2026-64847); wardcat does not use anyio's process pools.
 
-  The lock file also moves `setuptools` 81.0.0 → 84.0.0 for CVE-2026-59890. No
-  floor is declared for it: wardcat builds with hatchling and never imports
-  setuptools, which reaches the lock only as a runtime dependency of spacy,
-  thinc and torch, and the advisory concerns `MANIFEST.in` handling when
-  *building* an sdist on macOS — not a path a wardcat scan takes.
+  The lock file also moves `setuptools` 81.0.0 → 84.1.0 for CVE-2026-59890 and
+  GHSA-xmj3-9gf7-h52w. No floor is declared for it: wardcat builds with
+  hatchling and never imports setuptools, which reaches the lock only as a
+  runtime dependency of spacy, thinc and torch, so neither advisory touches a
+  path a wardcat scan takes.
+
+- **The lock file moves `certifi` to 2026.10.18 (PYSEC-2026-4320) and `urllib3`
+  to 2.8.0 (PYSEC-2026-4175, PYSEC-2026-4176, PYSEC-2026-4177).** Only
+  environments built from the lock — development and CI — carried the old
+  releases: wardcat pins neither, so `pip install wardcat` resolves current ones.
+  `certifi` sits on the core path through `httpx`; `urllib3` reaches the lock
+  only through `requests`, a dependency of SpaCy and the docs toolchain.
 
 ### Documentation
 
@@ -1061,7 +1069,8 @@ changes only in a future 2.0.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
 [Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v1.3.0...HEAD
-[1.3.0]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.1...v1.3.0
+[1.3.0]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.2...v1.3.0
+[1.2.2]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.1...v1.1.2
