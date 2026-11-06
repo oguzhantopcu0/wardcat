@@ -2583,7 +2583,7 @@ wheels = [
 
 [[package]]
 name = "wardcat"
-version = "1.2.2"
+version = "1.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },

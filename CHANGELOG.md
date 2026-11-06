@@ -9,6 +9,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] — 2026-11-06
+
+### Security
+
+- **Invisible characters no longer hide PII from the regex layer and the
+  denylist.** Confusable folding keeps the text's length, so it could not
+  delete a character: a zero-width space inside a card number
+  (`4111<U+200B>1111…`), an NBSP between IBAN groups, a soft hyphen in an
+  email, a bidi control in a denylisted value, a fullwidth `＠` or a TC kimlik
+  no written in Devanagari digits went through unchanged. NBSP shows up on its
+  own in text copied from Word and PDF. Matching now runs on a prepared copy
+  that drops format characters (Unicode `Cf`) and variation selectors, reads
+  every `Zs` space as a plain space and every decimal digit as ASCII; spans are
+  mapped back to the original, so the replaced span covers the invisible
+  characters too and `restore()` gives back the exact input. Text without such
+  characters takes the old path. The NER and LLM layers still see the text as
+  written. New option `normalize_invisible`, on by default.
+- **An item that cannot be scanned no longer comes back as its own sanitized
+  text.** In `scan_batch` and `scan_batch_async`, an item over
+  `max_text_bytes` or one whose scan raised had `sanitized_text` set to the raw
+  input. A caller that did not check `scan_error` passed it on as sanitized.
+  It is now `""`; `original_text` still holds the input. This changes what a
+  failed item returns, deliberately.
+- **The Ollama backend's format error no longer carries the reply.** A reply
+  without a `response` key was put whole into the `ConnectionError`, which
+  reaches scan warnings and logs; the reply can quote the input. The message
+  now names the reply's keys only.
+
+### Fixed
+
+- **ADDRESS and FINANCIAL_AMOUNT are linear on long runs.** Both could start a
+  match in the middle of a word or number, so a long run restarted at every
+  character and rescanned the rest. ADDRESS is on in the `kvkk`, `gdpr` and
+  `hipaa_lite` presets. Each now starts only at the start of a word (ADDRESS)
+  or of a number (the "amount then TL" branch of FINANCIAL_AMOUNT). Measured
+  on 20,000 characters:
+
+  | Pattern | Input | 1.2.2 | 1.2.3 |
+  |---|---|---|---|
+  | `ADDRESS` | `"A" * n` | 1.68 s | 0.001 s |
+  | `FINANCIAL_AMOUNT` | `"1." * n` | 4.50 s | 0.002 s |
+
+  A new test runs every built-in pattern on adversarial runs of 50,000 and
+  100,000 characters.
+- **A cancelled LLM call no longer switches the LLM layer off.** After the
+  cooldown the circuit breaker lets one trial call through. A trial that was
+  cancelled (`asyncio.CancelledError`, e.g. a timeout around `scan_async`) or
+  interrupted recorded neither success nor failure, so the trial stayed taken
+  and every later call got `CircuitOpen` until the process restarted. The
+  trial is now handed back (`CircuitBreaker.release_trial()`); a cancellation
+  is not counted as a failure. `CircuitBreaker.check()` now returns whether
+  the caller holds the trial.
+- **An LLM reply with `]` inside a value is read in full.** The list was found
+  with a regex that stopped at the first `]`, so `"Blok [A] No 5"` made the
+  reply unreadable and the chunk counted as not judged (strict mode raised).
+  It is now found with a JSON decoder; the first list holding an object wins,
+  so a `[1]` in the model's explanation is not taken for the answer.
+- **The ASGI example scans what its docstring promises.** The content type was
+  matched as a case-sensitive substring, so `Application/JSON`, forms,
+  multipart uploads and requests without the header reached the route
+  unscanned, and the body was read whole before the size check. The media type
+  is now compared case-insensitively without its parameters, a request without
+  the header is scanned as text, any other type gets 415 (or passes with
+  `on_unscanned="pass"`), and reading stops at the part that crosses
+  `max_body_bytes`.
+- **A SpaCy pipeline without NER is not loaded again on every rebuild.** The
+  refusal is cached, so the multi-second load happens once.
+
 ## [1.2.2] — 2026-11-05
 
 ### Fixed
@@ -962,7 +1030,8 @@ changes only in a future 2.0.
 - **Transformers backend:** Chat template availability check moved to the correct location in the inference pipeline.
 - **SpaCy NER fallback:** Warning message wording made consistent across all fallback code paths.
 
-[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/oguzhantopcu0/wardcat/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/oguzhantopcu0/wardcat/compare/v1.1.2...v1.2.0
