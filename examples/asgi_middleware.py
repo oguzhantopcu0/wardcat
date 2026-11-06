@@ -12,9 +12,19 @@ Modes (on_pii_detected):
     "warn"     → pass through unchanged; result on scope["state"]["wardcat_result"]
 
 Failing closed: a body the middleware cannot scan never reaches the route
-unscanned. A body over max_body_bytes is rejected with 413, and a scan that
-raises is answered with 503 (pass on_scan_error="pass" to forward it instead,
-which you should only do where an unscanned request is acceptable).
+unscanned.
+
+- Content type: the media type (before any ";", case-insensitive) is compared
+  with content_types — an entry ending in "/" matches the whole family, any
+  other must match exactly. A request without a content-type header is scanned
+  as text. Any other type — a form, a multipart upload, an image — is refused
+  with 415; pass on_unscanned="pass" to forward those unscanned instead.
+- Size: the body is counted as it arrives, and reading stops with 413 at the
+  part that crosses max_body_bytes, so a large body is never held in memory.
+- Errors: a scan that raises is answered with 503; on_scan_error="pass"
+  forwards the request instead.
+
+Only choose "pass" where an unscanned request is acceptable.
 
 JSON bodies are scanned leaf by leaf, each string on its own. The violations on
 the combined result therefore carry offsets into their own leaf, not into the
@@ -56,6 +66,7 @@ class WardcatMiddleware:
         max_body_bytes: int = 1_000_000,
         json_field_scan: bool = True,
         on_scan_error: str = "block",
+        on_unscanned: str = "block",
     ) -> None:
         if on_pii_detected not in ("block", "sanitize", "warn"):
             raise ValueError(
@@ -66,12 +77,17 @@ class WardcatMiddleware:
             raise ValueError(
                 f"Invalid on_scan_error={on_scan_error!r}. Valid values: 'block', 'pass'."
             )
+        if on_unscanned not in ("block", "pass"):
+            raise ValueError(
+                f"Invalid on_unscanned={on_unscanned!r}. Valid values: 'block', 'pass'."
+            )
         self.on_scan_error = on_scan_error
+        self.on_unscanned = on_unscanned
         self.app = app
         self.guard = guard
         self.on_pii_detected = on_pii_detected
         self.scan_path_prefix = scan_path_prefix
-        self.content_types = tuple(content_types)
+        self.content_types = tuple(ct.lower() for ct in content_types)
         self.max_body_bytes = max_body_bytes
         self.json_field_scan = json_field_scan
 
@@ -86,26 +102,42 @@ class WardcatMiddleware:
             return
 
         headers = dict(scope.get("headers", []))
-        content_type = headers.get(b"content-type", b"").decode("latin-1", errors="replace")
-        if not any(ct in content_type for ct in self.content_types):
-            await self.app(scope, receive, send)
+        raw_type = headers.get(b"content-type")
+        media_type = (
+            raw_type.decode("latin-1", errors="replace").split(";", 1)[0].strip().lower()
+            if raw_type
+            else ""
+        )
+        # No header: scan the body as text rather than let it through unseen.
+        if media_type and not self._scannable(media_type):
+            if self.on_unscanned == "pass":
+                await self.app(scope, receive, send)
+            else:
+                await self._send_error(
+                    send, 415, f"Content type {media_type!r} cannot be scanned for PII."
+                )
             return
 
         body_chunks: list[bytes] = []
+        size = 0
         more_body = True
         while more_body:
             message = await receive()
-            body_chunks.append(message.get("body", b""))
+            if message["type"] == "http.disconnect":
+                return
+            chunk = message.get("body", b"")
+            size += len(chunk)
+            if size > self.max_body_bytes:
+                # Too large to scan is not the same as clean: refuse it, and stop
+                # reading rather than buffer the rest first.
+                await self._send_error(send, 413, "Request body too large to scan for PII.")
+                return
+            body_chunks.append(chunk)
             more_body = message.get("more_body", False)
         body = b"".join(body_chunks)
 
-        if len(body) > self.max_body_bytes:
-            # Too large to scan is not the same as clean: refuse it.
-            await self._send_error(send, 413, "Request body too large to scan for PII.")
-            return
-
         text = body.decode("utf-8", errors="replace")
-        is_json = "application/json" in content_type
+        is_json = media_type == "application/json" or media_type.endswith("+json")
 
         try:
             if is_json and self.json_field_scan:
@@ -133,6 +165,12 @@ class WardcatMiddleware:
             return
 
         await self._forward(scope, send, sanitized_body)
+
+    def _scannable(self, media_type: str) -> bool:
+        return any(
+            media_type.startswith(ct) if ct.endswith("/") else media_type == ct
+            for ct in self.content_types
+        )
 
     async def _scan_json_body(self, text: str):
         """Parse JSON, scan each string value, reconstruct — keys/structure preserved."""
