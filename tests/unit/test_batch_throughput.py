@@ -84,7 +84,7 @@ class TestEquivalence:
         guard._rebuild()
         results = guard.scan_batch(["a@b.io", "x" * 200, "c@d.io"])
         assert results[0].sanitized_text == "[EMAIL]"
-        assert results[1].scan_error and results[1].sanitized_text == "x" * 200
+        assert results[1].scan_error and results[1].sanitized_text == ""
         assert results[2].sanitized_text == "[EMAIL]"
 
     def test_a_batched_layer_that_fails_is_reported_on_every_item(self) -> None:

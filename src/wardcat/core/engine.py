@@ -218,7 +218,7 @@ class DetectionEngine:
         others — the LLM layer — run per text in a pool of *workers* threads.
         A layer that fails is skipped for the whole batch and recorded on every
         result. A text that cannot be scanned at all (too large) gets a result
-        with ``scan_error`` set and its text unchanged. Adjudication is not
+        with ``scan_error`` set and an empty ``sanitized_text``. Adjudication is not
         batched: with it on, each text goes through :meth:`scan`.
         """
         if not texts:
@@ -316,10 +316,12 @@ class DetectionEngine:
             return self._error_result(text, exc)
 
     def _error_result(self, text: str, exc: Exception) -> ScanResult:
-        logger.error("scan failed (%s: %s), returning original text.", type(exc).__name__, exc)
+        logger.error("scan failed (%s: %s), returning empty text.", type(exc).__name__, exc)
+        # Never the input: a caller that does not check scan_error would pass
+        # unscanned text on as if it had been sanitized.
         return ScanResult(
             original_text=text,
-            sanitized_text=text,
+            sanitized_text="",
             violations=[],
             scan_error=f"{type(exc).__name__}: {exc}",
             warnings=list(self.build_warnings),

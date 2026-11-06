@@ -262,8 +262,9 @@ class ScanResult:
     """List of all detected violations. The ``original`` fields contain raw PII."""
     scan_error: str | None = None
     """Set when this item failed during :meth:`~wardcat.Wardcat.scan_batch`.
-    The original text is returned unchanged. Non-None means the scan result
-    is incomplete — callers should not treat the text as clean."""
+    ``sanitized_text`` is then empty — the unscanned input is never returned as
+    if it had been sanitized — and ``original_text`` still holds the input.
+    Non-None means the item was not scanned; do not treat it as clean."""
     warnings: list[str] = field(default_factory=list)
     """Non-fatal issues during this scan — e.g. a detector layer that could not
     run (LLM backend unreachable). The scan still returns results from the other
