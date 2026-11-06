@@ -323,29 +323,50 @@ class LLMDetector(BaseDetector):
         a refused connection, an HTTP timeout — counts as a failure and is
         re-raised unchanged, so the callers' error handling is unaffected.
         """
-        self.breaker.check()
-        with self._sync_gate:
-            try:
-                reply = self.backend.complete_messages(messages, timeout=self.timeout)
-            except Exception:
-                self.breaker.record_failure()
-                raise
-        self.breaker.record_success()
-        return reply
+        trial = self.breaker.check()
+        settled = False
+        try:
+            with self._sync_gate:
+                try:
+                    reply = self.backend.complete_messages(messages, timeout=self.timeout)
+                except Exception:
+                    settled = True
+                    self.breaker.record_failure()
+                    raise
+            settled = True
+            self.breaker.record_success()
+            return reply
+        finally:
+            # Interrupted (KeyboardInterrupt, SystemExit): neither outcome was
+            # recorded, so a held trial must be handed back.
+            if trial and not settled:
+                self.breaker.release_trial()
 
     async def complete_messages_async(self, messages: list[dict]) -> str:
         """Async twin of :meth:`complete_messages`."""
-        self.breaker.check()
-        if self._async_gate is None:
-            self._async_gate = asyncio.Semaphore(self.max_concurrency)
-        async with self._async_gate:
-            try:
-                reply = await self.backend.complete_messages_async(messages, timeout=self.timeout)
-            except Exception:
-                self.breaker.record_failure()
-                raise
-        self.breaker.record_success()
-        return reply
+        trial = self.breaker.check()
+        settled = False
+        try:
+            if self._async_gate is None:
+                self._async_gate = asyncio.Semaphore(self.max_concurrency)
+            async with self._async_gate:
+                try:
+                    reply = await self.backend.complete_messages_async(
+                        messages, timeout=self.timeout
+                    )
+                except Exception:
+                    settled = True
+                    self.breaker.record_failure()
+                    raise
+            settled = True
+            self.breaker.record_success()
+            return reply
+        finally:
+            # Cancelled — while waiting for the gate or for the backend. A
+            # CancelledError is not an Exception, so nothing was recorded and
+            # a held trial would otherwise stay taken forever.
+            if trial and not settled:
+                self.breaker.release_trial()
 
     # ------------------------------------------------------------------
 

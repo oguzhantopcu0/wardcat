@@ -70,13 +70,19 @@ class CircuitBreaker:
         with self._lock:
             return self._opened_at is not None
 
-    def check(self) -> None:
-        """Raise :class:`CircuitOpen` if a call must not be made right now."""
+    def check(self) -> bool:
+        """Raise :class:`CircuitOpen` if a call must not be made right now.
+
+        Returns ``True`` when this caller holds the half-open trial. A caller
+        that does must end it with :meth:`record_success`,
+        :meth:`record_failure` or, when the call ended without a verdict
+        (cancelled, interrupted), :meth:`release_trial`.
+        """
         if not self.enabled:
-            return
+            return False
         with self._lock:
             if self._opened_at is None:
-                return
+                return False
             elapsed = self._clock() - self._opened_at
             if elapsed < self.cooldown:
                 raise CircuitOpen(self._failures, self.cooldown - elapsed)
@@ -84,6 +90,18 @@ class CircuitBreaker:
             if self._trial_in_flight:
                 raise CircuitOpen(self._failures, 0.0)
             self._trial_in_flight = True
+            return True
+
+    def release_trial(self) -> None:
+        """Give back a trial whose call ended without a verdict.
+
+        A cancelled or interrupted call says nothing about the backend, so it
+        is not a failure; but the trial must be freed, or every later call is
+        refused for as long as the process runs. The circuit stays open and
+        the next caller gets the trial.
+        """
+        with self._lock:
+            self._trial_in_flight = False
 
     def record_success(self) -> None:
         with self._lock:

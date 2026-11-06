@@ -157,6 +157,87 @@ class TestDetector:
             asyncio.run(detector.detect_async("x"))
 
 
+class TestAnAbandonedTrial:
+    """A half-open trial that ends without a verdict must give the trial back.
+
+    A cancelled call (``asyncio.CancelledError``) or an interrupt is a
+    ``BaseException``: it recorded neither success nor failure, so the trial
+    flag stayed set and every later call got ``CircuitOpen`` — the LLM layer
+    was off until the process restarted.
+    """
+
+    @staticmethod
+    def _open(clock: FakeClock) -> CircuitBreaker:
+        breaker = CircuitBreaker(1, 10, clock=clock)
+        breaker.record_failure()
+        clock.now += 10
+        return breaker
+
+    def test_a_cancelled_async_trial_lets_the_next_call_try(self) -> None:
+        clock = FakeClock()
+        breaker = self._open(clock)
+        calls = []
+
+        async def _reply(*_a, **_k):
+            calls.append(1)
+            if len(calls) == 1:
+                await asyncio.sleep(10)
+            return "[]"
+
+        backend = MagicMock(spec=BaseLLMBackend)
+        backend.complete_messages_async.side_effect = _reply
+        detector = LLMDetector(backend=backend, enabled_entities={"EMAIL"}, breaker=breaker)
+
+        async def _run() -> str:
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(detector.complete_messages_async([]), 0.01)
+            return await detector.complete_messages_async([])
+
+        assert asyncio.run(_run()) == "[]"
+        assert len(calls) == 2
+        assert not breaker.is_open
+
+    def test_an_interrupted_sync_trial_lets_the_next_call_try(self) -> None:
+        clock = FakeClock()
+        breaker = self._open(clock)
+        backend = MagicMock(spec=BaseLLMBackend)
+        backend.complete_messages.side_effect = [KeyboardInterrupt(), "[]"]
+        detector = LLMDetector(backend=backend, enabled_entities={"EMAIL"}, breaker=breaker)
+
+        with pytest.raises(KeyboardInterrupt):
+            detector.complete_messages([])
+        assert detector.complete_messages([]) == "[]"
+        assert not breaker.is_open
+
+    def test_an_abandoned_trial_is_not_a_failure(self) -> None:
+        clock = FakeClock()
+        breaker = self._open(clock)
+        assert breaker.check() is True  # this caller holds the trial
+        breaker.release_trial()
+        # Still open, the cooldown not restarted: the next caller tries at once.
+        assert breaker.is_open
+        assert breaker.check() is True
+
+    def test_releasing_does_not_free_someone_elses_trial(self) -> None:
+        clock = FakeClock()
+        breaker = CircuitBreaker(1, 10, clock=clock)
+        assert breaker.check() is False  # closed: no trial is held
+        breaker.record_failure()
+        clock.now += 10
+        assert breaker.check() is True
+        backend = MagicMock(spec=BaseLLMBackend)
+        backend.complete_messages.side_effect = KeyboardInterrupt()
+        # A caller that passed check() while the circuit was closed and is
+        # interrupted now must not release the trial another caller holds.
+        detector = LLMDetector(backend=backend, enabled_entities={"EMAIL"}, breaker=breaker)
+        breaker._opened_at = None  # let this caller through as if closed
+        with pytest.raises(KeyboardInterrupt):
+            detector.complete_messages([])
+        breaker._opened_at = clock.now - 10
+        with pytest.raises(CircuitOpen):
+            breaker.check()
+
+
 class TestThroughTheGuard:
     def _guard(self, side_effect, **llm) -> Wardcat:
         guard = (
