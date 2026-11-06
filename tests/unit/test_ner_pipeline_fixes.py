@@ -97,8 +97,28 @@ class TestLoading:
         spacy = pytest.importorskip("spacy")
         monkeypatch.setattr(spacy, "load", lambda name: spacy.blank("de"))
         monkeypatch.delitem(ner_detector._MODEL_CACHE, "de_dep_news_trf", raising=False)
+        monkeypatch.setattr(ner_detector, "_NO_NER", {})
         with pytest.raises(ConfigError, match="has no NER component"):
             ner_detector._load_model("de_dep_news_trf")
+        assert "de_dep_news_trf" not in ner_detector._MODEL_CACHE
+
+    def test_a_refused_pipeline_is_not_loaded_again(self, monkeypatch) -> None:
+        # Loading a trf pipeline takes seconds and hundreds of MB; a refused one
+        # was thrown away and loaded again on every rebuild of the guard.
+        spacy = pytest.importorskip("spacy")
+        loads: list[str] = []
+
+        def load(name):
+            loads.append(name)
+            return spacy.blank("de")
+
+        monkeypatch.setattr(spacy, "load", load)
+        monkeypatch.delitem(ner_detector._MODEL_CACHE, "de_dep_news_trf", raising=False)
+        monkeypatch.setattr(ner_detector, "_NO_NER", {})
+        for _ in range(3):
+            with pytest.raises(ConfigError, match="has no NER component"):
+                ner_detector._load_model("de_dep_news_trf")
+        assert loads == ["de_dep_news_trf"]
         assert "de_dep_news_trf" not in ner_detector._MODEL_CACHE
 
     def test_an_unmeasured_pipeline_runs_in_full(self, monkeypatch) -> None:

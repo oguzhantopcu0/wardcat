@@ -388,7 +388,19 @@ def _is_valid_person(text: str, *, document_has_case: bool = True) -> bool:
 # Effect: even if multiple Wardcat instances are created, SpaCy is kept
 # in memory only once (~300–500 MB savings per instance).
 _MODEL_CACHE: dict[str, Any] = {}
+# Models refused for having no ``ner`` component, with their pipeline. Kept so
+# that a rebuild does not load a multi-second, multi-hundred-MB pipeline again
+# only to refuse it again.
+_NO_NER: dict[str, tuple[str, ...]] = {}
 _CACHE_LOCK = threading.Lock()
+
+
+def _no_ner_error(model_name: str, pipe_names: tuple[str, ...]) -> ConfigError:
+    return ConfigError(
+        f"SpaCy model {model_name!r} has no NER component (pipeline: "
+        f"{', '.join(pipe_names) or 'empty'}), so it would find no "
+        "names. Choose a model with NER, e.g. the lg size of the language."
+    )
 
 
 def _load_model(model_name: str) -> Any:
@@ -401,17 +413,16 @@ def _load_model(model_name: str) -> Any:
     detector only reads ``doc.ents``.
     """
     with _CACHE_LOCK:
+        if model_name in _NO_NER:
+            raise _no_ner_error(model_name, _NO_NER[model_name])
         if model_name not in _MODEL_CACHE:
             import spacy  # lazy import — SpaCy is optional
 
             logger.info("Loading SpaCy model: %s", model_name)
             nlp = spacy.load(model_name)
             if "ner" not in nlp.pipe_names:
-                raise ConfigError(
-                    f"SpaCy model {model_name!r} has no NER component (pipeline: "
-                    f"{', '.join(nlp.pipe_names) or 'empty'}), so it would find no "
-                    "names. Choose a model with NER, e.g. the lg size of the language."
-                )
+                _NO_NER[model_name] = tuple(nlp.pipe_names)
+                raise _no_ner_error(model_name, _NO_NER[model_name])
             _disable_unused_pipes(nlp, model_name)
             _MODEL_CACHE[model_name] = nlp
             logger.info("SpaCy model ready: %s", model_name)
