@@ -149,3 +149,56 @@ def test_no_logger_call_passes_a_text_bearing_variable() -> None:
                 elif isinstance(arg, ast.Subscript) and _names_in(arg) & SUSPECT_NAMES:
                     offenders.append(f"{path.relative_to(root)}:{call.lineno} logs a slice")
     assert not offenders, "\n".join(offenders)
+
+
+def test_no_exception_message_embeds_a_text_bearing_variable() -> None:
+    """An exception message travels further than a log line: into scan
+    warnings, scan_error and the caller's own logs. In the layers that handle
+    the scanned text and the model's replies, none may interpolate one.
+
+    The Ollama backend used to put the whole reply (``{data}``) in its
+    "unexpected response format" error, and the reply can quote the input.
+    """
+    suspects = SUSPECT_NAMES | {"data", "body", "response_text"}
+    root = Path(__file__).resolve().parents[2] / "src" / "wardcat"
+    offenders = []
+    for package in ("llm", "detectors", "core"):
+        for path in (root / package).rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Raise) or node.exc is None:
+                    continue
+                for part in ast.walk(node.exc):
+                    if not isinstance(part, ast.FormattedValue):
+                        continue
+                    expr = part.value
+                    # type(x).__name__ names a type, not a value.
+                    if isinstance(expr, ast.Attribute) and expr.attr == "__name__":
+                        continue
+                    if isinstance(expr, ast.Call) and getattr(expr.func, "id", "") == "describe":
+                        continue
+                    names = {n.id for n in ast.walk(expr) if isinstance(n, ast.Name)}
+                    names |= {n.attr for n in ast.walk(expr) if isinstance(n, ast.Attribute)}
+                    if names & suspects:
+                        offenders.append(
+                            f"{path.relative_to(root)}:{node.lineno} raises with "
+                            f"{ast.unparse(expr)}"
+                        )
+    assert not offenders, "\n".join(offenders)
+
+
+def test_ollama_format_error_carries_no_reply_content() -> None:
+    from unittest.mock import MagicMock, patch
+
+    from wardcat.llm.backends.ollama import OllamaBackend
+
+    secret = "Ali Veli 4111 1111 1111 1111"
+    response = MagicMock()
+    response.json.return_value = {"message": secret, "done": True}
+    response.raise_for_status.return_value = None
+    backend = OllamaBackend(model="m")
+    with patch("httpx.post", return_value=response), pytest.raises(ConnectionError) as info:
+        backend.complete("prompt")
+    assert secret not in str(info.value)
+    assert "4111" not in str(info.value)
+    assert "response" in str(info.value)

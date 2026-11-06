@@ -60,6 +60,20 @@ def _generate_body(model: str, prompt: str) -> dict[str, Any]:
     }
 
 
+def _missing_response_key(data: object) -> str:
+    """The error for a reply without a ``response`` key — naming its shape only.
+
+    The reply itself is left out: the model's output can quote the scanned text,
+    and this message ends up in scan warnings and the caller's logs.
+    """
+    if isinstance(data, dict):
+        keys = ", ".join(sorted(str(k) for k in data)[:10]) or "none"
+        shape = f"keys: {keys}"
+    else:
+        shape = type(data).__name__
+    return f"Unexpected response format from Ollama (missing 'response' key; {shape})"
+
+
 class OllamaBackend(BaseLLMBackend):
     """
     Ollama REST API backend.
@@ -116,9 +130,7 @@ class OllamaBackend(BaseLLMBackend):
             response.raise_for_status()
             data = response.json()
             if "response" not in data:
-                raise ConnectionError(
-                    f"Unexpected response format from Ollama (missing 'response' key): {data}"
-                )
+                raise ConnectionError(_missing_response_key(data))
             return data["response"]
         except httpx.ConnectError:
             raise ConnectionError(
@@ -141,9 +153,7 @@ class OllamaBackend(BaseLLMBackend):
                 response.raise_for_status()
                 data = response.json()
                 if "response" not in data:
-                    raise ConnectionError(
-                        f"Unexpected response format from Ollama (missing 'response' key): {data}"
-                    )
+                    raise ConnectionError(_missing_response_key(data))
                 return data["response"]
         except httpx.ConnectError:
             raise ConnectionError(
