@@ -1045,6 +1045,7 @@ class Wardcat(EntityPolicyMixin):
                     custom_patterns=custom_patterns,
                     fold_confusables_enabled=self._config.get("normalize_confusables", True),
                     phone_regions=self._config.get("phone_regions") or None,
+                    normalize_invisible=self._config.get("normalize_invisible", True),
                 )
             )
 

@@ -12,6 +12,7 @@ from wardcat.core.anonymizer import Anonymizer
 from wardcat.core.models import ScanResult
 from wardcat.detectors.base import BaseDetector, DetectedSpan
 from wardcat.exceptions import DegradedScanError
+from wardcat.utils.normalize import needs_matching_prep, prepare_for_matching, to_original_span
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,9 @@ class DetectionEngine:
         # result with warnings. The guard already refuses to build in that state;
         # this catches what only shows up per scan (an LLM backend going down).
         self._strict: bool = bool(config.get("strict", False))
+        # Drop invisible characters before matching the denylist, as the regex
+        # layer does (see wardcat.utils.normalize.prepare_for_matching).
+        self._normalize_invisible: bool = bool(config.get("normalize_invisible", True))
         # Denylist entries, in configured order, as (entity_type, value or compiled
         # pattern). Compiled once here rather than on every scan. Patterns were
         # screened for catastrophic backtracking when they were configured.
@@ -570,7 +574,23 @@ class DetectionEngine:
         return not before.isalnum() and not after.isalnum()
 
     def _collect_denylist_spans(self, text: str) -> list[DetectedSpan]:
-        """Match denylist entries (exact value or regex pattern) against *text*."""
+        """Match denylist entries (exact value or regex pattern) against *text*.
+
+        Matching runs on a copy without invisible characters (see
+        :func:`~wardcat.utils.normalize.prepare_for_matching`), so a zero-width
+        space inside a denylisted value does not hide it; spans are reported
+        against *text* and cover the invisible characters too.
+        """
+        if not (self._normalize_invisible and needs_matching_prep(text)):
+            return self._match_denylist(text)
+        prepared, index_map = prepare_for_matching(text)
+        spans = self._match_denylist(prepared)
+        for span in spans:
+            span.start, span.end = to_original_span(span.start, span.end, index_map)
+            span.text = text[span.start : span.end]
+        return spans
+
+    def _match_denylist(self, text: str) -> list[DetectedSpan]:
         spans: list[DetectedSpan] = []
         for entity_type, pattern in self._denylist:
             for m in pattern.finditer(text):

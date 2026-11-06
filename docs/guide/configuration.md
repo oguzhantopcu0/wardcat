@@ -195,6 +195,8 @@ min_confidence: 0.8      # drop spans scoring below this
 phone_regions: []        # CLDR codes for libphonenumber-backed PHONE
 propagate_matches: false
 propagate_min_length: 3
+normalize_confusables: true  # fold homoglyphs before regex matching
+normalize_invisible: true    # ignore zero-width/bidi characters, odd spaces, foreign digits
 
 entities:
   CREDIT_CARD: { enabled: true, action: hash }
