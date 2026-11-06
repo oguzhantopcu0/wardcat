@@ -205,6 +205,10 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         # Turkish: 1-3 *capitalized* words before the street-type keyword (so it
         # can't swallow lowercase filler like "iletişime geçilebilir adresi" or
         # cross a sentence boundary), then an optional No:/Daire:/Kat: tail.
+        # It starts only at the start of a word: without the lookbehind every
+        # letter of a long word was a fresh start that rescanned the word, which
+        # made the pattern quadratic in the word's length.
+        r"(?<![A-Za-zÇĞİÖŞÜçğıöşü0-9])"
         r"(?:[A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğışöşü0-9]*\s+){1,3}"
         r"(?:Mahallesi|Mah\.|Caddesi|Cad\.|Sokağı|Sokak|Sok\.|Bulvarı|Blv\."
         r"|Apartmanı|Apt\.|Sitesi)"
@@ -349,7 +353,10 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         r"(?:₺|\$|€|£)\s*\d+(?:[.,]\d+)*(?:\s*(?:milyon|milyar|bin|million|billion|trillion|thousand))?"
         r"|"
         # Amount then TL/lira: 85.000 TL / 47.3 milyon TL
-        r"\b\d+(?:[.,]\d+)*(?:\s*(?:milyon|milyar|bin))?\s*(?:TL|lira)\b",
+        # It starts only where a number starts — not after a digit, nor after a
+        # digit and its separator. Otherwise "1.1.1.…" restarted at every digit
+        # and rescanned the rest, which was quadratic.
+        r"(?<!\d)(?<!\d[.,])\b\d+(?:[.,]\d+)*(?:\s*(?:milyon|milyar|bin))?\s*(?:TL|lira)\b",
         re.IGNORECASE,
     ),
     # ── VAT / Tax Number ──────────────────────────────────────────────
