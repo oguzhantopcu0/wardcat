@@ -76,6 +76,42 @@ class TestParseResponse:
         spans = det.detect("x@y.com")
         assert spans == []
 
+    # The list used to be cut at its first "]": a value holding one made the
+    # reply unreadable, the chunk counted as not judged.
+    def test_a_closing_bracket_inside_a_value(self):
+        response = '[{"type":"ADDRESS","text":"Blok [A] No 5"}]'
+        det = _detector(response, {"ADDRESS"})
+        spans = det.detect("Adres: Blok [A] No 5, Kadıköy")
+        assert [s.text for s in spans] == ["Blok [A] No 5"]
+
+    def test_an_opening_bracket_inside_a_value(self):
+        response = '[{"type":"PERSON","text":"Ali [Veli"}]'
+        det = _detector(response, {"PERSON"})
+        spans = det.detect("Kayıt: Ali [Veli geldi")
+        assert [s.text for s in spans] == ["Ali [Veli"]
+
+    def test_a_nested_array_in_an_entry(self):
+        response = '[{"type":"EMAIL","text":"x@y.com","tags":["a","b"]}]'
+        det = _detector(response)
+        assert [s.text for s in det.detect("mail x@y.com")] == ["x@y.com"]
+
+    def test_brackets_in_the_explanation_before_the_list(self):
+        response = 'Notlar [taslak] ve kaynak [1]:\n[{"type":"EMAIL","text":"x@y.com"}]'
+        det = _detector(response)
+        assert [s.text for s in det.detect("mail x@y.com")] == ["x@y.com"]
+
+    def test_a_list_inside_an_object(self):
+        response = '{"entities": [{"type":"EMAIL","text":"x@y.com"}]}'
+        det = _detector(response)
+        assert [s.text for s in det.detect("mail x@y.com")] == ["x@y.com"]
+
+    def test_brackets_but_no_list_is_still_unreadable(self):
+        from wardcat.detectors.llm_detector import UnreadableReply
+
+        det = _detector("[not json] and [neither")
+        with pytest.raises(UnreadableReply):
+            det._parse_llm_response("[not json] and [neither")
+
     def test_json_object_instead_of_array_returns_empty(self):
         det = _detector('{"type":"EMAIL","text":"x@y.com"}')
         spans = det.detect("x@y.com")
@@ -270,7 +306,7 @@ class TestHallucinationFilter:
 
     def test_json_non_list_returns_empty(self):
         """Response where the matched [...] contains non-JSON → []."""
-        # _JSON_RE matches first [...]. If that content is invalid, JSONDecodeError → []
+        # Every "[" is tried; none starts valid JSON, so the reply is unreadable → []
         det = _detector("[{broken json here}]")
         spans = det.detect("some text")
         assert spans == []
