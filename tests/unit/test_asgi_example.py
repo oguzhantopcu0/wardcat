@@ -109,3 +109,98 @@ def test_block_mode_answers_422_without_values() -> None:
     assert status == 422
     assert route.bodies == []
     assert b"4111" not in payload
+
+
+# ── Content type and body size ────────────────────────────────────────────────
+# The content type was matched as a case-sensitive substring, so
+# "Application/JSON", a form, a multipart upload or a request with no
+# content-type header reached the route unscanned, against the docstring.
+
+
+def call_raw(middleware, chunks: list[bytes], headers: list[tuple[bytes, bytes]]):
+    """Send *chunks* as a streamed body; return (status, payload, chunks read)."""
+    sent: list[dict] = []
+    read = 0
+
+    async def receive():
+        nonlocal read
+        read += 1
+        body = chunks[read - 1]
+        return {"type": "http.request", "body": body, "more_body": read < len(chunks)}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "path": "/echo", "headers": headers}
+    asyncio.run(middleware(scope, receive, send))
+    start = next(m for m in sent if m["type"] == "http.response.start")
+    payload = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
+    return start["status"], payload, read
+
+
+CARD_JSON = b'{"text": "card 4111 1111 1111 1111"}'
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [b"Application/JSON", b"application/json; charset=utf-8", b"TEXT/PLAIN;charset=UTF-8"],
+)
+def test_the_content_type_is_matched_case_insensitively(content_type: bytes) -> None:
+    route = Route()
+    mw = example.WardcatMiddleware(route, guard=guard())
+    status, _ = call(mw, CARD_JSON, content_type=content_type)
+    assert status == 200
+    assert len(route.bodies) == 1
+    assert b"4111" not in route.bodies[0]
+
+
+def test_a_json_suffix_type_is_scanned_as_json() -> None:
+    route = Route()
+    mw = example.WardcatMiddleware(route, guard=guard(), content_types=("application/",))
+    call(mw, CARD_JSON, content_type=b"application/vnd.api+json")
+    assert json.loads(route.bodies[0]) == {"text": "card [CREDIT_CARD]"}
+
+
+def test_a_request_without_a_content_type_is_scanned_as_text() -> None:
+    route = Route()
+    mw = example.WardcatMiddleware(route, guard=guard())
+    status, _, _ = call_raw(mw, [b"card 4111 1111 1111 1111"], headers=[])
+    assert status == 200
+    assert route.bodies == [b"card [CREDIT_CARD]"]
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [b"application/x-www-form-urlencoded", b"multipart/form-data; boundary=x", b"image/png"],
+)
+def test_a_type_it_cannot_scan_is_refused_by_default(content_type: bytes) -> None:
+    route = Route()
+    mw = example.WardcatMiddleware(route, guard=guard())
+    status, payload = call(mw, b"card=4111111111111111", content_type=content_type)
+    assert status == 415
+    assert route.bodies == []
+    assert b"4111" not in payload
+
+
+def test_passing_an_unscannable_type_is_an_explicit_choice() -> None:
+    route = Route()
+    mw = example.WardcatMiddleware(route, guard=guard(), on_unscanned="pass")
+    status, _ = call(mw, b"card=4111111111111111", content_type=b"multipart/form-data")
+    assert status == 200
+    assert route.bodies == [b"card=4111111111111111"]
+
+
+def test_an_unknown_on_unscanned_is_rejected() -> None:
+    with pytest.raises(ValueError, match="on_unscanned"):
+        example.WardcatMiddleware(Route(), guard=guard(), on_unscanned="ignore")
+
+
+def test_an_oversized_streamed_body_is_not_read_to_the_end() -> None:
+    route = Route()
+    mw = example.WardcatMiddleware(route, guard=guard(), max_body_bytes=100)
+    chunks = [b"x" * 60] * 50  # 3000 bytes in 60-byte parts
+    status, _, read = call_raw(mw, chunks, headers=[(b"content-type", b"text/plain")])
+    assert status == 413
+    assert route.bodies == []
+    # It stops at the part that crosses the limit, not after all fifty.
+    assert read == 2

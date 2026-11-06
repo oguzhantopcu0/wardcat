@@ -34,6 +34,14 @@ matched like its plain form, and offsets still point into the original text.
 That is `normalize_confusables`, on by default; it is a curated skeleton rather
 than the full Unicode table, so an exotic lookalike may still slip through.
 
+Invisible characters cannot split a value either. Before matching, the regex
+layer and the denylist ignore format characters — zero-width spaces and joiners,
+the BOM, soft hyphens, bidi controls — and variation selectors, read NBSP, thin
+and other non-ASCII spaces as plain spaces, and read any decimal digit
+(Devanagari, mathematical bold, …) as its ASCII digit. So a card number with a zero-width space (U+200B)
+between its groups is still a card, and the span that is replaced covers the
+invisible characters too. That is `normalize_invisible`, on by default.
+
 **Checksum-validated, so a match is proof rather than a guess:** `TC_ID` (Nüfus
 İdaresi, whole or grouped `111 654 670 34`), `IBAN` (mod-97), `CREDIT_CARD` (Luhn,
 Troy included), `CRYPTO_WALLET` (Base58Check for

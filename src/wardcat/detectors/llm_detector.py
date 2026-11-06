@@ -32,8 +32,38 @@ from wardcat.utils.text import chunk_by_paragraph, strip_name_suffix
 
 logger = logging.getLogger(__name__)
 
-# For extracting the JSON array from the LLM response
-_JSON_RE = re.compile(r"\[.*?\]", re.DOTALL)
+# A reply is searched for its JSON list from each "[" in turn; this bounds the
+# attempts on a reply full of brackets that are not JSON.
+_MAX_LIST_STARTS = 256
+
+
+def _find_json_list(raw: str) -> list | None:
+    """The JSON list in a model reply, or ``None`` if there is none.
+
+    Each ``[`` is tried as the start of a JSON value with a real decoder, so a
+    ``]`` inside a string value does not end the list (a regex stopping at the
+    first ``]`` cut ``"Blok [A] No 5"`` in two). The first list holding an
+    object wins — a stray ``[1]`` in the model's explanation is not the answer —
+    and failing that, the first list of any kind.
+    """
+    decoder = json.JSONDecoder()
+    first: list | None = None
+    start = raw.find("[")
+    attempts = 0
+    while start != -1 and attempts < _MAX_LIST_STARTS:
+        attempts += 1
+        try:
+            value, end = decoder.raw_decode(raw, start)
+        except json.JSONDecodeError:
+            start = raw.find("[", start + 1)
+            continue
+        if isinstance(value, list):
+            if any(isinstance(item, dict) for item in value):
+                return value
+            if first is None:
+                first = value
+        start = raw.find("[", end)
+    return first
 
 
 class UnreadableReply(ValueError):
@@ -323,29 +353,50 @@ class LLMDetector(BaseDetector):
         a refused connection, an HTTP timeout — counts as a failure and is
         re-raised unchanged, so the callers' error handling is unaffected.
         """
-        self.breaker.check()
-        with self._sync_gate:
-            try:
-                reply = self.backend.complete_messages(messages, timeout=self.timeout)
-            except Exception:
-                self.breaker.record_failure()
-                raise
-        self.breaker.record_success()
-        return reply
+        trial = self.breaker.check()
+        settled = False
+        try:
+            with self._sync_gate:
+                try:
+                    reply = self.backend.complete_messages(messages, timeout=self.timeout)
+                except Exception:
+                    settled = True
+                    self.breaker.record_failure()
+                    raise
+            settled = True
+            self.breaker.record_success()
+            return reply
+        finally:
+            # Interrupted (KeyboardInterrupt, SystemExit): neither outcome was
+            # recorded, so a held trial must be handed back.
+            if trial and not settled:
+                self.breaker.release_trial()
 
     async def complete_messages_async(self, messages: list[dict]) -> str:
         """Async twin of :meth:`complete_messages`."""
-        self.breaker.check()
-        if self._async_gate is None:
-            self._async_gate = asyncio.Semaphore(self.max_concurrency)
-        async with self._async_gate:
-            try:
-                reply = await self.backend.complete_messages_async(messages, timeout=self.timeout)
-            except Exception:
-                self.breaker.record_failure()
-                raise
-        self.breaker.record_success()
-        return reply
+        trial = self.breaker.check()
+        settled = False
+        try:
+            if self._async_gate is None:
+                self._async_gate = asyncio.Semaphore(self.max_concurrency)
+            async with self._async_gate:
+                try:
+                    reply = await self.backend.complete_messages_async(
+                        messages, timeout=self.timeout
+                    )
+                except Exception:
+                    settled = True
+                    self.breaker.record_failure()
+                    raise
+            settled = True
+            self.breaker.record_success()
+            return reply
+        finally:
+            # Cancelled — while waiting for the gate or for the backend. A
+            # CancelledError is not an Exception, so nothing was recorded and
+            # a held trial would otherwise stay taken forever.
+            if trial and not settled:
+                self.breaker.release_trial()
 
     # ------------------------------------------------------------------
 
@@ -403,7 +454,8 @@ class LLMDetector(BaseDetector):
         Extract the JSON array from the LLM response.
 
         Small models sometimes add ```json ... ``` blocks or
-        explanatory text; these are cleaned up with regex. A reply with no
+        explanatory text; the list is found with a JSON decoder (see
+        :func:`_find_json_list`). A reply with no
         readable JSON list raises :class:`UnreadableReply` — an empty list is
         an answer, an unreadable reply is not.
         """
@@ -411,19 +463,13 @@ class LLMDetector(BaseDetector):
         # the answer. Then strip the markdown code block.
         raw = re.sub(r"```(?:json)?", "", strip_reasoning(raw)).strip()
 
-        match = _JSON_RE.search(raw)
-        if not match:
+        if "[" not in raw:
             logger.debug("No JSON array found in LLM response (%s)", describe(raw))
             raise UnreadableReply("the reply held no JSON list")
-
-        try:
-            data = json.loads(match.group())
-        except json.JSONDecodeError as exc:
-            logger.debug("LLM response JSON parse error: %s (%s)", exc, describe(raw))
-            raise UnreadableReply("the reply's JSON list did not parse") from None
-        if not isinstance(data, list):
-            logger.debug("LLM JSON response is not a list: %r", type(data).__name__)
-            raise UnreadableReply("the reply's JSON was not a list")
+        data = _find_json_list(raw)
+        if data is None:
+            logger.debug("LLM response JSON list did not parse (%s)", describe(raw))
+            raise UnreadableReply("the reply's JSON list did not parse")
         # The list has to hold objects. Asked for [{"type": …, "text": …}] a
         # small model will sometimes answer with bare strings instead —
         # ["Ali Veli", "ali@firma.com"] — and _locate_spans() calls .get() on

@@ -384,8 +384,8 @@ class Wardcat(EntityPolicyMixin):
         Scan multiple texts in parallel using a thread pool.
 
         Each text is scanned independently; an error in a single item does
-        not affect the others — the original text is returned untouched
-        for any item that fails.
+        not affect the others. An item that fails has ``scan_error`` set and
+        an empty ``sanitized_text`` — never the unscanned input.
 
         :param texts:       List of texts to scan
         :param max_workers: Number of parallel threads. Defaults to the
@@ -412,7 +412,8 @@ class Wardcat(EntityPolicyMixin):
 
         Each text is scanned independently via :meth:`scan_async`; all are
         run concurrently with ``asyncio.gather``.  Errors in individual items
-        are caught — the original text is returned with ``scan_error`` set.
+        are caught — the item gets ``scan_error`` set and an empty
+        ``sanitized_text``.
         """
         if not texts:
             return []
@@ -428,14 +429,14 @@ class Wardcat(EntityPolicyMixin):
                 raise
             except Exception as exc:
                 logger.error(
-                    "scan_batch_async item %d failed (%s: %s), returning original text.",
+                    "scan_batch_async item %d failed (%s: %s), returning empty text.",
                     idx,
                     type(exc).__name__,
                     exc,
                 )
                 return idx, ScanResult(
                     original_text=text,
-                    sanitized_text=text,
+                    sanitized_text="",
                     violations=[],
                     scan_error=f"{type(exc).__name__}: {exc}",
                     warnings=list(self._engine.build_warnings),
@@ -1054,6 +1055,7 @@ class Wardcat(EntityPolicyMixin):
                     custom_patterns=custom_patterns,
                     fold_confusables_enabled=self._config.get("normalize_confusables", True),
                     phone_regions=self._config.get("phone_regions") or None,
+                    normalize_invisible=self._config.get("normalize_invisible", True),
                 )
             )
 

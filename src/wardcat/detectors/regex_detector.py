@@ -8,7 +8,13 @@ from collections.abc import Callable
 
 from wardcat.detectors.base import BaseDetector, DetectedSpan
 from wardcat.utils.logsafe import describe
-from wardcat.utils.normalize import fold_confusables, has_confusables
+from wardcat.utils.normalize import (
+    fold_confusables,
+    has_confusables,
+    needs_matching_prep,
+    prepare_for_matching,
+    to_original_span,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +205,10 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         # Turkish: 1-3 *capitalized* words before the street-type keyword (so it
         # can't swallow lowercase filler like "iletişime geçilebilir adresi" or
         # cross a sentence boundary), then an optional No:/Daire:/Kat: tail.
+        # It starts only at the start of a word: without the lookbehind every
+        # letter of a long word was a fresh start that rescanned the word, which
+        # made the pattern quadratic in the word's length.
+        r"(?<![A-Za-zÇĞİÖŞÜçğıöşü0-9])"
         r"(?:[A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğışöşü0-9]*\s+){1,3}"
         r"(?:Mahallesi|Mah\.|Caddesi|Cad\.|Sokağı|Sokak|Sok\.|Bulvarı|Blv\."
         r"|Apartmanı|Apt\.|Sitesi)"
@@ -343,7 +353,10 @@ _PATTERNS: dict[str, tuple[str, int]] = {
         r"(?:₺|\$|€|£)\s*\d+(?:[.,]\d+)*(?:\s*(?:milyon|milyar|bin|million|billion|trillion|thousand))?"
         r"|"
         # Amount then TL/lira: 85.000 TL / 47.3 milyon TL
-        r"\b\d+(?:[.,]\d+)*(?:\s*(?:milyon|milyar|bin))?\s*(?:TL|lira)\b",
+        # It starts only where a number starts — not after a digit, nor after a
+        # digit and its separator. Otherwise "1.1.1.…" restarted at every digit
+        # and rescanned the rest, which was quadratic.
+        r"(?<!\d)(?<!\d[.,])\b\d+(?:[.,]\d+)*(?:\s*(?:milyon|milyar|bin))?\s*(?:TL|lira)\b",
         re.IGNORECASE,
     ),
     # ── VAT / Tax Number ──────────────────────────────────────────────
@@ -1108,6 +1121,7 @@ class RegexDetector(BaseDetector):
         *,
         fold_confusables_enabled: bool = True,
         phone_regions: list[str] | None = None,
+        normalize_invisible: bool = True,
     ) -> None:
         self.enabled_entities = enabled_entities
         # When set, PHONE detection is delegated to libphonenumber for these CLDR
@@ -1139,6 +1153,10 @@ class RegexDetector(BaseDetector):
         # digits) is still detected. Folding is length-preserving, so spans are
         # reported against the original text. See wardcat.utils.normalize.
         self._fold_confusables = fold_confusables_enabled
+        # When True, invisible characters (zero-width, soft hyphen, bidi
+        # controls) are dropped, odd spaces become plain ones and foreign
+        # digits become ASCII before matching — see prepare_for_matching.
+        self._normalize_invisible = normalize_invisible
         custom_patterns = custom_patterns or {}
         # Compile custom patterns: {entity_type: (compiled_pattern, action)}
         self._custom_compiled: dict[str, tuple[re.Pattern, str]] = {}
@@ -1181,6 +1199,19 @@ class RegexDetector(BaseDetector):
 
     def detect(self, text: str, candidates: list[DetectedSpan] | None = None) -> list[DetectedSpan]:
         """Return all regex matches for enabled entity types."""
+        if not (self._normalize_invisible and needs_matching_prep(text)):
+            return self._detect_prepared(text)
+        # Match on a copy without the invisible characters, then report each span
+        # against the original: its slice still holds them, so they are replaced
+        # along with the value instead of being left behind in the output.
+        prepared, index_map = prepare_for_matching(text)
+        spans = self._detect_prepared(prepared)
+        for span in spans:
+            span.start, span.end = to_original_span(span.start, span.end, index_map)
+            span.text = text[span.start : span.end]
+        return spans
+
+    def _detect_prepared(self, text: str) -> list[DetectedSpan]:
         spans: list[DetectedSpan] = []
 
         # Run matching on a confusable-folded copy so homoglyph-obfuscated PII is

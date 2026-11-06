@@ -21,6 +21,8 @@ unambiguous, same-case Latin lookalikes plus digit/fullwidth ranges. NFKC is
 
 from __future__ import annotations
 
+import unicodedata
+
 # ── Curated confusable → ASCII map ────────────────────────────────────────────
 # Cyrillic letters that are visually identical to a Latin letter of the SAME case.
 # (Case-ambiguous ones like Cyrillic "р" vs Latin "p" are kept; genuinely
@@ -111,6 +113,8 @@ _DIGITS: dict[str, str] = {
 _TABLE: dict[int, str] = {
     ord(k): v for k, v in {**_CYRILLIC, **_GREEK, **_DIGITS, **_fullwidth_letters()}.items()
 }
+# Fullwidth commercial at: ``ali＠example.com`` is an email to a reader.
+_TABLE[0xFF20] = "@"
 
 
 def fold_confusables(text: str) -> str:
@@ -131,3 +135,76 @@ def has_confusables(text: str) -> bool:
     all-ASCII case.
     """
     return any(ord(ch) in _TABLE for ch in text)
+
+
+# ── Invisible characters ──────────────────────────────────────────────────────
+# Folding cannot delete a character, so a zero-width space inside a card number
+# survives it and splits the number in two. Matching therefore runs on a
+# *prepared* copy that drops such characters, with an index map back to the
+# original so spans still cover the original text — the invisible characters
+# inside a value included.
+
+# Not format characters (Cf), but invisible all the same: the combining
+# grapheme joiner and the variation selectors.
+_DROP_EXTRA = frozenset({0x034F, *range(0xFE00, 0xFE10), *range(0xE0100, 0xE01F0)})
+
+
+def _prepared_char(ch: str) -> str | None:
+    """What *ch* becomes in the prepared copy: ``None`` drops it."""
+    code = ord(ch)
+    if code < 0x80:
+        return ch
+    if code in _DROP_EXTRA:
+        return None
+    category = unicodedata.category(ch)
+    if category == "Cf":
+        return None
+    if category == "Zs":
+        return " "
+    if category == "Nd":
+        return str(unicodedata.decimal(ch))
+    return ch
+
+
+def needs_matching_prep(text: str) -> bool:
+    """True if :func:`prepare_for_matching` would change *text*.
+
+    Lets callers keep the direct path for the common case. Plain ASCII, and
+    text whose only non-ASCII characters are letters (Turkish, say), needs
+    nothing.
+    """
+    if text.isascii():
+        return False
+    return any(ord(ch) >= 0x80 and _prepared_char(ch) != ch for ch in text)
+
+
+def prepare_for_matching(text: str) -> tuple[str, list[int]]:
+    """Return a copy of *text* fit for pattern matching, and an index map.
+
+    Format characters (Unicode category ``Cf``: zero-width space and joiners,
+    the BOM, soft hyphen, bidi controls) and variation selectors are dropped;
+    every space separator (``Zs``: NBSP, thin and narrow spaces) becomes a plain
+    space; every decimal digit (``Nd``: Devanagari, mathematical, …) becomes its
+    ASCII digit. ``index_map[i]`` is the position in *text* of the prepared
+    copy's ``i``-th character, so a match ``[s, e)`` in the copy covers
+    ``[index_map[s], index_map[e - 1] + 1)`` in the original.
+
+    Confusable folding is separate (:func:`fold_confusables`); it preserves
+    length and can run on the prepared copy afterwards.
+    """
+    chars: list[str] = []
+    index_map: list[int] = []
+    for i, ch in enumerate(text):
+        out = _prepared_char(ch)
+        if out is not None:
+            chars.append(out)
+            index_map.append(i)
+    return "".join(chars), index_map
+
+
+def to_original_span(start: int, end: int, index_map: list[int]) -> tuple[int, int]:
+    """Map a ``[start, end)`` span of a prepared copy back to the original."""
+    if end <= start:
+        position = index_map[start] if start < len(index_map) else index_map[-1] + 1
+        return position, position
+    return index_map[start], index_map[end - 1] + 1
