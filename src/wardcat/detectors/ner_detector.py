@@ -251,6 +251,26 @@ _LEGAL_FORM = re.compile(
     re.IGNORECASE,
 )
 
+# A house number just before a span, on its line: "913 Zachary Coves",
+# "4823 Ringvej". Models label the street that follows PERSON or ORG readily.
+# The number must stand on its own (line start or whitespace before it), so an
+# amount ("US$1,00 Antonina …") or a reference ("A12345 Anna …") does not count,
+# and a four-digit year is left out: "In 2019 Google …" names a company.
+_HOUSE_NUMBER_BEFORE = re.compile(r"\d{1,6}[A-Za-z]?[ \t]+$")
+_YEAR = re.compile(r"(?:19|20)\d\d")
+
+
+def _after_house_number(text: str, start: int) -> bool:
+    """Is the span at *start* preceded, on its own line, by a house number?"""
+    line_start = text.rfind("\n", 0, start) + 1
+    match = _HOUSE_NUMBER_BEFORE.search(text, max(line_start, start - 16), start)
+    if match is None:
+        return False
+    if match.start() > line_start and not text[match.start() - 1].isspace():
+        return False
+    number = match.group().rstrip()
+    return not _YEAR.fullmatch(number)
+
 
 def _best_line(text: str, start: int, end: int) -> tuple[str, int, int]:
     """Keep the one line of a multi-line span that names the entity.
@@ -508,6 +528,21 @@ class NERDetector(BaseDetector):
             if mapped == "ORG" and _STREET_LAST_WORD.fullmatch(value.split()[-1]):
                 logger.debug("NER ORG filtered (ends in a street designator): %s", describe(value))
                 continue
+            # A name right after a house number is the street of an address.
+            # It is reported as one where addresses are wanted and dropped
+            # otherwise; a company whose name closes on a legal form keeps its
+            # label ("3 Round Stones Inc").
+            if (
+                mapped in ("PERSON", "ORG")
+                and _after_house_number(text, start)
+                and not (mapped == "ORG" and _LEGAL_FORM.search(value))
+            ):
+                if "ADDRESS" not in self.enabled_entities:
+                    logger.debug(
+                        "NER %s filtered (after a house number): %s", mapped, describe(value)
+                    )
+                    continue
+                mapped = "ADDRESS"
             spans.append(
                 DetectedSpan(
                     entity_type=mapped,

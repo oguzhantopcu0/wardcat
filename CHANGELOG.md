@@ -35,6 +35,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written as `[dot]`, `(nokta)`, `[punkt]` and the like. The bracket is what
   keeps the form apart from prose, so a spoken "john dot doe at gmail dot com"
   is still left to the LLM layer.
+- **A street after a house number is no longer reported as a person or a
+  company.** SpaCy labels the street in "913 Zachary Coves" or "4823 Ringvej"
+  `PERSON` or `ORG` readily; it was the largest single source of NER false
+  positives. A `PERSON` or `ORG` span preceded on its line by a house number is
+  now reported as `ADDRESS` when the NER layer covers addresses, and dropped
+  otherwise. The number must stand on its own, so an amount (`US$1,00 Anna …`)
+  or a reference (`A12345 Anna …`) does not count; a four-digit year is not a
+  house number ("In 2019 Google …"), and a company whose name closes on a
+  legal form keeps its label ("3 Round Stones Inc"). On the
+  presidio-research corpus NER false positives fall from 436 to 361 with no
+  true positive lost (F1 0.763 → 0.782); on the held-out Gretel corpus from
+  9,616 to 8,991 for 4 true positives (F1 0.508 → 0.521).
 
 ## [1.2.3] — 2026-11-07
 
