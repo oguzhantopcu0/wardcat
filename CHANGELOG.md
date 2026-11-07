@@ -76,6 +76,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `max_body_bytes`.
 - **A SpaCy pipeline without NER is not loaded again on every rebuild.** The
   refusal is cached, so the multi-second load happens once.
+- **A YAML policy's `layers:` is applied instead of ignored.** An entity entry
+  such as `EMAIL: {enabled: true, action: redact, layers: [llm]}` was accepted
+  and silently dropped, so the regex layer went on masking EMAIL and nothing
+  said the setting had no effect. It is now routed exactly as
+  `add_entity(layers=[...])` routes it.
+
+### Changed
+
+- **An unknown key in a YAML entity entry is an error.** `layer:` for
+  `layers:`, say, used to be ignored without a word; it now raises
+  `ConfigError` naming the valid keys. A policy file with such a typo stops
+  loading — deliberately, since the setting it meant was never in force.
+- **A salt or LLM API key written into a policy file is warned about.** The
+  file goes wherever the policy goes; the warning names the key, never its
+  value, and points at passing secrets from the environment.
+  `wardcat check-config` now prints every warning the loader raises, on
+  standard error.
 
 ## [1.2.2] — 2026-11-05
 

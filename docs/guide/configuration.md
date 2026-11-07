@@ -183,6 +183,11 @@ model server queues what it cannot run, so more only adds latency.
 
 ## YAML reference
 
+An entity entry takes `enabled`, `action`, `min_confidence` and `layers`
+(`[regex]`, `[ner]`, `[llm]` or a combination, as `add_entity(layers=...)`);
+any other key is an error. Keep the salt and API keys out of the file — the
+loader warns when it finds one — and pass them from the environment instead.
+
 ```yaml
 salt: ""                 # read it from the environment in your application
 use_ner: false           # NER is off by default; set true AND name a model below
