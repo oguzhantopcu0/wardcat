@@ -81,6 +81,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and silently dropped, so the regex layer went on masking EMAIL and nothing
   said the setting had no effect. It is now routed exactly as
   `add_entity(layers=[...])` routes it.
+- **A SpaCy model downloaded through wardcat lands in wardcat's own
+  environment.** `with_ner(auto_download=True)` ran `uv pip install` without
+  `--python`, so the model went into whichever virtual environment the working
+  directory or `VIRTUAL_ENV` named and stayed missing for the wardcat that
+  asked for it. `is_installed()` now also sees a model installed while the
+  process runs.
 
 ### Changed
 
