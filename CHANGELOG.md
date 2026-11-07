@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   64677"), which also dropped "48 Factoring Inc" and "Atlas 360 A.Ş.". A name
   that closes on a legal form (`Inc`, `Ltd`, `LLC`, `GmbH`, `A.Ş.` …) is now
   kept; a slash or colon still marks a code or an address.
+- **An e-mail address written with a bracketed "at" is found.**
+  `m.alvarez[at]protonmail[dot]com` and `ali.veli(at)firma(nokta)com` hide an
+  address from harvesters, not from a reader, and the plain pattern needed a
+  literal `@`. A `[at]`, `(at)` or `{at}` between a local part and a domain
+  ending in an alphabetic top-level domain is now an `EMAIL`; the dots may be
+  written as `[dot]`, `(nokta)`, `[punkt]` and the like. The bracket is what
+  keeps the form apart from prose, so a spoken "john dot doe at gmail dot com"
+  is still left to the LLM layer.
 
 ## [1.2.3] — 2026-11-07
 
