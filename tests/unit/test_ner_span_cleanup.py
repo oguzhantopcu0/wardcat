@@ -141,3 +141,19 @@ class TestOrganisationFilters:
         text = "She reads the Wall Street Journal."
 
         assert reported(text, ("ORG", "Wall Street Journal")) == [("ORG", "Wall Street Journal")]
+
+    @pytest.mark.parametrize(
+        "company", ["48 Factoring Inc", "21st Century Holding", "Sigma 7 GmbH", "Atlas 360 A.Ş."]
+    )
+    def test_a_company_with_a_number_in_its_name_is_kept(self, company: str) -> None:
+        # The digit filter is there for address fragments ("CO Uruguay 64677");
+        # a name that ends in a legal form is a company whatever digits it holds.
+        # (A closing full stop is edge punctuation and is trimmed, as for "Inc.".)
+        kept = company.rstrip(".")
+        assert reported(f"I work for {company} now", ("ORG", company)) == [("ORG", kept)]
+
+    @pytest.mark.parametrize(
+        "fragment", ["CO Uruguay 64677", "Apt 4 Holding 12", "Co 12/4", "Ltd 3:2"]
+    )
+    def test_digits_without_a_closing_legal_form_still_filter(self, fragment: str) -> None:
+        assert reported(f"at {fragment} today", ("ORG", fragment)) == []

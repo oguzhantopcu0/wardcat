@@ -492,7 +492,14 @@ class NERDetector(BaseDetector):
             # or a code, not a company: models label "CO Uruguay 64677" ORG readily.
             # The street-keyword list is deliberately *not* applied here — it would
             # take "Wall Street Journal" with it.
-            if mapped == "ORG" and _NON_PERSON_CHARS.search(value):
+            # A name that closes on a legal form ("48 Factoring Inc", "Atlas 360
+            # A.Ş.") is a company whatever digits it carries; a slash or colon
+            # still marks a code or an address.
+            if (
+                mapped == "ORG"
+                and _NON_PERSON_CHARS.search(value)
+                and not (_LEGAL_FORM.search(value) and not re.search(r"[/:]", value))
+            ):
                 logger.debug("NER ORG filtered (digits/address punctuation): %s", describe(value))
                 continue
             if mapped == "ORG" and sum(c.isalpha() for c in value) < 2:

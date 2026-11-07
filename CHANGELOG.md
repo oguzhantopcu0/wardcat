@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Luhn-checked too, is left alone. On the presidio-research corpus
   CREDIT_CARD F1 goes from 0.958 to 0.993, and on the held-out Gretel corpus
   from 0.605 to 0.647, with no new false positive on either.
+- **A company with a number in its name is kept by the NER layer.** An `ORG`
+  span holding a digit was dropped as an address fragment ("CO Uruguay
+  64677"), which also dropped "48 Factoring Inc" and "Atlas 360 A.Ş.". A name
+  that closes on a legal form (`Inc`, `Ltd`, `LLC`, `GmbH`, `A.Ş.` …) is now
+  kept; a slash or colon still marks a code or an address.
 
 ## [1.2.3] — 2026-11-07
 
