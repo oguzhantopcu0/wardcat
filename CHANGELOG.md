@@ -87,6 +87,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directory or `VIRTUAL_ENV` named and stayed missing for the wardcat that
   asked for it. `is_installed()` now also sees a model installed while the
   process runs.
+- **PHONE masking shows the last four digits, as documented.** The mask was
+  cut from the raw text, so a number written in groups showed a separator in
+  place of a digit (`+90 532 123 45 67` → `*************5 67`) and kept its
+  original layout in the mask's length. It is now built over the digits, like
+  `CREDIT_CARD`'s: `********4567`. `PHONE` is masked by the `kvkk`, `gdpr`
+  and `hipaa_lite` presets.
 
 ### Changed
 

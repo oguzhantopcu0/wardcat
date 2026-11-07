@@ -388,6 +388,30 @@ class TestEntityAwareMask:
         assert result.endswith("950")
         assert result.startswith("*")
 
+    @pytest.mark.parametrize(
+        ("phone", "expected"),
+        [
+            ("+90 532 123 45 67", "********4567"),
+            ("0532 123 45 67", "*******4567"),
+            ("(0212) 680 18 33", "*******1833"),
+            ("+1 415 555 0142", "*******0142"),
+            ("05321234567", "*******4567"),
+        ],
+    )
+    def test_phone_mask_shows_last_4_digits(self, phone, expected):
+        # Masked over the digits, like CREDIT_CARD: slicing the raw text showed
+        # three digits and a separator for any number written in groups, and
+        # its length gave away the original layout.
+        from wardcat.core.actions import _mask_value
+
+        assert _mask_value("PHONE", phone) == expected
+
+    def test_phone_mask_in_a_scan(self):
+        guard = Wardcat().add_entity("PHONE", action="mask")
+        result = guard.scan("Arayın: +90 532 123 45 67")
+        assert [v.replacement for v in result.violations] == ["********4567"]
+        assert result.sanitized_text == "Arayın: ********4567"
+
     def test_default_mask_first2_last2(self):
         from wardcat.core.actions import _mask_value
 
