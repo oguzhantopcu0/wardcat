@@ -200,7 +200,7 @@ def _mask_value(entity_type: str, text: str) -> str:
     SSN            Standard US format: ``***-**-6789``
     IBAN           Country code + last 4: ``TR**...**1326``
     TC_ID          Last 3 digits: ``********950``
-    NIN            Last 3: ``AB123***``
+    NIN            Last 3 chars visible: ``******56C``
     *default*      First 2 + stars + last 2: ``ab****cd``
     ============== =================================================
     """
@@ -221,9 +221,12 @@ def _mask_value(entity_type: str, text: str) -> str:
         return "*" * n
 
     if entity_type == "PHONE":
+        # Over the digits, as for CREDIT_CARD: slicing the raw text would show
+        # a separator in place of a digit ("+90 532 123 45 67" -> "…5 67") and
+        # keep the original layout in the mask's length.
         digits = re.sub(r"[^0-9]", "", text)
         if len(digits) >= 4:
-            return "*" * (n - 4) + text[-4:]
+            return "*" * (len(digits) - 4) + digits[-4:]
         return "*" * n
 
     if entity_type == "SSN":

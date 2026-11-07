@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.2.3] — 2026-11-06
+## [1.2.3] — 2026-11-07
 
 ### Security
 
@@ -76,6 +76,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `max_body_bytes`.
 - **A SpaCy pipeline without NER is not loaded again on every rebuild.** The
   refusal is cached, so the multi-second load happens once.
+- **A YAML policy's `layers:` is applied instead of ignored.** An entity entry
+  such as `EMAIL: {enabled: true, action: redact, layers: [llm]}` was accepted
+  and silently dropped, so the regex layer went on masking EMAIL and nothing
+  said the setting had no effect. It is now routed exactly as
+  `add_entity(layers=[...])` routes it.
+- **A SpaCy model downloaded through wardcat lands in wardcat's own
+  environment.** `with_ner(auto_download=True)` ran `uv pip install` without
+  `--python`, so the model went into whichever virtual environment the working
+  directory or `VIRTUAL_ENV` named and stayed missing for the wardcat that
+  asked for it. `is_installed()` now also sees a model installed while the
+  process runs.
+- **PHONE masking shows the last four digits, as documented.** The mask was
+  cut from the raw text, so a number written in groups showed a separator in
+  place of a digit (`+90 532 123 45 67` → `*************5 67`) and kept its
+  original layout in the mask's length. It is now built over the digits, like
+  `CREDIT_CARD`'s: `********4567`. `PHONE` is masked by the `kvkk`, `gdpr`
+  and `hipaa_lite` presets.
+- **A card number the text calls a card is found outside the listed issuer
+  ranges.** The built-in pattern offers a digit run to the Luhn check only when
+  its prefix belongs to a scheme it lists, so a UnionPay (62), Mir
+  (2200-2204), private-label or newly issued card was missed even in "credit
+  card 6280 6542 3511 6151". A 12-19 digit number right after a card word
+  (`card`, `cc`, `kredi kartı`, `Karte`, `carte`, `tarjeta`, with `number`,
+  `no`, `numarası` …) that passes Luhn is now reported at the fuzzy tier
+  (0.90), as a keyword-cued SSN is. A SIM card's ICCID, which is
+  Luhn-checked too, is left alone. On the presidio-research corpus
+  CREDIT_CARD F1 goes from 0.958 to 0.993, and on the held-out Gretel corpus
+  from 0.605 to 0.647, with no new false positive on either.
+- **A company with a number in its name is kept by the NER layer.** An `ORG`
+  span holding a digit was dropped as an address fragment ("CO Uruguay
+  64677"), which also dropped "48 Factoring Inc" and "Atlas 360 A.Ş.". A name
+  that closes on a legal form (`Inc`, `Ltd`, `LLC`, `GmbH`, `A.Ş.` …) is now
+  kept; a slash or colon still marks a code or an address.
+- **An e-mail address written with a bracketed "at" is found.**
+  `m.alvarez[at]protonmail[dot]com` and `ali.veli(at)firma(nokta)com` hide an
+  address from harvesters, not from a reader, and the plain pattern needed a
+  literal `@`. A `[at]`, `(at)` or `{at}` between a local part and a domain
+  ending in an alphabetic top-level domain is now an `EMAIL`; the dots may be
+  written as `[dot]`, `(nokta)`, `[punkt]` and the like. The bracket is what
+  keeps the form apart from prose, so a spoken "john dot doe at gmail dot com"
+  is still left to the LLM layer.
+- **A street after a house number is no longer reported as a person or a
+  company.** SpaCy labels the street in "913 Zachary Coves" or "4823 Ringvej"
+  `PERSON` or `ORG` readily; it was the largest single source of NER false
+  positives. A `PERSON` or `ORG` span preceded on its line by a house number is
+  now reported as `ADDRESS` when the NER layer covers addresses, and dropped
+  otherwise. The number must stand on its own, so an amount (`US$1,00 Anna …`)
+  or a reference (`A12345 Anna …`) does not count; a four-digit year is not a
+  house number ("In 2019 Google …"), and a company whose name closes on a
+  legal form keeps its label ("3 Round Stones Inc"). On the
+  presidio-research corpus NER false positives fall from 436 to 361 with no
+  true positive lost (F1 0.763 → 0.782); on the held-out Gretel corpus from
+  9,616 to 8,991 for 4 true positives (F1 0.508 → 0.521).
+
+### Changed
+
+- **An unknown key in a YAML entity entry is an error.** `layer:` for
+  `layers:`, say, used to be ignored without a word; it now raises
+  `ConfigError` naming the valid keys. A policy file with such a typo stops
+  loading — deliberately, since the setting it meant was never in force.
+- **A salt or LLM API key written into a policy file is warned about.** The
+  file goes wherever the policy goes; the warning names the key, never its
+  value, and points at passing secrets from the environment.
+  `wardcat check-config` now prints every warning the loader raises, on
+  standard error.
 
 ## [1.2.2] — 2026-11-05
 

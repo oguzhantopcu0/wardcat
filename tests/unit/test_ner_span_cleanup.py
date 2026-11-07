@@ -141,3 +141,69 @@ class TestOrganisationFilters:
         text = "She reads the Wall Street Journal."
 
         assert reported(text, ("ORG", "Wall Street Journal")) == [("ORG", "Wall Street Journal")]
+
+    @pytest.mark.parametrize(
+        "company", ["48 Factoring Inc", "21st Century Holding", "Sigma 7 GmbH", "Atlas 360 A.Ş."]
+    )
+    def test_a_company_with_a_number_in_its_name_is_kept(self, company: str) -> None:
+        # The digit filter is there for address fragments ("CO Uruguay 64677");
+        # a name that ends in a legal form is a company whatever digits it holds.
+        # (A closing full stop is edge punctuation and is trimmed, as for "Inc.".)
+        kept = company.rstrip(".")
+        assert reported(f"I work for {company} now", ("ORG", company)) == [("ORG", kept)]
+
+    @pytest.mark.parametrize(
+        "fragment", ["CO Uruguay 64677", "Apt 4 Holding 12", "Co 12/4", "Ltd 3:2"]
+    )
+    def test_digits_without_a_closing_legal_form_still_filter(self, fragment: str) -> None:
+        assert reported(f"at {fragment} today", ("ORG", fragment)) == []
+
+
+class TestStreetNamesAfterAHouseNumber:
+    """A name right after a house number is the street of an address.
+
+    Models label "913 Zachary Coves" or "4823 Ringvej" PERSON or ORG readily;
+    the number before it on the same line is what gives the street away.
+    """
+
+    @pytest.mark.parametrize(
+        ("text", "label", "value"),
+        [
+            ("Address: 913 Zachary Coves, 76119 Griffinmouth", "PERSON", "Zachary Coves"),
+            ("Drop me off at 4823 Ringvej 144 St.", "ORG", "Ringvej"),
+            ("Ship to 12B Gordon Terrace\nLondon", "PERSON", "Gordon Terrace"),
+        ],
+    )
+    def test_the_street_is_not_a_person_or_an_organisation(
+        self, text: str, label: str, value: str
+    ) -> None:
+        assert reported(text, (label, value)) == []
+
+    def test_it_is_reported_as_an_address_when_addresses_are_on(self) -> None:
+        text = "Address: 913 Zachary Coves, 76119 Griffinmouth"
+        detector = detector_returning(text, ("PERSON", "Zachary Coves"))
+        detector.enabled_entities = {"PERSON", "ORG", "ADDRESS"}
+
+        assert [(s.entity_type, s.text) for s in detector.detect(text)] == [
+            ("ADDRESS", "Zachary Coves")
+        ]
+
+    @pytest.mark.parametrize(
+        ("text", "label", "value"),
+        [
+            # The number is part of the company's name.
+            ("the keynote is from 3 Round Stones Inc this year", "ORG", "Round Stones Inc"),
+            # A year is not a house number.
+            ("In 2019 Google bought the company", "ORG", "Google"),
+            ("Since 1998 Anna Weber has run the branch", "PERSON", "Anna Weber"),
+            # Neither is an amount, nor a number glued to letters.
+            ("The fee will be US$1,00 Antonina Lussu signs it", "PERSON", "Antonina Lussu"),
+            ("Ref A12345 Anna Weber approved it", "PERSON", "Anna Weber"),
+            # A name does not continue a number on the line above.
+            ("Apt. 6612\nJohn Smith", "PERSON", "John Smith"),
+        ],
+    )
+    def test_a_name_after_another_kind_of_number_stays(
+        self, text: str, label: str, value: str
+    ) -> None:
+        assert reported(text, (label, value)) == [(label, value)]

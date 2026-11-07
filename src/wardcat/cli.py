@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 from collections.abc import Sequence
@@ -115,17 +116,33 @@ def _scan(args: argparse.Namespace) -> int:
     return EXIT_CLEAN if result.is_clean else EXIT_FOUND
 
 
+class _CollectWarnings(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
 def _check_config(args: argparse.Namespace) -> int:
     from wardcat import Wardcat
 
     # Loading runs every validation the library has: unknown keys, actions,
-    # entity specs, and the ReDoS screen on custom and denylist patterns.
-    guard = Wardcat(config_path=args.file)
-    warnings = list(guard._engine.build_warnings)
+    # entity specs, and the ReDoS screen on custom and denylist patterns. What
+    # the loader only warns about (an unknown top-level key, a secret written
+    # into the file) is collected and printed too.
+    collector = _CollectWarnings()
+    log = logging.getLogger("wardcat")
+    log.addHandler(collector)
+    try:
+        guard = Wardcat(config_path=args.file)
+    finally:
+        log.removeHandler(collector)
     policy = guard.entity_policy()
     print(f"{args.file}: ok, {len(policy)} entity type(s) enabled")
-    for warning in warnings:
-        print(f"warning: {warning}")
+    for warning in [*collector.messages, *guard._engine.build_warnings]:
+        print(f"warning: {warning}", file=sys.stderr)
     return EXIT_CLEAN
 
 

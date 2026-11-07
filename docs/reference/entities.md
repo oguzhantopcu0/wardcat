@@ -12,7 +12,7 @@ prompt: `wardcat entities [--layer regex|ner|llm]`; in code:
 
 | Entity | Default action | Description |
 |---|---|---|
-| `CREDIT_CARD` | `hash` | Visa (13/16/19-digit), MasterCard (`51`–`55` and the 2-series `2221`–`2720`), Amex, Discover, Diners, JCB (`3528`–`3589` and the legacy 15-digit `1800`/`2131`), Maestro, Troy — with or without separators; Luhn (mod-10) validated |
+| `CREDIT_CARD` | `hash` | Visa (13/16/19-digit), MasterCard (`51`–`55` and the 2-series `2221`–`2720`), Amex, Discover, Diners, JCB (`3528`–`3589` and the legacy 15-digit `1800`/`2131`), Maestro, Troy — with or without separators; Luhn (mod-10) validated. Any other 12–19 digit number that passes Luhn right after a card word (`card`, `cc`, `kredi kartı`, `Karte`, `carte`, `tarjeta`) — UnionPay, Mir, private-label — at the fuzzy tier; a SIM card's ICCID is not |
 | `IBAN` | `hash` | International IBAN — mod-97 checksum validated |
 | `SSN` | `hash` | US Social Security Number (123-45-6789), or written without dashes after its label |
 | `BANK_ROUTING` | `hash` | US bank routing number (ABA / RTN) — mod-10 checksum over a Federal Reserve prefix |
@@ -32,7 +32,7 @@ prompt: `wardcat entities [--layer regex|ner|llm]`; in code:
 
 | Entity | Default action | Description |
 |---|---|---|
-| `EMAIL` | `warn` | RFC-compliant email addresses |
+| `EMAIL` | `warn` | RFC-compliant email addresses, and the bracketed-at form (`name[at]example[dot]com`, `ali(at)firma(nokta)com`) |
 | `PHONE` | `warn` | Turkish (`0`, `+90`), French national (`01 23 45 67 89`), German mobile (`0151 …`), international E.164 (`+1`, `+44`, …), and any national format once it is labelled (`Phone:`, `call me at …`); other regions via [`with_phone_regions()`](../guide/configuration.md#phone-regions) |
 | `ADDRESS` | `warn` | Turkish (Cad., Sok., Mah.), English (Street, Avenue, Road…), French (Rue, Allée…), Spanish (Calle, Avenida…), Italian (Piazza, Corso…), Dutch (straat, gracht…), German (Straße, Weg, Platz…) |
 | `POSTAL_CODE` | `warn` | Turkish postal codes (01000–81999) |
