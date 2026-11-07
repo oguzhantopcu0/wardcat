@@ -131,7 +131,12 @@ the name, are kept whole.
 A multilingual gazetteer filters out job titles, abbreviations, form-field labels
 (`SSN`, `IBAN`, `Phone`) and postal designators (`P.O. Box`, `APO AP`) that NER
 models commonly mislabel as names or organisations. An organisation whose last
-word is a street designator (`Pollen Crescent`) is dropped as a street name.
+word is a street designator (`Pollen Crescent`) is dropped as a street name, and
+so is a name or organisation right after a house number on its line (`913
+Zachary Coves`, `4823 Ringvej`) — reported as `ADDRESS` instead when the NER
+layer covers addresses. A four-digit year before a name is not a house number
+(`In 2019 Google …`), and an organisation whose name closes on a legal form
+keeps its label (`3 Round Stones Inc`, `48 Factoring Inc`).
 
 Span edges are cleaned before a value is replaced, so one name keeps one
 placeholder. Of a span that crosses a line break — in an address block the model
