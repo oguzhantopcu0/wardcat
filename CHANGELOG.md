@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A card number the text calls a card is found outside the listed issuer
+  ranges.** The built-in pattern offers a digit run to the Luhn check only when
+  its prefix belongs to a scheme it lists, so a UnionPay (62), Mir
+  (2200-2204), private-label or newly issued card was missed even in "credit
+  card 6280 6542 3511 6151". A 12-19 digit number right after a card word
+  (`card`, `cc`, `kredi kartı`, `Karte`, `carte`, `tarjeta`, with `number`,
+  `no`, `numarası` …) that passes Luhn is now reported at the fuzzy tier
+  (0.90), as a keyword-cued SSN is. A SIM card's ICCID, which is
+  Luhn-checked too, is left alone. On the presidio-research corpus
+  CREDIT_CARD F1 goes from 0.958 to 0.993, and on the held-out Gretel corpus
+  from 0.605 to 0.647, with no new false positive on either.
+
 ## [1.2.3] — 2026-11-07
 
 ### Security

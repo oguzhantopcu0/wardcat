@@ -705,6 +705,24 @@ _CUED_SSN: re.Pattern = re.compile(
     r"(?P<ssn>(?!000|666|9\d{2})\d{3}[ ]?(?!00)\d{2}[ ]?(?!0000)\d{4})(?![\d\-])"
 )
 
+# ── Keyword-cued payment cards ───────────────────────────────────────────────
+# The built-in CREDIT_CARD pattern offers a digit run to the Luhn check only when
+# its prefix belongs to a scheme it lists: about one bare run in ten passes Luhn
+# by chance, and the prefix is what keeps an order number from being reported. A
+# card from a range it does not list — UnionPay's 62, Mir's 2200-2204, a
+# private-label or newly assigned BIN — was missed even when the text called it
+# a card. Named as one, a 12-19 digit run that passes Luhn is reported at
+# CONF_FUZZY, as the cued SSN is. No issuer number starts with 0, and "SIM card"
+# is left out: a SIM's ICCID is a Luhn-checked 19-digit number as well.
+_CUED_CARD: re.Pattern = re.compile(
+    r"(?i:(?<!sim )(?<!sim-)\b(?:card|cc"
+    r"|kart[a-zçğıöşü]{0,6}|karte(?:n(?:nummer)?)?|kreditkarte|carte|tarjeta)"
+    r"(?:[\s:#.=\-]{0,4}(?:number|no|nr|num[ée]ro|n[úu]mero|nummer"
+    r"|numaras[ıi]|numaram|is)\b){0,2})"
+    r"[\s:#.=\-]{0,4}"
+    r"(?P<card>[1-9](?:[ \-]?\d){11,18})(?![ \-]?\d)"
+)
+
 _EXTENSION = re.compile(r"(?:x|ext\.?)[ ]?\d{1,6}$")
 # A date or timestamp after "Phone:" is a form's other field, not a number. Only a
 # value that is, or starts with, a whole date counts: "28-64-66-98" is a Danish
@@ -1383,6 +1401,37 @@ class RegexDetector(BaseDetector):
                             confidence=CONF_FUZZY,
                         )
                     )
+        if "CREDIT_CARD" in self.enabled_entities:
+            spans.extend(self._cued_card_spans(text, scan_text, spans))
+        return spans
+
+    @staticmethod
+    def _cued_card_spans(
+        text: str, scan_text: str, found: list[DetectedSpan]
+    ) -> list[DetectedSpan]:
+        """CREDIT_CARD spans named by a card word, at :data:`CONF_FUZZY`.
+
+        Only numbers the built-in pattern did not already report: a listed
+        scheme keeps its checksum tier, and its digits are not reported twice.
+        """
+        taken = [(s.start, s.end) for s in found if s.entity_type == "CREDIT_CARD"]
+        spans: list[DetectedSpan] = []
+        for match in _CUED_CARD.finditer(scan_text):
+            start, end = match.span("card")
+            if any(start < e and s < end for s, e in taken):
+                continue
+            if not _validate_luhn(match.group("card")):
+                continue
+            taken.append((start, end))
+            spans.append(
+                DetectedSpan(
+                    entity_type="CREDIT_CARD",
+                    text=text[start:end],
+                    start=start,
+                    end=end,
+                    confidence=CONF_FUZZY,
+                )
+            )
         return spans
 
     @staticmethod
